@@ -156,8 +156,9 @@ These steps must be completed manually after the scripts finish.
 
 ```bash
 claude
-/plugin marketplace add obra/superpowers
-/plugin marketplace add ralph
+/plugin marketplace add your-org/praxis
+/plugin install praxis@praxis-marketplace
+/plugin install ralph@claude-plugins-official
 /exit
 ```
 
