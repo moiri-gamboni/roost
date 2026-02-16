@@ -104,7 +104,7 @@ else
         --image ubuntu-24.04
         --ssh-key "$SSH_KEY_NAME"
         --firewall claude-roost-fw
-        --backups
+        --enable-backup
     )
 
     if [ -n "${SERVER_LOCATION:-}" ]; then

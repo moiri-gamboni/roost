@@ -130,7 +130,7 @@ if swapon --show | grep -q swapfile; then
 else
     mkdir -p /swap
     if btrfs filesystem show / &>/dev/null 2>&1; then
-        btrfs filesystem mkswapfile /swap/swapfile --size 4G
+        btrfs filesystem mkswapfile --size 4G /swap/swapfile
     else
         dd if=/dev/zero of=/swap/swapfile bs=1M count=4096 status=progress
         chmod 600 /swap/swapfile
@@ -186,7 +186,7 @@ fi
 
 if ! tailscale ip -4 &>/dev/null 2>&1; then
     if [ -n "${TAILSCALE_AUTHKEY:-}" ]; then
-        tailscale up --ssh --authkey "$TAILSCALE_AUTHKEY"
+        tailscale up --ssh --auth-key "$TAILSCALE_AUTHKEY"
         ok "Tailscale connected (auth key)"
     else
         info "Starting Tailscale authentication..."
