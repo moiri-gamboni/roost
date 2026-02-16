@@ -5,6 +5,10 @@
 #   Default device: /dev/sda1
 set -euo pipefail
 
+LOGFILE="/tmp/rescue-btrfs-$(date +%Y-%m-%d-%H%M%S).log"
+exec > >(tee -a "$LOGFILE") 2>&1
+echo "Log: $LOGFILE"
+
 DISK="${1:-/dev/sda1}"
 
 echo "============================================"

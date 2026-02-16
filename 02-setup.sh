@@ -10,6 +10,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/.env"
 
+LOGDIR="$SCRIPT_DIR/logs"
+mkdir -p "$LOGDIR"
+LOGFILE="$LOGDIR/setup-$(date +%Y-%m-%d-%H%M%S).log"
+exec > >(tee -a "$LOGFILE") 2>&1
+echo "Log: $LOGFILE"
+
 HOME_DIR="/home/$USERNAME"
 
 # ============================================
