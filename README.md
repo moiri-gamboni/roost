@@ -38,11 +38,12 @@ Before starting, you will need:
 ## File Overview
 
 ```
-.env              Configuration (fill in before running anything)
+.env.example            Configuration template (copy to .env and fill in)
 00-rescue-btrfs.sh      Converts ext4 to btrfs (run in Hetzner rescue mode)
-01-provision.sh         Creates the Hetzner server (run from your laptop)
+01-provision.sh         Creates or configures a Hetzner server (run from your laptop)
 02-setup.sh             Main setup (run on the server as root)
 files/                  Config files and hook scripts deployed by 02-setup.sh
+extras/                 Optional standalone utilities
 ```
 
 ## Setup Guide
@@ -304,6 +305,34 @@ Rollback a btrfs snapshot: `snapper list`, then `snapper rollback <number>`, the
 | ntfy | Free (self-hosted) |
 | Claude Code | Subscription |
 | **Total** | **~11.50 EUR/mo** (+ Claude Code) |
+
+## Server Availability
+
+Hetzner shared vCPU plans (CX family) are frequently out of stock. If you can't
+create or upgrade to your desired server type, use the availability watcher to
+get notified when capacity opens up:
+
+```bash
+# Poll every 5 minutes, notify via public ntfy.sh (no server needed)
+HCLOUD_TOKEN=xxx \
+WATCH_TYPE=cx43 \
+NTFY_URL=https://ntfy.sh/your-secret-topic \
+  ./extras/hetzner-watch.sh --poll 300
+```
+
+Subscribe to the same topic in the [ntfy app](https://ntfy.sh/) on your phone.
+Pick a random topic name so it stays private.
+
+Once notified, upgrade your existing server:
+
+```bash
+hcloud server shutdown <server-name>
+hcloud server change-type --server <server-name> --type cx43 --keep-disk
+hcloud server poweron <server-name>
+```
+
+You can start with a smaller plan (e.g. CX33, 4 vCPU / 8GB) and upgrade later.
+Everything survives the resize.
 
 ## Troubleshooting
 
