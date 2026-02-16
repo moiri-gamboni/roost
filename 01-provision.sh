@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/.env"
 
 # Validate required config
-for var in HETZNER_API_TOKEN SERVER_NAME SERVER_TYPE SERVER_LOCATION SSH_KEY_NAME; do
+for var in HETZNER_API_TOKEN SERVER_NAME SERVER_TYPE SSH_KEY_NAME; do
     if [ -z "${!var:-}" ]; then
         echo "Error: $var is not set in .env"
         exit 1
@@ -31,7 +31,7 @@ echo "============================================"
 echo ""
 echo "  Name:     $SERVER_NAME"
 echo "  Type:     $SERVER_TYPE"
-echo "  Location: $SERVER_LOCATION"
+echo "  Location: ${SERVER_LOCATION:-(auto)}"
 echo "  SSH Key:  $SSH_KEY_NAME"
 echo ""
 
@@ -61,14 +61,50 @@ echo "[2/4] Creating server..."
 if hcloud server describe "$SERVER_NAME" &>/dev/null; then
     echo "  Server '$SERVER_NAME' already exists, skipping creation."
 else
-    hcloud server create \
-        --name "$SERVER_NAME" \
-        --type "$SERVER_TYPE" \
-        --location "$SERVER_LOCATION" \
-        --image ubuntu-24.04 \
-        --ssh-key "$SSH_KEY_NAME" \
-        --firewall self-host-fw \
+    CREATE_ARGS=(
+        --name "$SERVER_NAME"
+        --type "$SERVER_TYPE"
+        --image ubuntu-24.04
+        --ssh-key "$SSH_KEY_NAME"
+        --firewall self-host-fw
         --backups
+    )
+
+    if [ -n "${SERVER_LOCATION:-}" ]; then
+        # Try preferred location first, then fall back to all others
+        LOCATIONS=("$SERVER_LOCATION")
+        while IFS= read -r loc; do
+            [ "$loc" != "$SERVER_LOCATION" ] && LOCATIONS+=("$loc")
+        done < <(hcloud location list -o noheader -o columns=name)
+    else
+        # No preference: let Hetzner pick, then try each location
+        LOCATIONS=("")
+        while IFS= read -r loc; do
+            LOCATIONS+=("$loc")
+        done < <(hcloud location list -o noheader -o columns=name)
+    fi
+
+    CREATED=false
+    for loc in "${LOCATIONS[@]}"; do
+        LOC_ARGS=("${CREATE_ARGS[@]}")
+        [ -n "$loc" ] && LOC_ARGS+=(--location "$loc")
+
+        LOC_LABEL="${loc:-(auto)}"
+        echo "  Trying $LOC_LABEL..."
+        if hcloud server create "${LOC_ARGS[@]}" 2>/dev/null; then
+            echo "  Created in $LOC_LABEL"
+            CREATED=true
+            break
+        else
+            echo "  $LOC_LABEL unavailable, trying next..."
+        fi
+    done
+
+    if [ "$CREATED" = false ]; then
+        echo "Error: Could not create server in any location."
+        echo "Check server type availability at https://docs.hetzner.com/cloud/servers/overview"
+        exit 1
+    fi
 fi
 
 SERVER_IP=$(hcloud server ip "$SERVER_NAME")
