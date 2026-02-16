@@ -38,7 +38,7 @@ Before starting, you will need:
 ## File Overview
 
 ```
-config.env              Configuration (fill in before running anything)
+.env              Configuration (fill in before running anything)
 00-rescue-btrfs.sh      Converts ext4 to btrfs (run in Hetzner rescue mode)
 01-provision.sh         Creates the Hetzner server (run from your laptop)
 02-setup.sh             Main setup (run on the server as root)
@@ -49,7 +49,7 @@ files/                  Config files and hook scripts deployed by 02-setup.sh
 
 ### Step 1: Configure
 
-Edit `config.env` and fill in:
+Edit `.env` and fill in:
 
 - `HETZNER_API_TOKEN` (from the Hetzner console)
 - `SSH_KEY_NAME` (must match the name in Hetzner's SSH key list)
@@ -119,7 +119,7 @@ everything, pausing at three points for manual authentication:
 
 #### Pause 1: Tailscale Authentication
 
-If you did not set `TAILSCALE_AUTHKEY` in config.env, the script prints a URL.
+If you did not set `TAILSCALE_AUTHKEY` in .env, the script prints a URL.
 Open it in your browser, sign in to Tailscale, and authorize the device.
 The script continues automatically once authentication succeeds.
 
