@@ -139,7 +139,7 @@ the configuration automatically.
 
 After confirming Tailscale SSH works (`ssh <username>@<tailscale-ip>`):
 
-1. Go to the Hetzner Console, edit the **self-host-fw** cloud firewall
+1. Go to the Hetzner Console, edit the **claude-croft-fw** cloud firewall
 2. **Delete** the SSH (port 22) rule
 3. Verify that `ssh root@<public-ip>` now times out
 4. Verify that `ssh <username>@<tailscale-ip>` still works
