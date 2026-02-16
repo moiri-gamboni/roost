@@ -93,6 +93,10 @@ Edit `.env` and fill in:
 - `USERNAME` (the non-root user to create on the server)
 - `DOMAIN` (your Cloudflare-managed domain)
 
+Optional: set `SERVER_LOCATION` to a comma-separated list of locations
+(e.g. `"nbg1,fsn1"`). Only listed locations are tried, in order.
+When empty, all locations are tried in an order optimized for Western Europe.
+
 Optional: set `TAILSCALE_AUTHKEY` to skip the interactive Tailscale login.
 You can generate one at https://login.tailscale.com/admin/settings/keys.
 

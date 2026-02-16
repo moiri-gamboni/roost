@@ -102,16 +102,15 @@ else
     )
 
     if [ -n "${SERVER_LOCATION:-}" ]; then
-        # Try preferred location first, then fall back to all others
-        LOCATIONS=("$SERVER_LOCATION")
-        while IFS= read -r loc; do
-            [ "$loc" != "$SERVER_LOCATION" ] && LOCATIONS+=("$loc")
-        done < <(hcloud location list -o noheader -o columns=name)
+        # User-specified list: only try these, in order
+        IFS=',' read -ra LOCATIONS <<< "$SERVER_LOCATION"
+        LOCATIONS=("${LOCATIONS[@]// /}")
     else
-        # No preference: let Hetzner pick, then try each location
-        LOCATIONS=("")
+        # Auto mode: Western Europe optimized default, plus any new Hetzner locations
+        IFS=',' read -ra LOCATIONS <<< "nbg1,fsn1,hel1,ash,hil,sin"
         while IFS= read -r loc; do
-            LOCATIONS+=("$loc")
+            loc="${loc// /}"
+            printf '%s\n' "${LOCATIONS[@]}" | grep -qx "$loc" || LOCATIONS+=("$loc")
         done < <(hcloud location list -o noheader -o columns=name)
     fi
 
