@@ -32,8 +32,32 @@ Before starting, you will need:
 
 5. **On your laptop:**
    - `hcloud` CLI (https://github.com/hetznercloud/cli)
-   - SSH key pair, added to Hetzner (Console > Security > SSH Keys)
+   - SSH key pair added to Hetzner (see below)
    - Git
+
+### SSH key setup
+
+The SSH key is only used for initial server access. Once Tailscale SSH is
+running (minutes into setup), it becomes a recovery-only fallback.
+
+**If you already have a key** (`~/.ssh/id_ed25519.pub` or `~/.ssh/id_rsa.pub`):
+
+```bash
+# Upload to Hetzner via CLI
+hcloud ssh-key create --name my-key --public-key-from-file ~/.ssh/id_ed25519.pub
+```
+
+Or paste the contents of your `.pub` file into the Hetzner Console
+(Security > SSH Keys > Add SSH Key).
+
+**If you need to create one:**
+
+```bash
+ssh-keygen -t ed25519 -C "your@email.com"
+hcloud ssh-key create --name my-key --public-key-from-file ~/.ssh/id_ed25519.pub
+```
+
+Set `SSH_KEY_NAME` in `.env` to the name you used (e.g. `my-key`).
 
 ## File Overview
 
