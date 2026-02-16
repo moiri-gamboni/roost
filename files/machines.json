@@ -1,0 +1,4 @@
+{
+  "_comment": "Map Syncthing device IDs to Tailscale hostnames. Fill in after Syncthing pairing.",
+  "devices": {}
+}

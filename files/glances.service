@@ -1,0 +1,11 @@
+[Unit]
+Description=Glances system monitoring
+After=network.target tailscaled.service
+
+[Service]
+User=$USERNAME
+ExecStart=/bin/bash -c '/usr/bin/glances -w --bind "$(tailscale ip -4)" --port 61208 --disable-plugin cloud'
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

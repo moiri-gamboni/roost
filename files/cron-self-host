@@ -1,0 +1,14 @@
+# Health check every 5 minutes
+*/5 * * * * $USERNAME $HOME_DIR/roost/claude/hooks/health-check.sh
+
+# Morning summary
+0 8 * * * $USERNAME $HOME_DIR/roost/claude/hooks/scheduled-task.sh "Check ntfy history and summarize what happened overnight" $HOME_DIR/roost/code/life
+
+# Weekly memory cleanup
+0 10 * * 0 $USERNAME $HOME_DIR/roost/claude/hooks/scheduled-task.sh "Review ~/roost/memory/ for duplicate or mergeable notes. Deduplicate and merge where appropriate. Do not delete notes that passed the 6-month test at write time unless you can document a clear reason in the commit message." $HOME_DIR/roost/code/life
+
+# Weekly auto-update (Sunday 3am, before weekly memory cleanup at 10am)
+0 3 * * 0 $USERNAME $HOME_DIR/roost/claude/hooks/auto-update.sh
+
+# Syncthing conflict detection
+*/30 * * * * $USERNAME /bin/bash -c 'find $HOME_DIR/roost -name "*.sync-conflict-*" -newer /tmp/.last-conflict-check | head -5 | while read f; do curl -s "http://localhost:2586/claude-$USERNAME" -H "Title: Sync conflict" -d "Conflict file: $f"; done; touch /tmp/.last-conflict-check'

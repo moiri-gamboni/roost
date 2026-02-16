@@ -1,0 +1,8 @@
+{
+    auto_https off
+}
+
+# Add app entries here. Example:
+# http://myapp.$DOMAIN {
+#     reverse_proxy myapp:3000
+# }
