@@ -9,7 +9,7 @@ if git rev-parse --git-dir > /dev/null 2>&1; then
 
     # gitleaks: scan staged changes for secrets
     if command -v gitleaks &>/dev/null; then
-        if ! gitleaks protect --staged --no-banner -q; then
+        if ! gitleaks git --staged --no-banner -l error 2>/dev/null; then
             git reset HEAD -q                                          # Unstage everything
             curl -s "http://localhost:2586/claude-$(whoami)" \
                 -H "Title: Secret detected" -H "Priority: urgent" \
