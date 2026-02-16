@@ -34,10 +34,10 @@ if command -v snapper &>/dev/null && snapper list-configs 2>/dev/null | grep -q 
 fi
 
 # Claude Code
-track "Claude Code" sudo npm install -g @anthropic-ai/claude-code@latest
+track "Claude Code" npm install -g @anthropic-ai/claude-code@latest
 
 # claude-code-tools
-track "claude-code-tools" pip install --user --break-system-packages --upgrade claude-code-tools
+track "claude-code-tools" uv tool upgrade claude-code-tools
 
 # Ollama models
 track "Ollama models" ollama pull qwen3-embedding:0.6b

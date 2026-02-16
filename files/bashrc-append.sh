@@ -6,6 +6,10 @@ fi
 # Go
 export PATH=$PATH:/usr/local/go/bin:~/go/bin
 
+# fnm (Node.js)
+FNM_DIR="$HOME/.local/share/fnm"
+if [ -x "$FNM_DIR/fnm" ]; then eval "$($FNM_DIR/fnm env --use-on-cd --shell bash)"; fi
+
 # Local binaries
 export PATH=$PATH:~/bin:~/.local/bin
 
