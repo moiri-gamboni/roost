@@ -8,7 +8,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/config.env"
+source "$SCRIPT_DIR/.env"
 
 HOME_DIR="/home/$USERNAME"
 

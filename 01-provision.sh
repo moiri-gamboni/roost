@@ -4,16 +4,16 @@
 #
 # Prerequisites:
 #   - hcloud CLI installed (https://github.com/hetznercloud/cli)
-#   - config.env filled in
+#   - .env filled in
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/config.env"
+source "$SCRIPT_DIR/.env"
 
 # Validate required config
 for var in HETZNER_API_TOKEN SERVER_NAME SERVER_TYPE SERVER_LOCATION SSH_KEY_NAME; do
     if [ -z "${!var:-}" ]; then
-        echo "Error: $var is not set in config.env"
+        echo "Error: $var is not set in .env"
         exit 1
     fi
 done
