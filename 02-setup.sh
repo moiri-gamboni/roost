@@ -46,7 +46,12 @@ pause_for() {
 }
 
 as_user() {
-    sudo -u "$USERNAME" bash -c "export PATH=\"\$PATH:/usr/local/go/bin:\$HOME/go/bin:\$HOME/.local/bin:\$HOME/bin\" && $1"
+    sudo -u "$USERNAME" bash -c "
+        export PATH=\"\$PATH:/usr/local/go/bin:\$HOME/go/bin:\$HOME/.local/bin:\$HOME/bin\"
+        export FNM_DIR=\"\$HOME/.local/share/fnm\"
+        if [ -x \"\$FNM_DIR/fnm\" ]; then eval \"\$(\$FNM_DIR/fnm env --shell bash)\"; fi
+        $1
+    "
 }
 
 # ============================================
@@ -115,8 +120,7 @@ section "Base Packages"
 # ============================================
 
 apt install -y \
-    fail2ban ufw git tmux mosh build-essential jq curl wget \
-    python3 python3-pip python3-venv unattended-upgrades \
+    tmux build-essential jq unzip \
     btrfs-progs snapper glances
 
 ok "Base packages installed"
@@ -254,15 +258,22 @@ systemctl daemon-reload
 ok "Docker boot order: waits for Tailscale IP"
 
 # ============================================
-section "Node.js 22"
+section "fnm + Node.js 22"
 # ============================================
 
-if command -v node &>/dev/null && node -v | grep -q '^v2[2-9]'; then
-    skip "Node.js $(node -v) already installed"
+if as_user "command -v fnm" &>/dev/null; then
+    skip "fnm already installed"
 else
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-    apt install -y nodejs
-    ok "Node.js $(node -v) installed"
+    as_user "curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell"
+    ok "fnm installed"
+fi
+
+if as_user "fnm exec --using=22 node -v" &>/dev/null; then
+    skip "Node.js 22 already installed via fnm"
+else
+    as_user "fnm install 22"
+    as_user "fnm default 22"
+    ok "Node.js $(as_user 'fnm exec --using=22 node -v') installed"
 fi
 
 # ============================================
@@ -323,11 +334,11 @@ fi
 section "Claude Code"
 # ============================================
 
-if command -v claude &>/dev/null; then
+if as_user "command -v claude" &>/dev/null; then
     skip "Claude Code already installed"
 else
-    npm install -g @anthropic-ai/claude-code
-    ok "Claude Code $(claude --version) installed"
+    as_user "npm install -g @anthropic-ai/claude-code"
+    ok "Claude Code installed"
 fi
 
 echo ""
@@ -573,9 +584,8 @@ section "Agent Tools"
 
 # claude-code-tools (session search + lineage)
 info "Installing claude-code-tools..."
-as_user "pip install --user --break-system-packages claude-code-tools" || \
-    as_user "pip install --user claude-code-tools" || \
-    info "claude-code-tools: install manually with 'pip install claude-code-tools'"
+as_user "uv tool install claude-code-tools" || \
+    info "claude-code-tools: install manually with 'uv tool install claude-code-tools'"
 
 # grepai (semantic search)
 if [ -f "$HOME_DIR/bin/grepai" ]; then
