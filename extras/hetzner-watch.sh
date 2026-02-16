@@ -16,8 +16,12 @@
 #   NTFY_URL           ntfy endpoint (default: http://localhost:2586/hetzner-watch)
 set -uo pipefail
 
-WATCH_TYPE="${WATCH_TYPE:-cx43}"
-WATCH_LOCATION="${WATCH_LOCATION:-}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/../.env"
+[ -f "$ENV_FILE" ] && source "$ENV_FILE"
+
+WATCH_TYPE="${WATCH_TYPE:-${SERVER_TYPE:-cx43}}"
+WATCH_LOCATION="${WATCH_LOCATION:-${SERVER_LOCATION:-}}"
 NTFY_URL="${NTFY_URL:-http://localhost:2586/hetzner-watch}"
 POLL_INTERVAL=0
 RUN_CMD=()
