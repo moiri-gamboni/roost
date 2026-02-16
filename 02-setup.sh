@@ -146,7 +146,7 @@ section "Snapper (btrfs Snapshots)"
 # ============================================
 
 if btrfs filesystem show / &>/dev/null 2>&1; then
-    if ! snapper list-configs 2>/dev/null | grep -q root; then
+    if ! snapper list-configs | grep -q root; then
         snapper -c root create-config /
         snapper set-config \
             TIMELINE_CREATE=yes TIMELINE_CLEANUP=yes \
@@ -160,7 +160,7 @@ if btrfs filesystem show / &>/dev/null 2>&1; then
     # Disable COW for database directories
     for dir in /var/lib/postgresql /var/lib/typesense; do
         mkdir -p "$dir"
-        chattr +C "$dir" 2>/dev/null || true
+        chattr +C "$dir" || true
     done
     ok "COW disabled for database directories"
 else
@@ -321,7 +321,7 @@ if command -v claude &>/dev/null; then
     skip "Claude Code already installed"
 else
     npm install -g @anthropic-ai/claude-code
-    ok "Claude Code $(claude --version 2>/dev/null || echo '') installed"
+    ok "Claude Code $(claude --version) installed"
 fi
 
 echo ""
@@ -414,7 +414,7 @@ section "Dangerous Command Blocker"
 # ============================================
 
 info "Installing dangerous-command-blocker hook..."
-as_user "cd ~ && npx --yes claude-code-templates@latest --hook=security/dangerous-command-blocker --yes" 2>/dev/null || \
+as_user "cd ~ && npx --yes claude-code-templates@latest --hook=security/dangerous-command-blocker --yes" || \
     info "Could not install dangerous-command-blocker (install manually later)"
 
 # ============================================
@@ -528,7 +528,7 @@ fi
 
 # Create tunnel
 TUNNEL_EXISTS=false
-if as_user "cloudflared tunnel list 2>/dev/null" | grep -q "$CLOUDFLARE_TUNNEL_NAME"; then
+if as_user "cloudflared tunnel list" | grep -q "$CLOUDFLARE_TUNNEL_NAME"; then
     skip "Tunnel '$CLOUDFLARE_TUNNEL_NAME' already exists"
     TUNNEL_EXISTS=true
 elif [ -f "$HOME_DIR/.cloudflared/cert.pem" ]; then
@@ -539,7 +539,7 @@ fi
 
 # Write tunnel config
 if [ "$TUNNEL_EXISTS" = true ]; then
-    TUNNEL_ID=$(as_user "cloudflared tunnel list -o json 2>/dev/null" | jq -r ".[] | select(.name == \"$CLOUDFLARE_TUNNEL_NAME\") | .id" 2>/dev/null || echo "")
+    TUNNEL_ID=$(as_user "cloudflared tunnel list -o json" | jq -r ".[] | select(.name == \"$CLOUDFLARE_TUNNEL_NAME\") | .id" || echo "")
 
     if [ -n "$TUNNEL_ID" ]; then
         cat > "$HOME_DIR/.cloudflared/config.yml" << CFCONFIG
@@ -567,8 +567,8 @@ section "Agent Tools"
 
 # claude-code-tools (session search + lineage)
 info "Installing claude-code-tools..."
-as_user "pip install --user --break-system-packages claude-code-tools" 2>/dev/null || \
-    as_user "pip install --user claude-code-tools" 2>/dev/null || \
+as_user "pip install --user --break-system-packages claude-code-tools" || \
+    as_user "pip install --user claude-code-tools" || \
     info "claude-code-tools: install manually with 'pip install claude-code-tools'"
 
 # grepai (semantic search)
@@ -586,12 +586,12 @@ fi
 
 # claude-code-docs
 info "Installing claude-code-docs..."
-as_user "curl -fsSL https://raw.githubusercontent.com/ericbuess/claude-code-docs/main/install.sh | bash" 2>/dev/null || \
+as_user "curl -fsSL https://raw.githubusercontent.com/ericbuess/claude-code-docs/main/install.sh | bash" || \
     info "claude-code-docs: install manually"
 
 # claude-code-transcripts
 info "Installing claude-code-transcripts..."
-as_user "uv tool install claude-code-transcripts" 2>/dev/null || \
+as_user "uv tool install claude-code-transcripts" || \
     info "claude-code-transcripts: install manually with 'uv tool install claude-code-transcripts'"
 
 ok "Agent tools section complete"
@@ -644,7 +644,7 @@ cat > /etc/cron.d/self-host << CRON
 0 3 * * 0 $USERNAME $HOME_DIR/.claude/hooks/auto-update.sh
 
 # Syncthing conflict detection
-*/30 * * * * $USERNAME /bin/bash -c 'find $HOME_DIR -name "*.sync-conflict-*" -newer /tmp/.last-conflict-check 2>/dev/null | head -5 | while read f; do curl -s "http://localhost:2586/claude-$USERNAME" -H "Title: Sync conflict" -d "Conflict file: \$f"; done; touch /tmp/.last-conflict-check'
+*/30 * * * * $USERNAME /bin/bash -c 'find $HOME_DIR -name "*.sync-conflict-*" -newer /tmp/.last-conflict-check | head -5 | while read f; do curl -s "http://localhost:2586/claude-$USERNAME" -H "Title: Sync conflict" -d "Conflict file: \$f"; done; touch /tmp/.last-conflict-check'
 CRON
 
 chmod 644 /etc/cron.d/self-host
@@ -656,7 +656,7 @@ section "Initial grepai Index"
 
 if [ -f "$HOME_DIR/bin/grepai" ]; then
     info "Running initial grepai index..."
-    as_user "$HOME_DIR/bin/grepai index $HOME_DIR/memory $HOME_DIR/.claude/skills" 2>/dev/null && \
+    as_user "$HOME_DIR/bin/grepai index $HOME_DIR/memory $HOME_DIR/.claude/skills" && \
         ok "grepai index created" || \
         info "grepai indexing failed (run manually later: grepai index ~/memory ~/.claude/skills)"
 else

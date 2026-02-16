@@ -9,18 +9,17 @@ if git rev-parse --git-dir > /dev/null 2>&1; then
 
     # gitleaks: scan staged changes for secrets
     if command -v gitleaks &>/dev/null; then
-        if ! gitleaks protect --staged --no-banner -q 2>/dev/null; then
-            git reset HEAD -q 2>/dev/null                              # Unstage everything
+        if ! gitleaks protect --staged --no-banner -q; then
+            git reset HEAD -q                                          # Unstage everything
             curl -s "http://localhost:2586/claude-$(whoami)" \
                 -H "Title: Secret detected" -H "Priority: urgent" \
-                -d "gitleaks blocked auto-commit in $(basename "$PWD"). Review staged changes." \
-                2>/dev/null
+                -d "gitleaks blocked auto-commit in $(basename "$PWD"). Review staged changes."
             exit 0
         fi
     fi
 
-    SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
+    SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
     MSG="Auto: $(date '+%Y-%m-%d %H:%M:%S')"
     [ -n "$SESSION_ID" ] && MSG="$MSG [session:$SESSION_ID]"
-    git commit -m "$MSG" -q 2>/dev/null || true
+    git commit -m "$MSG" -q || true
 fi

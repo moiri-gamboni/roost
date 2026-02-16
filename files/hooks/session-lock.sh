@@ -8,7 +8,7 @@ LOCKFILE="$HOME/.claude/locks/${SESSION_ID}.lock"
 
 # Warn if lock exists from another machine
 if [ -f "$LOCKFILE" ]; then
-    OWNER=$(jq -r '.hostname // empty' "$LOCKFILE" 2>/dev/null)
+    OWNER=$(jq -r '.hostname // empty' "$LOCKFILE")
     [ -n "$OWNER" ] && [ "$OWNER" != "$(hostname)" ] && \
         echo "WARNING: Session may be active on $OWNER. Use aichat search for safe handoff."
 fi
