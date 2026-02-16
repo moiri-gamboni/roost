@@ -350,20 +350,30 @@ Rollback a btrfs snapshot: `snapper list`, then `snapper rollback <number>`, the
 
 Hetzner shared vCPU plans (CX family) are frequently out of stock. If you can't
 create or upgrade to your desired server type, use the availability watcher to
-get notified when capacity opens up:
+get notified when capacity opens up. It queries the Hetzner datacenter API
+(read-only, no servers are created).
+
+The script uses your active `hcloud` context for auth. Set one up with
+`hcloud context create <name>` if you haven't already.
+
+**Watch only** (get a push notification, then act manually):
 
 ```bash
-# Poll every 5 minutes, notify via public ntfy.sh (no server needed)
-HCLOUD_TOKEN=xxx \
-WATCH_TYPE=cx43 \
 NTFY_URL=https://ntfy.sh/your-secret-topic \
   ./extras/hetzner-watch.sh --poll 300
 ```
 
-Subscribe to the same topic in the [ntfy app](https://ntfy.sh/) on your phone.
+**Watch and provision** (automatically create the server when available):
+
+```bash
+NTFY_URL=https://ntfy.sh/your-secret-topic \
+  ./extras/hetzner-watch.sh --poll 300 --run ./01-provision.sh
+```
+
+Subscribe to the topic in the [ntfy app](https://ntfy.sh/) on your phone.
 Pick a random topic name so it stays private.
 
-Once notified, upgrade your existing server:
+To upgrade an existing server instead of provisioning a new one:
 
 ```bash
 hcloud server shutdown <server-name>
