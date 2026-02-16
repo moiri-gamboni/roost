@@ -1,4 +1,4 @@
-# Self-Host
+# Claude Croft
 
 Automated setup for a Hetzner server running Claude Code agents, web apps, and supporting infrastructure.
 
@@ -270,7 +270,7 @@ curl http://<tailscale-ip>:61208
 ```
 Public Internet                         Private (Tailscale)
 
-app.example.com ────────→ Cloudflare ──→ cloudflared ──→ Caddy
+app.example.dev ──────→ Cloudflare ──→ cloudflared ──→ Caddy
                                                         │
                         Tailscale IP ────────────────→ Server
                         ├── SSH/mosh
