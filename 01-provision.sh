@@ -73,7 +73,7 @@ fi
 
 # Attach firewall to server (idempotent; hcloud is silent if already attached)
 if [ "$EXISTING" = true ]; then
-    hcloud firewall apply-to-resource claude-croft-fw --type server --server "$SERVER_NAME" 2>/dev/null || true
+    hcloud firewall apply-to-resource claude-croft-fw --type server --server "$SERVER_NAME" || true
     echo "  Firewall attached to $SERVER_NAME."
 fi
 
@@ -121,7 +121,7 @@ else
 
         LOC_LABEL="${loc:-(auto)}"
         echo "  Trying $LOC_LABEL..."
-        if hcloud server create "${LOC_ARGS[@]}" 2>/dev/null; then
+        if hcloud server create "${LOC_ARGS[@]}"; then
             echo "  Created in $LOC_LABEL"
             CREATED=true
             break
@@ -145,12 +145,12 @@ echo ""
 echo "[3/4] Waiting for SSH access..."
 SSH_USER="root"
 for i in $(seq 1 30); do
-    if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$SSH_USER@$SERVER_IP" true 2>/dev/null; then
+    if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$SSH_USER@$SERVER_IP" true; then
         break
     fi
     # Existing servers may have root login disabled; try the configured user
     if [ "$EXISTING" = true ] && [ -n "${USERNAME:-}" ] && [ "$SSH_USER" = "root" ]; then
-        if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$USERNAME@$SERVER_IP" true 2>/dev/null; then
+        if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$USERNAME@$SERVER_IP" true; then
             SSH_USER="$USERNAME"
             break
         fi

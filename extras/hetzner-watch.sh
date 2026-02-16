@@ -41,9 +41,9 @@ check_availability() {
     )
     [ -n "$WATCH_LOCATION" ] && args+=(--location "$WATCH_LOCATION")
 
-    if hcloud server create "${args[@]}" 2>/dev/null; then
+    if hcloud server create "${args[@]}"; then
         # Available! Delete the probe server immediately.
-        hcloud server delete "$PROBE_NAME" 2>/dev/null
+        hcloud server delete "$PROBE_NAME"
         return 0
     fi
     return 1
@@ -59,7 +59,7 @@ notify() {
 }
 
 cleanup() {
-    hcloud server delete "$PROBE_NAME" 2>/dev/null || true
+    hcloud server delete "$PROBE_NAME" || true
 }
 trap cleanup EXIT
 

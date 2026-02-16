@@ -69,4 +69,4 @@ curl -s "$NTFY" \
     -d "$(echo -e "$BODY")"
 
 # Prune old logs (keep 8 weeks)
-find "$LOGDIR" -name "auto-update-*.log" -mtime +56 -delete 2>/dev/null
+find "$LOGDIR" -name "auto-update-*.log" -mtime +56 -delete
