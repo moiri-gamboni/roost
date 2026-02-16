@@ -1,3 +1,6 @@
+# Claude Code config lives under ~/roost/claude/
+export CLAUDE_CONFIG_DIR="$HOME/roost/claude"
+
 # Auto-attach tmux on SSH login
 if [[ -z "$TMUX" ]] && [[ -n "$SSH_CONNECTION" ]]; then
     tmux attach -t main 2>/dev/null || tmux new -s main

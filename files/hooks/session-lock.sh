@@ -3,8 +3,9 @@ INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 [ -z "$SESSION_ID" ] && exit 0
 
-mkdir -p ~/.claude/locks
-LOCKFILE="$HOME/.claude/locks/${SESSION_ID}.lock"
+LOCKDIR="$CLAUDE_CONFIG_DIR/locks"
+mkdir -p "$LOCKDIR"
+LOCKFILE="$LOCKDIR/${SESSION_ID}.lock"
 
 # Warn if lock exists from another machine
 if [ -f "$LOCKFILE" ]; then

@@ -4,7 +4,7 @@ Automated setup for a Hetzner server running Claude Code agents, web apps, and s
 
 ## What You Get
 
-After running these scripts you will have:
+After running the deploy script you will have:
 
 - Hardened Ubuntu 24.04 with btrfs snapshots and automatic security updates
 - Private networking via Tailscale (no public ports except Tailscale WireGuard)
@@ -75,10 +75,8 @@ Set `SSH_KEY_NAME` in `.env` to the name you used (e.g. `my-key`).
 
 ```
 .env.example            Configuration template (copy to .env and fill in)
-00-rescue-btrfs.sh      Converts ext4 to btrfs (run in Hetzner rescue mode)
-01-provision.sh         Creates or configures a Hetzner server (run from your laptop)
-02-setup.sh             Main setup (run on the server as root)
-files/                  Config files and hook scripts deployed by 02-setup.sh
+deploy.sh               Provisions and configures the server (run from your laptop)
+files/                  Config files, templates, and hook scripts deployed to the server
 extras/                 Optional standalone utilities
 ```
 
@@ -100,63 +98,18 @@ When empty, all locations are tried in an order optimized for Western Europe.
 Optional: set `TAILSCALE_AUTHKEY` to skip the interactive Tailscale login.
 You can generate one at https://login.tailscale.com/admin/settings/keys.
 
-### Step 2: Provision the Server
+### Step 2: Deploy
 
 ```bash
-chmod +x 01-provision.sh
-./01-provision.sh
+chmod +x deploy.sh
+./deploy.sh
 ```
 
-This will:
-- Create a Hetzner cloud firewall (UDP 41641 for Tailscale + temporary SSH)
-- Create the server with Ubuntu 24.04, backups enabled
-- Wait for SSH access
-- Copy the setup files to `/root/self-host/` on the server
+This single command handles everything: creating the server, converting to
+btrfs, and installing all software and services. It is idempotent (safe to
+re-run after partial failures or to apply changes).
 
-### Step 3: Convert to btrfs (Recommended)
-
-This step converts the root filesystem from ext4 to btrfs, enabling instant
-snapshots and rollback. It requires booting into Hetzner's rescue system.
-
-**To skip btrfs**, jump to Step 4. The setup script handles ext4 gracefully
-(swap uses dd instead of btrfs mkswapfile, snapper is skipped).
-
-1. Open the Hetzner Console (https://console.hetzner.cloud/)
-2. Select your server, go to the **Rescue** tab
-3. Enable rescue mode (Linux 64-bit)
-4. Reboot the server:
-   ```bash
-   hcloud server reboot <server-name>
-   ```
-5. Wait ~30 seconds, then SSH into the rescue system:
-   ```bash
-   ssh root@<server-ip>
-   ```
-6. Mount the disk, copy the script out, and run it:
-   ```bash
-   mount /dev/sda1 /mnt
-   cp /mnt/root/self-host/00-rescue-btrfs.sh /tmp/
-   umount /mnt
-   bash /tmp/00-rescue-btrfs.sh
-   ```
-7. When the script finishes, go back to the Hetzner Console and **disable rescue mode**
-8. Reboot:
-   ```bash
-   hcloud server reboot <server-name>
-   ```
-9. Wait 1 to 2 minutes for the server to come back up
-
-### Step 4: Run the Setup Script
-
-SSH into the server and run the main setup:
-
-```bash
-ssh root@<server-ip>
-bash /root/self-host/02-setup.sh
-```
-
-The script is idempotent (safe to re-run). It will install and configure
-everything, pausing at three points for manual authentication:
+The script pauses at three points for manual authentication:
 
 #### Pause 1: Tailscale Authentication
 
@@ -176,7 +129,7 @@ The script runs `cloudflared tunnel login`, which prints a URL. Open it in your
 browser and select your domain. The script then creates the tunnel and writes
 the configuration automatically.
 
-### Step 5: Remove Temporary SSH Access
+### Step 3: Remove Temporary SSH Access
 
 After confirming Tailscale SSH works (`ssh <username>@<tailscale-ip>`):
 
@@ -187,9 +140,9 @@ After confirming Tailscale SSH works (`ssh <username>@<tailscale-ip>`):
 
 From this point on, the server has no public TCP ports open.
 
-### Step 6: Post-Setup (Manual)
+### Step 4: Post-Setup (Manual)
 
-These steps must be completed manually after the scripts finish.
+These steps must be completed manually after the deploy script finishes.
 
 #### On the server (via Tailscale SSH):
 
@@ -255,29 +208,23 @@ curl http://<tailscale-ip>:61208
 2. Open http://localhost:8384 in your browser
 3. Install Syncthing on your laptop (https://syncthing.net/downloads/)
 4. Pair the devices using the device IDs shown in each Syncthing UI
-5. Share these folders (use matching paths on both machines):
-   - `~/.claude/` (sessions, locks, skills, settings)
-   - `~/memory/` (notes)
-   - `~/agents/` (projects and worktrees)
-6. Enable staggered file versioning on agent workspaces:
-   - Clean interval: 3600, Max age: 604800
-7. Add ignore patterns to each shared folder:
+5. Share `~/roost/` (contains claude config, memory, and code projects)
+6. Add a `.stignore` file to `~/roost/` with:
    ```
-   .git
    node_modules
    __pycache__
-   *.pyc
    .venv
-   .env
-   .env.*
    ```
-8. Update `~/.claude/machines.json` with Syncthing device IDs and Tailscale hostnames
+7. Enable staggered file versioning on code workspaces:
+   - Clean interval: 3600, Max age: 604800
+8. Update `~/roost/claude/machines.json` with Syncthing device IDs and Tailscale hostnames
 
 #### Laptop setup:
 
 1. Install and connect Tailscale
 2. Install Syncthing and pair with the server (see above)
-3. (Optional) Create a sleep hook that sends `/exit` to Claude tmux sessions
+3. Set `CLAUDE_CONFIG_DIR=$HOME/roost/claude` in your shell profile
+4. (Optional) Create a sleep hook that sends `/exit` to Claude tmux sessions
    before suspend, so sessions sync cleanly:
    ```ini
    # /etc/systemd/system/claude-sleep.service
@@ -324,6 +271,25 @@ Cloudflare Tunnel handles public web apps with zero open ports.
 Tailscale handles all private access (admin, notifications, sync).
 Sensitive services never touch the public internet.
 
+### Directory Structure (on server)
+
+```
+~/roost/                    Syncthing-synced root
+├── claude/                 Claude Code config (CLAUDE_CONFIG_DIR)
+│   ├── settings.json       Hooks, cleanup policy
+│   ├── hooks/              Hook scripts
+│   ├── skills/learned/     Learned skills
+│   ├── locks/              Session lock files
+│   ├── machines.json       Multi-machine coordination
+│   └── projects/           Session transcripts (auto-managed)
+├── memory/                 Structured notes (grepai-indexed)
+│   ├── debugging/
+│   ├── projects/
+│   └── patterns/
+└── code/                   Project repositories
+    └── life/               Default project for scheduled tasks
+```
+
 ## Recovery
 
 | Layer | Tool | Granularity | Speed |
@@ -363,11 +329,11 @@ NTFY_URL=https://ntfy.sh/your-secret-topic \
   ./extras/hetzner-watch.sh --poll 300
 ```
 
-**Watch and provision** (automatically create the server when available):
+**Watch and deploy** (automatically create the server when available):
 
 ```bash
 NTFY_URL=https://ntfy.sh/your-secret-topic \
-  ./extras/hetzner-watch.sh --poll 300 --run ./01-provision.sh
+  ./extras/hetzner-watch.sh --poll 300 --run ./deploy.sh
 ```
 
 Subscribe to the topic in the [ntfy app](https://ntfy.sh/) on your phone.
@@ -404,5 +370,5 @@ fail. Re-authenticate Tailscale (`tailscale up --ssh`), then restart Docker.
 Scheduled tasks and headless `claude -p` will fail. The health check will
 alert via ntfy. SSH in and run `claude` interactively to re-authenticate.
 
-**02-setup.sh failed partway through:**
+**deploy.sh failed partway through:**
 The script is idempotent. Fix the issue and re-run it.
