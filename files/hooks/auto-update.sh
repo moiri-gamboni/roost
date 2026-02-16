@@ -3,7 +3,7 @@
 # Creates a btrfs snapshot before updating, logs everything, sends summary via ntfy.
 set -uo pipefail
 
-LOGDIR="$HOME/.claude/logs"
+LOGDIR="$CLAUDE_CONFIG_DIR/logs"
 mkdir -p "$LOGDIR"
 LOGFILE="$LOGDIR/auto-update-$(date +%Y-%m-%d).log"
 NTFY="http://localhost:2586/claude-$(whoami)"
@@ -45,11 +45,6 @@ track "Ollama models" ollama pull qwen3-embedding:0.6b
 # grepai
 if [ -d "$HOME/services/grepai" ]; then
     track "grepai" bash -c "cd $HOME/services/grepai && git pull && go build -o $HOME/bin/grepai ."
-fi
-
-# claude-code-docs
-if [ -d "$HOME/.claude-code-docs" ]; then
-    track "claude-code-docs" bash -c "cd $HOME/.claude-code-docs && git pull"
 fi
 
 # claude-code-transcripts

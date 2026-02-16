@@ -4,38 +4,61 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Claude Roost is a set of bash scripts that provision and configure a Hetzner Cloud server for running Claude Code agents, web apps, and supporting infrastructure. The target is a hardened Ubuntu 24.04 server with btrfs snapshots, Tailscale (private networking), Cloudflare Tunnel (public web apps), and a Docker Compose stack for services.
+Claude Roost is a single deploy script that provisions and configures a Hetzner Cloud server for running Claude Code agents, web apps, and supporting infrastructure. The target is a hardened Ubuntu 24.04 server with btrfs snapshots, Tailscale (private networking), Cloudflare Tunnel (public web apps), and a Docker Compose stack for services.
 
-## Script Execution Order
+## Script Execution
 
-The scripts run in a fixed sequence across different environments:
+**`deploy.sh`** runs from your laptop and handles everything: provisioning via `hcloud` CLI, btrfs conversion (via rescue mode), and full server setup over SSH. It pauses for interactive auth (Tailscale, Claude Code OAuth, Cloudflare Tunnel). Idempotent and safe to re-run.
 
-1. **`00-rescue-btrfs.sh`** -- Run in Hetzner rescue mode. Converts ext4 to btrfs, creates `@rootfs` subvolume, updates fstab and GRUB. Optional (setup handles ext4 gracefully).
-2. **`01-provision.sh`** -- Run from your laptop. Creates (or reuses) a Hetzner server, sets up a cloud firewall, waits for SSH, copies all files to the server.
-3. **`02-setup.sh`** -- Run as root on the server. Installs everything, pauses for interactive auth (Tailscale, Claude Code OAuth, Cloudflare Tunnel). Idempotent.
-
-All three scripts source `.env` for configuration. `01-provision.sh` and `02-setup.sh` log to `logs/` (gitignored).
+The script sources `.env` for configuration and logs to `logs/` (gitignored).
 
 ## Key Design Patterns
 
-**Idempotency**: `02-setup.sh` uses check-then-act for every section (`command -v`, `id -u`, `grep -q`, etc.). It is safe to re-run after partial failures or to apply changes.
+**Idempotency**: `deploy.sh` uses check-then-act for every section (`command -v`, `id -u`, `grep -q`, etc.) in the remote setup blocks. It is safe to re-run after partial failures or to apply changes.
 
-**Helper functions in 02-setup.sh**: `section()` for visual headers, `info()`/`ok()`/`skip()` for status, `pause_for()` for interactive steps, `as_user()` to run commands as the non-root user with the correct PATH.
+**SSH helpers in deploy.sh**: `remote()` and `remote_tty()` run commands on the server. `remote_script()` runs a setup script from the deployed files directory. `remote_rescue()` handles rescue-mode SSH with relaxed host key checking.
+
+**Shared environment via `files/_setup-env.sh`**: Sourced by every setup script. Reads `.env` values from the server copy, exports `USERNAME`, `HOME_DIR`, etc., and provides `as_user()` helper.
 
 **No public ports**: The server has no open TCP ports. Tailscale handles private access; Cloudflare Tunnel handles public web traffic. The only public UDP port is 41641 (Tailscale WireGuard).
 
+**`~/roost/` directory**: All synced state lives under `~/roost/`, making Syncthing configuration a single folder share. `CLAUDE_CONFIG_DIR=~/roost/claude` redirects Claude Code's config there.
+
 ## File Layout
 
-- **`files/`** -- Config files and hook scripts deployed by `02-setup.sh` to the target server
+- **`deploy.sh`** -- Single deploy script, run from your laptop
+- **`files/`** -- Config files and templates deployed to the server
+  - `_setup-env.sh` -- Shared environment sourced by every setup script
   - `settings.json` -- Claude Code settings with hook definitions (SessionStart/End, PreCompact, Stop, Notification)
-  - `global-claude.md` -- Global `~/.claude/CLAUDE.md` deployed to server agents
+  - `docker-compose.yml` -- Docker Compose stack template (envsubst-expanded on deploy)
+  - `Caddyfile` -- Caddy reverse proxy config template
+  - `glances.service` -- Systemd unit for Glances monitoring
+  - `cron-self-host` -- Crontab entries for health checks, scheduled tasks, auto-update
+  - `docker-tailscale.conf` -- Systemd drop-in to wait for Tailscale before Docker starts
+  - `machines.json` -- Claude Code multi-machine coordination template
   - `hooks/` -- Shell scripts for Claude Code hooks and cron jobs
+  - `setup/` -- Modular setup scripts (system, user, docker, claude, etc.)
 - **`extras/`** -- Standalone utilities not part of the main setup flow
   - `hetzner-watch.sh` -- Polls Hetzner API for server type availability, sends ntfy alerts
 
+## Server Directory Structure
+
+```
+~/roost/                    Syncthing-synced root
+├── claude/                 Claude Code config (CLAUDE_CONFIG_DIR)
+│   ├── settings.json       Hooks, cleanup policy
+│   ├── hooks/              Hook scripts
+│   ├── skills/learned/     Learned skills
+│   ├── locks/              Session lock files
+│   ├── machines.json       Multi-machine coordination
+│   └── projects/           Session transcripts (auto-managed)
+├── memory/                 Structured notes (grepai-indexed)
+└── code/                   Project repositories
+```
+
 ## Hook Architecture
 
-Hooks are defined in `files/settings.json` and implemented in `files/hooks/`:
+Hooks are defined in `files/settings.json` and deployed to `~/roost/claude/hooks/`:
 
 | Hook Event | Script | Purpose |
 |---|---|---|
@@ -52,11 +75,11 @@ Cron-triggered hooks (not Claude Code events):
 
 ## Docker Compose Stack
 
-Generated by `02-setup.sh` into `~/services/docker-compose.yml`:
+Deployed from `files/docker-compose.yml` template into `~/services/docker-compose.yml`:
 - **Caddy** -- Reverse proxy bound to Tailscale IP (no public exposure)
 - **cloudflared** -- Cloudflare Tunnel, mounts `~/.cloudflared/` read-only
 - **ntfy** -- Push notifications on Tailscale IP port 2586
-- **Syncthing** -- File sync for `~/.claude/`, `~/memory/`, `~/Sync/`
+- **Syncthing** -- File sync for `~/roost/` (single volume)
 
 All services bind to `${TAILSCALE_IP}` (from `~/services/.env`) instead of `0.0.0.0`.
 

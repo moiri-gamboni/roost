@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/session-lock.sh"
+            "command": "~/roost/claude/hooks/session-lock.sh"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/session-unlock.sh"
+            "command": "~/roost/claude/hooks/session-unlock.sh"
           }
         ]
       }
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/reflect.sh"
+            "command": "~/roost/claude/hooks/reflect.sh"
           }
         ]
       }
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/auto-commit.sh"
+            "command": "~/roost/claude/hooks/auto-commit.sh"
           }
         ]
       }
@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/notify.sh"
+            "command": "~/roost/claude/hooks/notify.sh"
           }
         ]
       }
