@@ -28,7 +28,7 @@ Before starting, you will need:
 
 3. **Tailscale account** (free for personal use, https://tailscale.com/)
 
-4. **Claude Code subscription** (Max plan recommended)
+4. **Claude Code subscription**
 
 5. **On your laptop:**
    - `hcloud` CLI (https://github.com/hetznercloud/cli)
@@ -302,7 +302,7 @@ Rollback a btrfs snapshot: `snapper list`, then `snapper rollback <number>`, the
 | Cloudflare | Free |
 | Tailscale | Free (personal) |
 | ntfy | Free (self-hosted) |
-| Claude Code | Max subscription |
+| Claude Code | Subscription |
 | **Total** | **~11.50 EUR/mo** (+ Claude Code) |
 
 ## Troubleshooting
