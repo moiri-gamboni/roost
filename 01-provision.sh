@@ -57,29 +57,29 @@ echo ""
 
 # --- Cloud Firewall ---
 echo "[1/4] Configuring cloud firewall..."
-if hcloud firewall describe claude-croft-fw &>/dev/null; then
-    echo "  Firewall 'claude-croft-fw' already exists."
+if hcloud firewall describe claude-roost-fw &>/dev/null; then
+    echo "  Firewall 'claude-roost-fw' already exists."
 else
-    hcloud firewall create --name claude-croft-fw
+    hcloud firewall create --name claude-roost-fw
 
     # Tailscale WireGuard (permanent)
-    hcloud firewall add-rule claude-croft-fw \
+    hcloud firewall add-rule claude-roost-fw \
         --direction in --protocol udp --port 41641 \
         --source-ips 0.0.0.0/0 --source-ips ::/0 \
         --description "Tailscale WireGuard"
 
     # SSH (temporary, remove after Tailscale is confirmed working)
-    hcloud firewall add-rule claude-croft-fw \
+    hcloud firewall add-rule claude-roost-fw \
         --direction in --protocol tcp --port 22 \
         --source-ips 0.0.0.0/0 --source-ips ::/0 \
         --description "SSH (temporary)"
 
-    echo "  Firewall 'claude-croft-fw' created."
+    echo "  Firewall 'claude-roost-fw' created."
 fi
 
 # Attach firewall to server (idempotent; hcloud is silent if already attached)
 if [ "$EXISTING" = true ]; then
-    hcloud firewall apply-to-resource claude-croft-fw --type server --server "$SERVER_NAME" || true
+    hcloud firewall apply-to-resource claude-roost-fw --type server --server "$SERVER_NAME" || true
     echo "  Firewall attached to $SERVER_NAME."
 fi
 
@@ -103,7 +103,7 @@ else
         --type "$SERVER_TYPE"
         --image ubuntu-24.04
         --ssh-key "$SSH_KEY_NAME"
-        --firewall claude-croft-fw
+        --firewall claude-roost-fw
         --backups
     )
 
@@ -172,8 +172,8 @@ echo "  SSH ready (user: $SSH_USER)."
 # --- Copy setup files ---
 echo ""
 echo "[4/4] Copying setup files to server..."
-DEST="/root/claude-croft"
-[ "$SSH_USER" != "root" ] && DEST="/home/$SSH_USER/claude-croft"
+DEST="/root/claude-roost"
+[ "$SSH_USER" != "root" ] && DEST="/home/$SSH_USER/claude-roost"
 ssh "$SSH_USER@$SERVER_IP" "mkdir -p $DEST"
 scp -r "$SCRIPT_DIR/." "$SSH_USER@$SERVER_IP:$DEST/"
 echo "  Done."

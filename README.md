@@ -1,4 +1,4 @@
-# Claude Croft
+# Claude Roost
 
 Automated setup for a Hetzner server running Claude Code agents, web apps, and supporting infrastructure.
 
@@ -41,7 +41,7 @@ The `hcloud` CLI needs an API token before it can talk to your Hetzner project.
 Generate one in the Hetzner Console (Security > API Tokens, read+write), then:
 
 ```bash
-hcloud context create claude-croft
+hcloud context create claude-roost
 # Paste your API token when prompted
 ```
 
@@ -180,7 +180,7 @@ the configuration automatically.
 
 After confirming Tailscale SSH works (`ssh <username>@<tailscale-ip>`):
 
-1. Go to the Hetzner Console, edit the **claude-croft-fw** cloud firewall
+1. Go to the Hetzner Console, edit the **claude-roost-fw** cloud firewall
 2. **Delete** the SSH (port 22) rule
 3. Verify that `ssh root@<public-ip>` now times out
 4. Verify that `ssh <username>@<tailscale-ip>` still works
@@ -253,7 +253,7 @@ curl http://<tailscale-ip>:61208
    ssh -L 8384:localhost:8384 <username>@<tailscale-ip>
    ```
 2. Open http://localhost:8384 in your browser
-3. Install Syncthing on your laptop (`apt install syncthing` or equivalent)
+3. Install Syncthing on your laptop (https://syncthing.net/downloads/)
 4. Pair the devices using the device IDs shown in each Syncthing UI
 5. Share these folders (use matching paths on both machines):
    - `~/.claude/` (sessions, locks, skills, settings)
