@@ -35,6 +35,18 @@ Before starting, you will need:
    - SSH key pair added to Hetzner (see below)
    - Git
 
+### hcloud CLI setup
+
+The `hcloud` CLI needs an API token before it can talk to your Hetzner project.
+Generate one in the Hetzner Console (Security > API Tokens, read+write), then:
+
+```bash
+hcloud context create claude-croft
+# Paste your API token when prompted
+```
+
+This saves the token locally. You only need to do this once.
+
 ### SSH key setup
 
 The SSH key is only used for initial server access. Once Tailscale SSH is
