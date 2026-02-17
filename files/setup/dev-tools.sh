@@ -21,11 +21,12 @@ fi
 
 # --- Go ---
 
-if [ -d /usr/local/go ]; then
-    echo "  [-] Go already installed (already done)"
+GO_VERSION="1.23.6"
+if go version 2>/dev/null | grep -q "go${GO_VERSION}"; then
+    echo "  [-] Go ${GO_VERSION} already installed (already done)"
 else
-    GO_VERSION="1.23.6"
     echo "  [*] Installing Go $GO_VERSION..."
+    rm -rf /usr/local/go
     curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" | tar -C /usr/local -xzf -
     echo "  [+] Go $GO_VERSION installed"
 fi
@@ -48,6 +49,11 @@ fi
 if as_user "command -v gitleaks" &>/dev/null; then
     echo "  [-] gitleaks already installed (already done)"
 else
-    as_user "go install github.com/gitleaks/gitleaks/v8@latest"
-    echo "  [+] gitleaks installed"
+    mkdir -p "$HOME_DIR/bin"
+    GITLEAKS_VERSION=$(curl -fsSL https://api.github.com/repos/gitleaks/gitleaks/releases/latest | jq -r .tag_name | sed 's/^v//')
+    echo "  [*] Installing gitleaks $GITLEAKS_VERSION..."
+    curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+        | tar -C "$HOME_DIR/bin" -xzf - gitleaks
+    chown "$USERNAME:$USERNAME" "$HOME_DIR/bin/gitleaks"
+    echo "  [+] gitleaks $GITLEAKS_VERSION installed"
 fi

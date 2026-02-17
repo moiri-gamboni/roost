@@ -1,13 +1,17 @@
 #!/bin/bash
-# Install cloudflared binary (auth and tunnel creation handled by deploy.sh).
+# Install cloudflared via official Cloudflare apt repository.
+# Auth and tunnel creation handled by deploy.sh.
 source "$(dirname "$0")/../_setup-env.sh"
 
 if command -v cloudflared &>/dev/null; then
     echo "  [-] cloudflared already installed (already done)"
 else
-    curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb \
-        -o /tmp/cloudflared.deb
-    dpkg -i /tmp/cloudflared.deb
-    rm /tmp/cloudflared.deb
+    mkdir -p --mode=0755 /usr/share/keyrings
+    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg \
+        | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+    echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' \
+        | tee /etc/apt/sources.list.d/cloudflared.list
+    apt-get update
+    apt-get install -y cloudflared
     echo "  [+] cloudflared installed"
 fi
