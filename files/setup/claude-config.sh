@@ -22,6 +22,7 @@ for hook in session-lock session-unlock reflect notify auto-commit \
     cp "$REMOTE_DIR/files/hooks/${hook}.sh" "$CLAUDE_DIR/hooks/${hook}.sh"
     chmod +x "$CLAUDE_DIR/hooks/${hook}.sh"
 done
+cp "$REMOTE_DIR/files/hooks/reflect.md" "$CLAUDE_DIR/hooks/reflect.md"
 chown -R "$USERNAME:$USERNAME" "$CLAUDE_DIR/hooks"
 echo "  [+] All hook scripts installed"
 
