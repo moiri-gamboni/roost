@@ -8,16 +8,13 @@ as_user "uv tool install claude-code-tools" || \
     echo "  [*] claude-code-tools: install manually with 'uv tool install claude-code-tools'"
 
 # grepai (semantic search)
-if [ -f "$HOME_DIR/bin/grepai" ]; then
-    echo "  [-] grepai already built (already done)"
+if as_user "command -v grepai" &>/dev/null; then
+    echo "  [-] grepai already installed (already done)"
 else
-    echo "  [*] Building grepai..."
-    if [ ! -d "$HOME_DIR/services/grepai" ]; then
-        as_user "git clone https://github.com/yoanbernabeu/grepai $HOME_DIR/services/grepai"
-    fi
-    as_user "cd $HOME_DIR/services/grepai && go build -o $HOME_DIR/bin/grepai ." && \
-        echo "  [+] grepai built" || \
-        echo "  [*] grepai build failed (install Go, then retry)"
+    echo "  [*] Installing grepai..."
+    as_user "curl -sSL https://raw.githubusercontent.com/yoanbernabeu/grepai/main/install.sh | sh" && \
+        echo "  [+] grepai installed" || \
+        echo "  [*] grepai install failed (retry manually: curl -sSL https://raw.githubusercontent.com/yoanbernabeu/grepai/main/install.sh | sh)"
 fi
 
 # claude-code-transcripts

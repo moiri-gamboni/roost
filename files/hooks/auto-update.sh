@@ -33,8 +33,8 @@ if command -v snapper &>/dev/null && snapper list-configs 2>/dev/null | grep -q 
     log "Snapshot created"
 fi
 
-# Claude Code
-track "Claude Code" npm install -g @anthropic-ai/claude-code@latest
+# Claude Code (native installer auto-updates, but force check)
+track "Claude Code" claude update
 
 # claude-code-tools
 track "claude-code-tools" uv tool upgrade claude-code-tools
@@ -43,9 +43,7 @@ track "claude-code-tools" uv tool upgrade claude-code-tools
 track "Ollama models" ollama pull qwen3-embedding:0.6b
 
 # grepai
-if [ -d "$HOME/services/grepai" ]; then
-    track "grepai" bash -c "cd $HOME/services/grepai && git pull && go build -o $HOME/bin/grepai ."
-fi
+track "grepai" bash -c "curl -sSL https://raw.githubusercontent.com/yoanbernabeu/grepai/main/install.sh | sh"
 
 # claude-code-transcripts
 track "claude-code-transcripts" uv tool upgrade claude-code-transcripts

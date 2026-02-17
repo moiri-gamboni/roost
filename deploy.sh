@@ -478,7 +478,7 @@ ok "Docker configured (log rotation, IPv6 disabled, waits for Tailscale)"
 
 section "Development Tools"
 remote_script "setup/dev-tools.sh"
-ok "fnm + Node.js 22, Go, uv, gitleaks ready"
+ok "fnm + Node.js 22, Go, uv, gitleaks installed"
 
 # ============================================
 # Ollama
@@ -609,7 +609,7 @@ ok "Glances running at http://$TAILSCALE_IP:61208"
 
 section "Cron Jobs + grepai Index"
 remote_script "setup/cron.sh"
-ok "Cron jobs configured and grepai index complete"
+ok "Cron jobs configured and grepai initialized"
 
 # ============================================
 # Done
