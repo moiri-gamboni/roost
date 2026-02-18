@@ -1,18 +1,15 @@
 #!/bin/bash
-INPUT=$(cat)
-SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
+source "$(dirname "$0")/_hook-env.sh"
+
+SESSION_ID=$(hook_json '.session_id')
 [ -z "$SESSION_ID" ] && exit 0
 
 LOCKDIR="$CLAUDE_CONFIG_DIR/locks"
 mkdir -p "$LOCKDIR"
 LOCKFILE="$LOCKDIR/${SESSION_ID}.lock"
 
-# Warn if lock exists from another machine
-if [ -f "$LOCKFILE" ]; then
-    OWNER=$(jq -r '.hostname // empty' "$LOCKFILE")
-    [ -n "$OWNER" ] && [ "$OWNER" != "$(hostname)" ] && \
-        echo "WARNING: Session may be active on $OWNER. Use aichat search for safe handoff."
-fi
+# Write lock metadata to temp file first, then atomic replace
+TMPLOCK=$(mktemp "$LOCKDIR/.lock-XXXXXX")
 
 jq -n \
     --arg hostname "$(hostname)" \
@@ -24,4 +21,14 @@ jq -n \
     --arg started "$(date -Iseconds)" \
     '{hostname: $hostname, tmux_session: $tmux_session, tmux_window: $tmux_window,
       tmux_pane: $tmux_pane, pid: ($pid | tonumber), cwd: $cwd, started: $started}' \
-    > "$LOCKFILE"
+    > "$TMPLOCK"
+
+# Warn if lock exists from another machine (best-effort, read before atomic replace)
+if [ -f "$LOCKFILE" ]; then
+    OWNER=$(jq -r '.hostname // empty' "$LOCKFILE" 2>/dev/null)
+    [ -n "$OWNER" ] && [ "$OWNER" != "$(hostname)" ] && \
+        echo "WARNING: Session may be active on $OWNER. Use aichat search for safe handoff."
+fi
+
+# Atomic replace (same filesystem guarantees rename(2))
+mv "$TMPLOCK" "$LOCKFILE"

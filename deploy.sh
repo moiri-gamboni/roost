@@ -6,7 +6,8 @@
 # with a single command that handles everything over SSH.
 #
 # Prerequisites:
-#   - hcloud CLI installed (https://github.com/hetznercloud/cli)
+#   - hcloud CLI installed and authenticated (https://github.com/hetznercloud/cli)
+#     Run: hcloud context create <name>
 #   - .env filled in (copy from .env.example)
 #
 # Usage: ./deploy.sh
@@ -29,17 +30,21 @@ echo "Log: $LOGFILE"
 # Validation
 # ============================================
 
-for var in HETZNER_API_TOKEN SERVER_NAME USERNAME DOMAIN; do
+for var in SERVER_NAME USERNAME DOMAIN; do
     if [ -z "${!var:-}" ]; then
         echo "Error: $var is not set in .env"
         exit 1
     fi
 done
 
-export HCLOUD_TOKEN="$HETZNER_API_TOKEN"
-
 if ! command -v hcloud &>/dev/null; then
     echo "Error: hcloud CLI not found. Install from https://github.com/hetznercloud/cli"
+    exit 1
+fi
+
+if ! hcloud server-type list -o noheader >/dev/null 2>&1; then
+    echo "Error: hcloud CLI not authenticated."
+    echo "Run: hcloud context create <name>"
     exit 1
 fi
 
@@ -96,11 +101,17 @@ remote_script() {
 }
 
 # Poll SSH until available.
-#   $1 -- ssh options array name (default: SSH_OPTS)
+#   $1 -- mode: "normal" (default) or "rescue"
 #   $2 -- max retries (default: 30, 5s apart = 150s)
 wait_for_ssh() {
-    local -n opts="${1:-SSH_OPTS}"
+    local mode="${1:-normal}"
     local max="${2:-30}"
+    local -a opts
+    if [ "$mode" = "rescue" ]; then
+        opts=("${SSH_RESCUE_OPTS[@]}")
+    else
+        opts=("${SSH_OPTS[@]}")
+    fi
     local i
 
     for i in $(seq 1 "$max"); do
@@ -137,6 +148,17 @@ section() {
 info() { echo "  [*] $1"; }
 ok()   { echo "  [+] $1"; }
 skip() { echo "  [-] $1 (already done)"; }
+
+# Sync project files to server, excluding non-deploy artifacts
+sync_files() {
+    rsync -a \
+        --exclude='.git' \
+        --exclude='logs' \
+        --exclude='repomix-output.xml' \
+        --exclude='plan-*.md' \
+        -e "ssh ${SSH_OPTS[*]}" \
+        "$SCRIPT_DIR/" "$SSH_USER@$SERVER_IP:$REMOTE_DIR/"
+}
 
 # ============================================
 # Deploy sections follow below
@@ -263,10 +285,10 @@ info "Waiting for SSH access..."
 SSH_USER="root"
 
 # Try root first via wait_for_ssh; if that fails on an existing server, try USERNAME
-if ! wait_for_ssh SSH_OPTS 30; then
+if ! wait_for_ssh normal 30; then
     if [ "$EXISTING" = true ] && [ -n "${USERNAME:-}" ]; then
         echo "  Root login failed, trying $USERNAME..."
-        # Cannot reuse wait_for_ssh because it hardcodes root@ -- inline the check
+        # wait_for_ssh uses SSH_USER which is still root; inline the check for USERNAME
         if ssh "${SSH_OPTS[@]}" "$USERNAME@$SERVER_IP" true 2>/dev/null; then
             SSH_USER="$USERNAME"
         else
@@ -292,7 +314,7 @@ fi
 
 info "Copying setup files to server..."
 ssh "${SSH_OPTS[@]}" "$SSH_USER@$SERVER_IP" "mkdir -p $REMOTE_DIR"
-scp -r "${SSH_OPTS[@]}" "$SCRIPT_DIR/." "$SSH_USER@$SERVER_IP:$REMOTE_DIR/"
+sync_files
 ok "Files copied to $REMOTE_DIR"
 
 # ============================================
@@ -319,7 +341,7 @@ else
 
     info "Waiting for rescue system SSH..."
     SSH_USER="root"
-    wait_for_ssh SSH_RESCUE_OPTS 40
+    wait_for_ssh rescue 40
 
     info "Detecting ext4 partition..."
     DISK=$(remote_rescue "blkid -t TYPE=ext4 -o device")
@@ -349,12 +371,12 @@ else
     ROOT_CMD=""
     REMOTE_DIR="/root/claude-roost"
 
-    wait_for_ssh SSH_OPTS 40
+    wait_for_ssh normal 40
 
     # Re-copy files (preserved through conversion, but ensures latest versions)
     info "Re-copying setup files..."
     remote "mkdir -p $REMOTE_DIR"
-    scp -r "${SSH_OPTS[@]}" "$SCRIPT_DIR/." "$SSH_USER@$SERVER_IP:$REMOTE_DIR/"
+    sync_files
 
     ok "btrfs conversion complete"
 fi
@@ -396,7 +418,7 @@ if [ "$SSH_USER" = "root" ]; then
 
     # Copy setup files to user's home so scripts can find _setup-env.sh
     remote "sudo mkdir -p $REMOTE_DIR"
-    scp -r "${SSH_OPTS[@]}" "$SCRIPT_DIR/." "$SSH_USER@$SERVER_IP:$REMOTE_DIR/"
+    sync_files
     remote "sudo chown -R $USERNAME:$USERNAME $REMOTE_DIR"
 
     ok "Now operating as $SSH_USER"
@@ -411,10 +433,10 @@ remote_script "setup/ipv6-disable.sh"
 ok "IPv6 configuration applied"
 
 # ============================================
-# Swap (4GB)
+# Swap
 # ============================================
 
-section "Swap (4GB)"
+section "Swap"
 remote_script "setup/swap.sh"
 ok "Swap configured"
 
@@ -460,17 +482,26 @@ info "Tailscale IP: $TAILSCALE_IP"
 section "Firewall (UFW)"
 remote_script "setup/ufw.sh"
 ok "UFW configured"
-echo ""
-info "REMINDER: After confirming Tailscale SSH works, remove the temporary"
-info "SSH (port 22) rule from the Hetzner Cloud Firewall via the web console."
 
-# ============================================
-# Docker
-# ============================================
-
-section "Docker"
-remote_script "setup/docker.sh"
-ok "Docker configured (log rotation, IPv6 disabled, waits for Tailscale)"
+# Remove temporary SSH rule from Hetzner Cloud Firewall
+info "Verifying Tailscale SSH works before removing temporary SSH rule..."
+if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$USERNAME@$TAILSCALE_IP" true 2>/dev/null; then
+    # Check if the temporary SSH rule exists
+    RULE_COUNT=$(hcloud firewall describe claude-roost-fw -o json \
+        | jq '[.rules[] | select(.direction=="in" and .protocol=="tcp" and .port=="22")] | length')
+    if [ "${RULE_COUNT:-0}" -gt 0 ]; then
+        hcloud firewall delete-rule claude-roost-fw \
+            --direction in --protocol tcp --port 22 \
+            --source-ips 0.0.0.0/0 --source-ips ::/0 && \
+            ok "Temporary SSH firewall rule removed" || \
+            info "Could not remove SSH rule automatically. Remove it manually from the Hetzner console."
+    else
+        skip "No temporary SSH rule found"
+    fi
+else
+    info "Could not verify Tailscale SSH. Remove the temporary SSH rule manually:"
+    info "  hcloud firewall delete-rule claude-roost-fw --direction in --protocol tcp --port 22 --source-ips 0.0.0.0/0 --source-ips ::/0"
+fi
 
 # ============================================
 # Development Tools (fnm, Node.js, Go, uv, gitleaks)
@@ -522,12 +553,28 @@ remote_script "setup/claude-config.sh"
 ok "Claude Code config, hooks, and dangerous command blocker installed"
 
 # ============================================
-# Docker Compose Stack + Start Services
+# Caddy (Reverse Proxy)
 # ============================================
 
-section "Docker Compose Stack"
-remote_script "setup/docker-compose.sh" "$TAILSCALE_IP"
-ok "Docker Compose stack written and services started"
+section "Caddy"
+remote_script "setup/caddy.sh" "$TAILSCALE_IP"
+ok "Caddy running (bound to $TAILSCALE_IP)"
+
+# ============================================
+# ntfy (Push Notifications)
+# ============================================
+
+section "ntfy"
+remote_script "setup/ntfy.sh"
+ok "ntfy running on localhost:2586"
+
+# ============================================
+# Syncthing (File Sync)
+# ============================================
+
+section "Syncthing"
+remote_script "setup/syncthing.sh" "$TAILSCALE_IP"
+ok "Syncthing running"
 
 # ============================================
 # Cloudflare Tunnel
@@ -545,7 +592,7 @@ else
     info "Cloudflare Tunnel requires browser authentication."
     info "A URL will appear. Open it in your browser and select your domain ($DOMAIN)."
     echo ""
-    remote_tty "$ROOT_CMD sudo -u $USERNAME cloudflared tunnel login" || {
+    remote_tty "cloudflared tunnel login" || {
         info "cloudflared login failed or was skipped. You can run it later:"
         info "  su - $USERNAME -c 'cloudflared tunnel login'"
     }
@@ -553,33 +600,43 @@ fi
 
 # Create tunnel
 TUNNEL_EXISTS=false
-if remote "sudo -u $USERNAME cloudflared tunnel list" 2>/dev/null | grep -q "${CLOUDFLARE_TUNNEL_NAME:-claude-roost}"; then
+if remote "cloudflared tunnel list" 2>/dev/null | grep -q "${CLOUDFLARE_TUNNEL_NAME:-claude-roost}"; then
     skip "Tunnel '${CLOUDFLARE_TUNNEL_NAME:-claude-roost}' already exists"
     TUNNEL_EXISTS=true
 elif remote "test -f /home/$USERNAME/.cloudflared/cert.pem"; then
-    remote "sudo -u $USERNAME cloudflared tunnel create ${CLOUDFLARE_TUNNEL_NAME:-claude-roost}"
+    remote "cloudflared tunnel create ${CLOUDFLARE_TUNNEL_NAME:-claude-roost}"
     TUNNEL_EXISTS=true
     ok "Tunnel '${CLOUDFLARE_TUNNEL_NAME:-claude-roost}' created"
 fi
 
 # Write tunnel config (runtime-generated because it needs TUNNEL_ID)
 if [ "$TUNNEL_EXISTS" = true ]; then
-    TUNNEL_ID=$(remote "sudo -u $USERNAME cloudflared tunnel list -o json" | jq -r ".[] | select(.name == \"${CLOUDFLARE_TUNNEL_NAME:-claude-roost}\") | .id" || echo "")
+    TUNNEL_ID=$(remote "cloudflared tunnel list -o json" | jq -r ".[] | select(.name == \"${CLOUDFLARE_TUNNEL_NAME:-claude-roost}\") | .id" || echo "")
 
     if [ -n "$TUNNEL_ID" ]; then
-        remote "cat > /tmp/_cf_config.yml" <<CFCONFIG
-tunnel: $TUNNEL_ID
-credentials-file: /etc/cloudflared/${TUNNEL_ID}.json
-
-ingress:
-  # Public apps (add entries here, then run: cloudflared tunnel route dns ${CLOUDFLARE_TUNNEL_NAME:-claude-roost} <hostname>)
-  # - hostname: app.${DOMAIN}
-  #   service: http://caddy:80
-  - service: http_status:404
-CFCONFIG
+        export TUNNEL_ID
+        export TUNNEL_NAME="${CLOUDFLARE_TUNNEL_NAME:-claude-roost}"
+        envsubst '$TUNNEL_ID $TUNNEL_NAME $DOMAIN' \
+            < "$SCRIPT_DIR/files/cloudflare-config.yml" \
+            | remote "cat > /tmp/_cf_config.yml"
         remote "$ROOT_CMD mv /tmp/_cf_config.yml /home/$USERNAME/.cloudflared/config.yml"
         remote "$ROOT_CMD chown -R $USERNAME:$USERNAME /home/$USERNAME/.cloudflared"
         ok "Tunnel config written (ID: $TUNNEL_ID)"
+
+        # Copy credentials and config to /etc/cloudflared/ for the system service
+        remote "$ROOT_CMD mkdir -p /etc/cloudflared"
+        remote "$ROOT_CMD cp /home/$USERNAME/.cloudflared/${TUNNEL_ID}.json /etc/cloudflared/"
+        remote "$ROOT_CMD cp /home/$USERNAME/.cloudflared/config.yml /etc/cloudflared/"
+        remote "$ROOT_CMD chmod 700 /etc/cloudflared"
+        remote "$ROOT_CMD chmod 600 /etc/cloudflared/${TUNNEL_ID}.json /etc/cloudflared/config.yml"
+
+        # Install cloudflared as a systemd service (if not already installed)
+        if ! remote "$ROOT_CMD systemctl is-active cloudflared" &>/dev/null; then
+            remote "$ROOT_CMD cloudflared service install"
+            remote "$ROOT_CMD systemctl enable cloudflared"
+        fi
+        remote "$ROOT_CMD systemctl restart cloudflared"
+        ok "cloudflared running as systemd service"
     else
         info "Could not determine tunnel ID. Write ~/.cloudflared/config.yml manually."
     fi
@@ -604,6 +661,14 @@ remote_script "setup/glances.sh"
 ok "Glances running at http://$TAILSCALE_IP:61208"
 
 # ============================================
+# RAM Monitor
+# ============================================
+
+section "RAM Monitor"
+remote_script "setup/ram-monitor.sh"
+ok "RAM monitor checking every 10s (2GB threshold)"
+
+# ============================================
 # Cron Jobs + grepai Index
 # ============================================
 
@@ -623,37 +688,33 @@ echo ""
 echo "  Tailscale IP:  $TAILSCALE_IP"
 echo "  SSH:           ssh $USERNAME@$TAILSCALE_IP"
 echo "  Glances:       http://$TAILSCALE_IP:61208"
-echo "  ntfy test:     curl -d 'hello' http://$TAILSCALE_IP:2586/claude-$USERNAME"
+echo "  ntfy test:     curl -H 'Authorization: Bearer \$(cat ~/services/.ntfy-token)' -d 'hello' http://localhost:2586/claude-$USERNAME"
 echo "  Syncthing UI:  ssh -L 8384:localhost:8384 $USERNAME@$TAILSCALE_IP"
 echo "                 then open http://localhost:8384"
 echo ""
 echo "  Remaining manual steps:"
 echo ""
-echo "  1. Remove the temporary SSH rule from the Hetzner Cloud Firewall"
-echo "     (after confirming Tailscale SSH works)."
-echo ""
-echo "  2. Authenticate Claude Code (if not done during setup):"
+echo "  1. Authenticate Claude Code (if not done during setup):"
 echo "       ssh $USERNAME@$TAILSCALE_IP"
 echo "       claude"
 echo ""
-echo "  3. Install Claude Code plugins:"
+echo "  2. Install Claude Code plugins:"
 echo "       claude"
 echo "       /plugin marketplace add moiri-gamboni/praxis"
 echo "       /plugin install praxis@praxis-marketplace"
 echo "       /plugin install ralph@claude-plugins-official"
 echo ""
-echo "  4. Configure Syncthing:"
+echo "  3. Configure Syncthing:"
 echo "       Pair with your laptop via the web UI."
 echo "       Share ~/roost/ (sessions, memory, code -- all synced)"
 echo "       Add .stignore: node_modules, __pycache__, .venv"
 echo ""
-echo "  5. Add your first app:"
-echo "       Edit ~/services/docker-compose.yml"
-echo "       Edit ~/services/Caddyfile"
-echo "       Edit ~/.cloudflared/config.yml"
-echo "       cd ~/services && docker compose up -d"
-echo "       cloudflared tunnel route dns ${CLOUDFLARE_TUNNEL_NAME:-claude-roost} app.$DOMAIN"
+echo "  4. Add your first app:"
+echo "       Add a Caddy entry:  sudo nano /etc/caddy/Caddyfile"
+echo "       Add a Cloudflare ingress rule:  nano ~/.cloudflared/config.yml"
+echo "       Reload Caddy:  sudo systemctl reload caddy"
+echo "       Route DNS:  cloudflared tunnel route dns ${CLOUDFLARE_TUNNEL_NAME:-claude-roost} app.$DOMAIN"
 echo ""
-echo "  6. Phone setup: install Tailscale, Termux, ntfy from F-Droid."
+echo "  5. Phone setup: install Tailscale, Termux, ntfy from F-Droid."
 echo "     See README for details."
 echo ""

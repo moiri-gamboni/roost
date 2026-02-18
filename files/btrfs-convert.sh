@@ -28,6 +28,7 @@ btrfs subvolume create /mnt/@rootfs
 
 echo "[4/6] Moving files into subvolume..."
 cd /mnt
+shopt -s dotglob
 for item in *; do
     [ "$item" = "@rootfs" ] && continue
     mv "$item" @rootfs/

@@ -1,8 +1,9 @@
 {
     auto_https off
+    default_bind $TAILSCALE_IP
 }
 
 # Add app entries here. Example:
 # http://myapp.$DOMAIN {
-#     reverse_proxy myapp:3000
+#     reverse_proxy localhost:3000
 # }

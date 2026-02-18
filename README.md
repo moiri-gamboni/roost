@@ -15,6 +15,8 @@ After running the deploy script you will have:
 - Push notifications to your phone (ntfy)
 - File sync between server and laptop (Syncthing)
 - System monitoring (Glances) with automated health alerts
+- RAM monitoring with per-process alerts (2GB threshold)
+- Syncthing conflict file detection and notification
 - Scheduled Claude Code tasks via cron
 
 ## Prerequisites
@@ -84,9 +86,15 @@ extras/                 Optional standalone utilities
 
 ### Step 1: Configure
 
+Configure `hcloud` if you haven't already:
+
+```bash
+hcloud context create claude-roost
+# Paste your Hetzner API token when prompted
+```
+
 Edit `.env` and fill in:
 
-- `HETZNER_API_TOKEN` (from the Hetzner console)
 - `SSH_KEY_NAME` (must match the name in Hetzner's SSH key list)
 - `USERNAME` (the non-root user to create on the server)
 - `DOMAIN` (your Cloudflare-managed domain)
@@ -129,9 +137,11 @@ The script runs `cloudflared tunnel login`, which prints a URL. Open it in your
 browser and select your domain. The script then creates the tunnel and writes
 the configuration automatically.
 
-### Step 3: Remove Temporary SSH Access
+### Step 3: Verify SSH Access
 
-After confirming Tailscale SSH works (`ssh <username>@<tailscale-ip>`):
+The deploy script automatically removes the temporary SSH firewall rule after
+verifying Tailscale SSH works. If it could not verify (e.g. Tailscale was not
+ready), remove it manually:
 
 1. Go to the Hetzner Console, edit the **claude-roost-fw** cloud firewall
 2. **Delete** the SSH (port 22) rule
@@ -165,38 +175,41 @@ btrfs filesystem show /
 # Tailscale
 tailscale status
 
-# Docker
-docker ps
+# Native services
+systemctl status caddy ntfy syncthing@<username> cloudflared
 
 # Ollama
 curl http://localhost:11434/api/tags
 
 # ntfy
-curl -d "test notification" http://localhost:2586/claude-<username>
+curl -H "Authorization: Bearer $(cat ~/services/.ntfy-token)" \
+  -d "test notification" http://localhost:2586/claude-<username>
 
 # Glances
 curl http://<tailscale-ip>:61208
+
+# RAM monitor
+systemctl status ram-monitor.timer
 ```
 
 **Add your first web app:**
 
-1. Create the app directory and Dockerfile under `~/services/apps/<appname>/`
-2. Add the service to `~/services/docker-compose.yml`
-3. Add a Caddy entry to `~/services/Caddyfile`:
+1. Run your app as a systemd service or standalone process listening on localhost
+2. Add a Caddy entry to `/etc/caddy/Caddyfile`:
    ```
    http://appname.yourdomain.dev {
-       reverse_proxy appname:3000
+       reverse_proxy localhost:3000
    }
    ```
-4. Add an ingress rule to `~/.cloudflared/config.yml`:
+3. Add an ingress rule to `/etc/cloudflared/config.yml`:
    ```yaml
    - hostname: appname.yourdomain.dev
-     service: http://caddy:80
+     service: http://localhost:80
    ```
-5. Route DNS and restart:
+4. Route DNS and reload:
    ```bash
    cloudflared tunnel route dns <tunnel-name> appname.yourdomain.dev
-   cd ~/services && docker compose up -d
+   sudo systemctl reload caddy
    ```
 
 #### Configure Syncthing:
@@ -217,7 +230,23 @@ curl http://<tailscale-ip>:61208
    ```
 7. Enable staggered file versioning on code workspaces:
    - Clean interval: 3600, Max age: 604800
-8. Update `~/roost/claude/machines.json` with Syncthing device IDs and Tailscale hostnames
+8. Update `~/roost/claude/machines.json` with Syncthing device IDs and Tailscale hostnames:
+   ```json
+   {
+     "devices": {
+       "AAAAAAA-BBBBBBB-CCCCCCC-DDDDDDD-EEEEEEE-FFFFFFF-GGGGGGG-HHHHHHH": {
+         "hostname": "server",
+         "label": "Hetzner CX43"
+       },
+       "IIIIIII-JJJJJJJ-KKKKKKK-LLLLLLL-MMMMMMM-NNNNNNN-OOOOOOO-PPPPPPP": {
+         "hostname": "laptop",
+         "label": "MacBook Pro"
+       }
+     }
+   }
+   ```
+   This file is used by session lock files to identify which machine holds active
+   Claude Code sessions. Find device IDs in the Syncthing web UI under Actions > Show ID.
 
 #### Laptop setup:
 
@@ -353,18 +382,19 @@ Everything survives the resize.
 ## Troubleshooting
 
 **Tailscale IP changed:**
-Update `~/services/.env`, recreate containers (`docker compose up -d`),
-restart Glances (`sudo systemctl restart glances`), update phone ntfy config.
+Update the Caddyfile (`sudo nano /etc/caddy/Caddyfile`), then reload Caddy
+(`sudo systemctl reload caddy`). Restart Glances (`sudo systemctl restart glances`).
+Update Syncthing listen address via the REST API or re-run `deploy.sh`.
 
 **Cloudflare Tunnel not working:**
-Check `docker logs` for the cloudflared container.
-Verify `~/.cloudflared/config.yml` has the correct tunnel ID and credentials path.
+Check `journalctl -u cloudflared`.
+Verify `/etc/cloudflared/config.yml` has the correct tunnel ID and credentials path.
 Make sure DNS is routed: `cloudflared tunnel route dns <name> <hostname>`.
 
-**Docker services not starting after reboot:**
-If Tailscale needs re-authentication (key expiry), Docker will wait 60 seconds
-then start without a Tailscale IP. Services bound to the Tailscale IP will
-fail. Re-authenticate Tailscale (`tailscale up --ssh`), then restart Docker.
+**Services not starting after reboot:**
+If Tailscale needs re-authentication (key expiry), Caddy and Syncthing will wait
+60 seconds then fail. Re-authenticate Tailscale (`tailscale up --ssh`), then
+restart the failed services (`sudo systemctl restart caddy syncthing@<username>`).
 
 **Claude Code OAuth expired:**
 Scheduled tasks and headless `claude -p` will fail. The health check will

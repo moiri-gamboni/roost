@@ -1,0 +1,9 @@
+[Unit]
+Description=Check for high RAM processes every 10s
+
+[Timer]
+OnBootSec=10
+OnUnitActiveSec=10
+
+[Install]
+WantedBy=timers.target

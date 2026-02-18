@@ -17,14 +17,24 @@ echo "  [+] Claude Code configuration written"
 
 # --- Hook scripts ---
 
+# Remove immutable flags if set (allows re-deploy after harden-hooks.sh)
+chattr -i "$CLAUDE_DIR/hooks/"*.sh "$CLAUDE_DIR/hooks/"*.md "$CLAUDE_DIR/settings.json" 2>/dev/null || true
+
+# Install shared hook library
+cp "$REMOTE_DIR/files/hooks/_hook-env.sh" "$CLAUDE_DIR/hooks/_hook-env.sh"
+
 for hook in session-lock session-unlock reflect notify auto-commit \
-            health-check scheduled-task run-scheduled-task auto-update; do
+            health-check scheduled-task run-scheduled-task auto-update \
+            conflict-check ram-monitor; do
     cp "$REMOTE_DIR/files/hooks/${hook}.sh" "$CLAUDE_DIR/hooks/${hook}.sh"
     chmod +x "$CLAUDE_DIR/hooks/${hook}.sh"
 done
 cp "$REMOTE_DIR/files/hooks/reflect.md" "$CLAUDE_DIR/hooks/reflect.md"
 chown -R "$USERNAME:$USERNAME" "$CLAUDE_DIR/hooks"
-echo "  [+] All hook scripts installed"
+ok "All hook scripts installed"
+
+info "To make hooks immutable (protects against Syncthing tampering):"
+info "  sudo bash $REMOTE_DIR/files/setup/harden-hooks.sh"
 
 # --- Dangerous command blocker ---
 

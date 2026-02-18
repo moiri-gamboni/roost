@@ -1,0 +1,7 @@
+[Unit]
+Description=Check for processes using excessive RAM
+
+[Service]
+Type=oneshot
+User=$USERNAME
+ExecStart=/bin/bash $HOME_DIR/roost/claude/hooks/ram-monitor.sh

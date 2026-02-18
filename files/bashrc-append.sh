@@ -19,10 +19,12 @@ export PATH=$PATH:~/bin:~/.local/bin
 # Agent management helpers
 agent_start() {
     local name="$1" project="$2" task="$3"
+    local escaped_task
+    escaped_task=$(printf '%q' "$task")
     tmux new-window -n "$name" -d \
-        "cd $project && claude -p '$task'; \
-         curl -s http://localhost:2586/claude-\$(whoami) \
-           -H 'Title: $name done' -d 'Agent $name completed'"
+        "cd $project && claude -p $escaped_task; \
+         source ~/roost/claude/hooks/_hook-env.sh < /dev/null && \
+         ntfy_send -t '$name done' 'Agent $name completed'"
 }
 agent_list() { tmux list-windows -F '#{window_name} #{window_activity}'; }
 agent_kill() { tmux send-keys -t "$1" C-c; }

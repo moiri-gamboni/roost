@@ -12,11 +12,19 @@ source "$REMOTE_DIR/.env"
 
 HOME_DIR="/home/$USERNAME"
 
+# User environment setup, sourced by as_user() before running commands.
+_AS_USER_ENV='
+export PATH="$PATH:/usr/local/go/bin:$HOME/go/bin:$HOME/.local/bin:$HOME/bin"
+export FNM_DIR="$HOME/.local/share/fnm"
+if [ -x "$FNM_DIR/fnm" ]; then eval "$($FNM_DIR/fnm env --shell bash)"; fi
+'
+
 as_user() {
-    sudo -u "$USERNAME" bash -c "
-        export PATH=\"\$PATH:/usr/local/go/bin:\$HOME/go/bin:\$HOME/.local/bin:\$HOME/bin\"
-        export FNM_DIR=\"\$HOME/.local/share/fnm\"
-        if [ -x \"\$FNM_DIR/fnm\" ]; then eval \"\$(\$FNM_DIR/fnm env --shell bash)\"; fi
-        $1
-    "
+    sudo -u "$USERNAME" bash -c "${_AS_USER_ENV}"'
+eval "$@"' _ "$@"
 }
+
+# --- Logging helpers (shared with deploy.sh) ---
+info() { echo "  [*] $1"; }
+ok()   { echo "  [+] $1"; }
+skip() { echo "  [-] $1 (already done)"; }

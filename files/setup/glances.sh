@@ -3,10 +3,14 @@
 source "$(dirname "$0")/../_setup-env.sh"
 
 export USERNAME
-envsubst '$USERNAME' \
-    < "$REMOTE_DIR/files/glances.service" \
-    > /etc/systemd/system/glances.service
+RENDERED=$(envsubst '$USERNAME' < "$REMOTE_DIR/files/glances.service")
+TARGET="/etc/systemd/system/glances.service"
 
-systemctl daemon-reload
-systemctl enable --now glances
-echo "  [+] Glances running"
+if [ -f "$TARGET" ] && [ "$(cat "$TARGET")" = "$RENDERED" ]; then
+    skip "Glances service already configured"
+else
+    echo "$RENDERED" > "$TARGET"
+    systemctl daemon-reload
+    systemctl enable --now glances
+    ok "Glances running"
+fi
