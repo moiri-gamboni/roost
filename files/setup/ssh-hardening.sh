@@ -1,9 +1,20 @@
 #!/bin/bash
-# Disable password authentication and root login.
+# SSH hardening via drop-in config file.
 source "$(dirname "$0")/../_setup-env.sh"
 
-sed -i 's/#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-sed -i 's/#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+DROPIN="/etc/ssh/sshd_config.d/99-hardening.conf"
+
+cat > "$DROPIN" << 'EOF'
+PasswordAuthentication no
+PermitRootLogin no
+ChallengeResponseAuthentication no
+KbdInteractiveAuthentication no
+X11Forwarding no
+MaxAuthTries 3
+LoginGraceTime 30
+EOF
+
+chmod 644 "$DROPIN"
 systemctl restart sshd
 
-echo "  [+] Password auth disabled, root login disabled"
+ok "SSH hardened via $DROPIN"

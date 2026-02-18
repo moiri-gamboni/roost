@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Claude Roost is a single deploy script that provisions and configures a Hetzner Cloud server for running Claude Code agents, web apps, and supporting infrastructure. The target is a hardened Ubuntu 24.04 server with btrfs snapshots, Tailscale (private networking), Cloudflare Tunnel (public web apps), and a Docker Compose stack for services.
+Claude Roost is a single deploy script that provisions and configures a Hetzner Cloud server for running Claude Code agents, web apps, and supporting infrastructure. The target is a hardened Ubuntu 24.04 server with btrfs snapshots, Tailscale (private networking), Cloudflare Tunnel (public web apps), and native systemd services.
 
 ## Script Execution
 
@@ -30,14 +30,19 @@ The script sources `.env` for configuration and logs to `logs/` (gitignored).
 - **`files/`** -- Config files and templates deployed to the server
   - `_setup-env.sh` -- Shared environment sourced by every setup script
   - `settings.json` -- Claude Code settings with hook definitions (SessionStart/End, PreCompact, Stop, Notification)
-  - `docker-compose.yml` -- Docker Compose stack template (envsubst-expanded on deploy)
-  - `Caddyfile` -- Caddy reverse proxy config template
+  - `Caddyfile` -- Caddy reverse proxy config template (envsubst-expanded on deploy)
+  - `caddy-tailscale.conf` -- Systemd drop-in for Caddy to wait for Tailscale
+  - `cloudflare-config.yml` -- Cloudflare Tunnel config template (envsubst-expanded on deploy)
+  - `ntfy-server.yml` -- ntfy server configuration
+  - `syncthing-tailscale.conf` -- Systemd drop-in for Syncthing to wait for Tailscale
   - `glances.service` -- Systemd unit for Glances monitoring
+  - `ram-monitor.service` / `ram-monitor.timer` -- Systemd units for per-process RAM alerting (10s interval)
   - `cron-self-host` -- Crontab entries for health checks, scheduled tasks, auto-update
-  - `docker-tailscale.conf` -- Systemd drop-in to wait for Tailscale before Docker starts
   - `machines.json` -- Claude Code multi-machine coordination template
   - `hooks/` -- Shell scripts for Claude Code hooks and cron jobs
-  - `setup/` -- Modular setup scripts (system, user, docker, claude, etc.)
+    - `_hook-env.sh` -- Shared library: JSON input parsing (`hook_json`), ntfy helpers, rate limiting, logging
+    - `reflect.md` -- Prompt injected by `reflect.sh` before context compaction
+  - `setup/` -- Modular setup scripts (system, user, caddy, ntfy, syncthing, claude, etc.)
 - **`extras/`** -- Standalone utilities not part of the main setup flow
   - `hetzner-watch.sh` -- Polls Hetzner API for server type availability, sends ntfy alerts
 
@@ -68,27 +73,35 @@ Hooks are defined in `files/settings.json` and deployed to `~/roost/claude/hooks
 | Stop | `auto-commit.sh` | Stages tracked + new files, runs gitleaks, commits with session ID |
 | Notification | `notify.sh` | Sends push notifications via local ntfy (with rate limiting and priority levels) |
 
+All hook scripts source `_hook-env.sh` which provides `hook_json()` for parsing Claude Code's JSON input, `ntfy_send()` for notifications with fallback logging, and `rate_limit_ok()` to prevent notification floods.
+
 Cron-triggered hooks (not Claude Code events):
-- `health-check.sh` -- Checks Ollama, grepai, disk, swap, memory; alerts via ntfy
+- `health-check.sh` -- Checks Ollama, Caddy, ntfy, Syncthing, Tailscale, cloudflared, disk, inodes, swap; alerts via ntfy
 - `scheduled-task.sh` / `run-scheduled-task.sh` -- Runs Claude Code tasks in tmux windows
-- `auto-update.sh` -- Weekly updates with btrfs snapshot before, ntfy summary after
+- `auto-update.sh` -- Weekly updates with btrfs snapshot before, ntfy summary after (7-day cooldown, major version guard)
+- `conflict-check.sh` -- Detects Syncthing conflict files in `~/roost/`, alerts via ntfy
 
-## Docker Compose Stack
+Systemd timer (not cron):
+- `ram-monitor.sh` -- Alerts when any process exceeds 2GB RSS (runs every 10s via `ram-monitor.timer`, tracks notified PIDs to avoid repeats)
 
-Deployed from `files/docker-compose.yml` template into `~/services/docker-compose.yml`:
-- **Caddy** -- Reverse proxy bound to Tailscale IP (no public exposure)
-- **cloudflared** -- Cloudflare Tunnel, mounts `~/.cloudflared/` read-only
-- **ntfy** -- Push notifications on Tailscale IP port 2586
-- **Syncthing** -- File sync for `~/roost/` (single volume)
+## Native Services
 
-All services bind to `${TAILSCALE_IP}` (from `~/services/.env`) instead of `0.0.0.0`.
+All infrastructure runs as native systemd services installed via official apt repos:
+- **Caddy** (`caddy.service`) -- Reverse proxy bound to Tailscale IP via `default_bind` in Caddyfile. Config at `/etc/caddy/Caddyfile`.
+- **cloudflared** (`cloudflared.service`) -- Cloudflare Tunnel. Config at `/etc/cloudflared/config.yml`.
+- **ntfy** (`ntfy.service`) -- Push notifications on `127.0.0.1:2586` (localhost only). Config at `/etc/ntfy/server.yml`.
+- **Syncthing** (`syncthing@$USERNAME.service`) -- File sync for `~/roost/`. GUI on `localhost:8384`, sync on Tailscale IP port 22000.
+
+Caddy and Syncthing have systemd drop-ins that wait for Tailscale before starting. Updates are handled by `apt upgrade` (via auto-update.sh and unattended-upgrades).
+
+Additionally, `claude-config.sh` installs the `dangerous-command-blocker` PreToolUse hook (via `claude-code-templates`), and `harden-hooks.sh` can make hook scripts and settings immutable via `chattr +i` to protect against Syncthing tampering.
 
 ## Configuration
 
-All configuration lives in `.env` (copied from `.env.example`). Required vars: `HETZNER_API_TOKEN`, `SERVER_NAME`, `USERNAME`, `DOMAIN`. The `.env` file is gitignored.
+All configuration lives in `.env` (copied from `.env.example`). Required vars: `SERVER_NAME`, `USERNAME`, `DOMAIN`. Hetzner API auth is handled by `hcloud context create` (not stored in `.env`). The `.env` file is gitignored.
 
 ## Shell Conventions
 
-- All scripts use `set -euo pipefail` (except `hetzner-watch.sh` which omits `-e` so polling loops survive failed checks)
-- Hook scripts read JSON from stdin via `cat` and parse with `jq`
-- ntfy notifications go to `http://localhost:2586/claude-$(whoami)`
+- All scripts use `set -euo pipefail` (except `hetzner-watch.sh` which omits `-e` so polling loops survive failed checks; `_hook-env.sh` uses `set -uo pipefail` without `-e` for resilient hook execution)
+- Hook scripts source `_hook-env.sh` which provides lazy JSON input reading via `hook_input()` / `hook_json()`, not raw `cat`
+- ntfy notifications go to `http://localhost:2586/claude-$(whoami)` via `ntfy_send()` helper with fallback to file logging

@@ -28,6 +28,7 @@ for dir in \
     "$HOME_DIR/roost/memory/patterns" \
     "$HOME_DIR/roost/code/life" \
     "$HOME_DIR/.cloudflared" \
+    "$HOME_DIR/.locks" \
     "$HOME_DIR/services" \
     "$HOME_DIR/bin"
 do

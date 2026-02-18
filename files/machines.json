@@ -1,4 +1,4 @@
 {
-  "_comment": "Map Syncthing device IDs to Tailscale hostnames. Fill in after Syncthing pairing.",
+  "_comment": "Maps Syncthing device IDs to Tailscale hostnames for multi-machine coordination. Populate after pairing Syncthing devices. Used by session lock files to identify which machine holds an active session. Format: {\"DEVICE-ID\": {\"hostname\": \"tailscale-hostname\", \"label\": \"human-readable\"}}",
   "devices": {}
 }

@@ -1,6 +1,6 @@
 {
   "cleanupPeriodDays": 99999,
-  "autoCompact": false,
+  "autoCompactEnabled": false,
   "hooks": {
     "SessionStart": [
       {

@@ -1,11 +1,12 @@
 #!/bin/bash
+# Run a Claude Code task in the current directory. Called by scheduled-task.sh.
+source "$(dirname "$0")/_hook-env.sh"
+
 TASKFILE="$1"; PROJECT="$2"
 TASK=$(<"$TASKFILE"); rm -f "$TASKFILE"
-NTFY="http://localhost:2586/claude-$(whoami)"
 cd "$PROJECT" || exit 1
 if claude -p "$TASK"; then
-    curl -s "$NTFY" -H "Title: Task complete" -d "${TASK:0:100}"
+    ntfy_send -t "Task complete" "${TASK:0:100}"
 else
-    curl -s "$NTFY" -H "Title: Task failed" -H "Priority: high" \
-        -d "Failed (may need re-auth): ${TASK:0:100}"
+    ntfy_send -t "Task failed" -p "high" "Failed (may need re-auth): ${TASK:0:100}"
 fi

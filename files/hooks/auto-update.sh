@@ -1,14 +1,15 @@
 #!/bin/bash
 # Weekly auto-update for self-hosted tools.
 # Creates a btrfs snapshot before updating, logs everything, sends summary via ntfy.
-set -uo pipefail
+# Major version bumps are blocked and reported; only minor/patch updates proceed.
+source "$(dirname "$0")/_hook-env.sh"
 
 LOGDIR="$CLAUDE_CONFIG_DIR/logs"
 mkdir -p "$LOGDIR"
 LOGFILE="$LOGDIR/auto-update-$(date +%Y-%m-%d).log"
-NTFY="http://localhost:2586/claude-$(whoami)"
 UPDATED=""
 FAILED=""
+MAJOR_UPGRADES=""
 
 log() { echo "[$(date '+%H:%M:%S')] $1" | tee -a "$LOGFILE"; }
 
@@ -25,6 +26,67 @@ track() {
     fi
 }
 
+# Check if a GitHub release is at least N days old (cooldown period).
+# Returns 1 (skip) if release is too new or API is unreachable.
+github_release_cooldown_ok() {
+    local repo="$1" days="${2:-7}"
+    local release_date
+    release_date=$(curl -sf "https://api.github.com/repos/$repo/releases/latest" \
+        | jq -r '.published_at // empty')
+    [ -z "$release_date" ] && return 1
+    local release_epoch now_epoch
+    release_epoch=$(date -d "$release_date" +%s 2>/dev/null) || return 1
+    now_epoch=$(date +%s)
+    [ $((now_epoch - release_epoch)) -ge $((days * 86400)) ]
+}
+
+# Get the latest version tag from a GitHub repo's releases (v prefix stripped).
+github_latest_version() {
+    curl -sf "https://api.github.com/repos/$1/releases/latest" | jq -r '.tag_name // empty' | sed 's/^v//'
+}
+
+# Get the raw tag name (with v prefix) from a GitHub repo's latest release.
+github_latest_tag() {
+    curl -sf "https://api.github.com/repos/$1/releases/latest" | jq -r '.tag_name // empty'
+}
+
+# Extract major version number from a version string (strips leading v).
+major_version() { echo "$1" | sed 's/^v//' | cut -d. -f1; }
+
+# Check for major version bump. Returns 0 if same major (safe to update).
+# Appends to MAJOR_UPGRADES if a new major is available.
+major_guard() {
+    local name="$1" current="$2" latest="$3"
+    local cur_major lat_major
+    cur_major=$(major_version "$current")
+    lat_major=$(major_version "$latest")
+    if [ "$cur_major" != "$lat_major" ]; then
+        MAJOR_UPGRADES="$MAJOR_UPGRADES\n- $name: installed=$current, available=$latest"
+        log "$name: major version change ($current -> $latest), skipping"
+        return 1
+    fi
+    return 0
+}
+
+# Get installed version of a PyPI tool via uv.
+pypi_installed_version() { uv tool list 2>/dev/null | grep "^$1 " | grep -oP '\d+\.\d+\S*' | head -1; }
+
+# Get latest version of a PyPI package.
+pypi_latest_version() { curl -sf "https://pypi.org/pypi/$1/json" | jq -r '.info.version // empty'; }
+
+# Check if the latest PyPI release is at least N days old (cooldown period).
+pypi_cooldown_ok() {
+    local pkg="$1" days="${2:-7}"
+    local upload_date
+    upload_date=$(curl -sf "https://pypi.org/pypi/$pkg/json" \
+        | jq -r '[.urls[].upload_time_iso_8601] | sort | last // empty')
+    [ -z "$upload_date" ] && return 1
+    local upload_epoch now_epoch
+    upload_epoch=$(date -d "$upload_date" +%s 2>/dev/null) || return 1
+    now_epoch=$(date +%s)
+    [ $((now_epoch - upload_epoch)) -ge $((days * 86400)) ]
+}
+
 log "=== Auto-update started ==="
 
 # Pre-update snapshot
@@ -33,33 +95,118 @@ if command -v snapper &>/dev/null && snapper list-configs 2>/dev/null | grep -q 
     log "Snapshot created"
 fi
 
-# Claude Code (native installer auto-updates, but force check)
+# --- Claude Code ---
+# No major version guard: claude update is Anthropic-managed, we trust it.
 track "Claude Code" claude update
 
-# claude-code-tools
-track "claude-code-tools" uv tool upgrade claude-code-tools
+# --- Python tools (PyPI, 7-day cooldown + major version guard) ---
+for pkg in claude-code-tools claude-code-transcripts; do
+    if pypi_cooldown_ok "$pkg" 7; then
+        CURRENT=$(pypi_installed_version "$pkg")
+        LATEST=$(pypi_latest_version "$pkg")
+        if [ -n "$CURRENT" ] && [ -n "$LATEST" ] && major_guard "$pkg" "$CURRENT" "$LATEST"; then
+            track "$pkg" uv tool upgrade "$pkg"
+        elif [ -z "$CURRENT" ] || [ -z "$LATEST" ]; then
+            track "$pkg" uv tool upgrade "$pkg"
+        fi
+    else
+        log "$pkg: skipped (release < 7 days old)"
+    fi
+done
 
-# Ollama models
+# --- Go (7-day cooldown + major version guard) ---
+if github_release_cooldown_ok "golang/go" 7; then
+    GO_LATEST=$(curl -sf 'https://go.dev/dl/?mode=json' | jq -r '.[0].version' | sed 's/^go//')
+    GO_CURRENT=$(go version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+    if [ -n "$GO_LATEST" ] && [ "$GO_LATEST" != "$GO_CURRENT" ]; then
+        if major_guard "Go" "${GO_CURRENT:-0}" "$GO_LATEST"; then
+            track "Go $GO_LATEST" bash -c "curl -fsSL 'https://go.dev/dl/go${GO_LATEST}.linux-amd64.tar.gz' -o /tmp/go.tar.gz && sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz"
+        fi
+    else
+        log "Go: up to date (${GO_LATEST:-unknown})"
+    fi
+else
+    log "Go: skipped (release < 7 days old)"
+fi
+
+# --- fnm + Node.js (7-day cooldown + major version guard) ---
+if github_release_cooldown_ok "Schniz/fnm" 7; then
+    FNM_CURRENT=$(~/.local/share/fnm/fnm --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+')
+    FNM_LATEST=$(github_latest_version "Schniz/fnm")
+    if [ -n "$FNM_CURRENT" ] && [ -n "$FNM_LATEST" ] && major_guard "fnm" "$FNM_CURRENT" "$FNM_LATEST"; then
+        track "fnm" bash -c "curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell"
+    elif [ -z "$FNM_CURRENT" ] || [ -z "$FNM_LATEST" ]; then
+        track "fnm" bash -c "curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell"
+    fi
+    # Node.js is pinned to major 22 by fnm install 22, so no major guard needed
+    track "Node.js 22" bash -c 'eval "$(~/.local/share/fnm/fnm env --shell bash)" && fnm install 22 && fnm default 22'
+else
+    log "fnm: skipped (release < 7 days old)"
+fi
+
+# --- uv (7-day cooldown + major version guard) ---
+if github_release_cooldown_ok "astral-sh/uv" 7; then
+    UV_CURRENT=$(uv --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+')
+    UV_LATEST=$(github_latest_version "astral-sh/uv")
+    if [ -n "$UV_CURRENT" ] && [ -n "$UV_LATEST" ] && major_guard "uv" "$UV_CURRENT" "$UV_LATEST"; then
+        track "uv" bash -c "curl -LsSf https://astral.sh/uv/install.sh | sh"
+    elif [ -z "$UV_CURRENT" ] || [ -z "$UV_LATEST" ]; then
+        track "uv" bash -c "curl -LsSf https://astral.sh/uv/install.sh | sh"
+    fi
+else
+    log "uv: skipped (release < 7 days old)"
+fi
+
+# --- Ollama models (pinned tag, no guard needed) ---
 track "Ollama models" ollama pull qwen3-embedding:0.6b
 
-# grepai
-track "grepai" bash -c "curl -sSL https://raw.githubusercontent.com/yoanbernabeu/grepai/main/install.sh | sh"
+# --- grepai (7-day cooldown + major version guard) ---
+if github_release_cooldown_ok "yoanbernabeu/grepai" 7; then
+    GREPAI_TAG=$(github_latest_tag "yoanbernabeu/grepai")
+    GREPAI_LATEST=$(echo "$GREPAI_TAG" | sed 's/^v//')
+    GREPAI_CURRENT=$(grepai --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' || echo "")
+    if [ -n "$GREPAI_LATEST" ]; then
+        if [ -z "$GREPAI_CURRENT" ] || major_guard "grepai" "$GREPAI_CURRENT" "$GREPAI_LATEST"; then
+            track "grepai" bash -c "curl -sSL 'https://raw.githubusercontent.com/yoanbernabeu/grepai/$GREPAI_TAG/install.sh' | sh"
+        fi
+    fi
+else
+    log "grepai: skipped (release < 7 days old)"
+fi
 
-# claude-code-transcripts
-track "claude-code-transcripts" uv tool upgrade claude-code-transcripts
+# --- gitleaks (7-day cooldown + major version guard) ---
+if github_release_cooldown_ok "gitleaks/gitleaks" 7; then
+    GITLEAKS_LATEST=$(github_latest_version "gitleaks/gitleaks")
+    GITLEAKS_CURRENT=$(gitleaks version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' || echo "")
+    if [ -n "$GITLEAKS_LATEST" ]; then
+        if [ -z "$GITLEAKS_CURRENT" ] || major_guard "gitleaks" "$GITLEAKS_CURRENT" "$GITLEAKS_LATEST"; then
+            track "gitleaks" bash -c "curl -fsSL 'https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_LATEST}/gitleaks_${GITLEAKS_LATEST}_linux_x64.tar.gz' -o /tmp/gitleaks.tar.gz && tar -C ~/bin -xzf /tmp/gitleaks.tar.gz gitleaks && rm -f /tmp/gitleaks.tar.gz"
+        fi
+    fi
+else
+    log "gitleaks: skipped (release < 7 days old)"
+fi
 
-# Summary
+# --- OS packages ---
+track "OS packages" bash -c "sudo DEBIAN_FRONTEND=noninteractive apt update -qq && sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y"
+
+# --- Summary ---
 log "=== Auto-update finished ==="
 
 BODY=""
 [ -n "$UPDATED" ] && BODY="Updated:$UPDATED"
 [ -n "$FAILED" ] && BODY="$BODY\n\nFailed:$FAILED"
+[ -n "$MAJOR_UPGRADES" ] && BODY="$BODY\n\nNew major versions available:$MAJOR_UPGRADES"
 [ -z "$BODY" ] && BODY="Everything already up to date."
 
-curl -s "$NTFY" \
-    -H "Title: Weekly update $(date +%Y-%m-%d)" \
-    -H "Priority: $([ -n "$FAILED" ] && echo high || echo low)" \
-    -d "$(echo -e "$BODY")"
+ntfy_send \
+    -t "Weekly update $(date +%Y-%m-%d)" \
+    -p "$([ -n "$FAILED" ] && echo high || echo low)" \
+    "$(echo -e "$BODY")"
 
 # Prune old logs (keep 8 weeks)
 find "$LOGDIR" -name "auto-update-*.log" -mtime +56 -delete
+
+# Rotate hooks log (keep last 1000 lines)
+tail -1000 "$CLAUDE_CONFIG_DIR/logs/hooks.log" > "$CLAUDE_CONFIG_DIR/logs/hooks.log.tmp" 2>/dev/null && \
+    mv "$CLAUDE_CONFIG_DIR/logs/hooks.log.tmp" "$CLAUDE_CONFIG_DIR/logs/hooks.log" || true
