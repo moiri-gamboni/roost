@@ -469,13 +469,13 @@ if [ "$TS_STATUS" = "Running" ]; then
 else
     # Force reauth in case the daemon has stale state from a deleted node
     if [ -n "${TAILSCALE_AUTHKEY:-}" ]; then
-        remote "$ROOT_CMD tailscale up --ssh --force-reauth --hostname=$SERVER_NAME --auth-key '$TAILSCALE_AUTHKEY'"
+        remote "$ROOT_CMD tailscale up --force-reauth --hostname=$SERVER_NAME --auth-key '$TAILSCALE_AUTHKEY'"
         ok "Tailscale connected (auth key)"
     else
         info "Starting Tailscale authentication..."
         info "A URL will appear below. Open it in your browser to authenticate."
         echo ""
-        remote_tty "$ROOT_CMD tailscale up --ssh --force-reauth --hostname=$SERVER_NAME"
+        remote_tty "$ROOT_CMD tailscale up --force-reauth --hostname=$SERVER_NAME"
         echo ""
         ok "Tailscale connected"
     fi
