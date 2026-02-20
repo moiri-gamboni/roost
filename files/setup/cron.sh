@@ -4,21 +4,24 @@ source "$(dirname "$0")/../_setup-env.sh"
 
 # --- Cron jobs ---
 
-export USERNAME HOME_DIR
-envsubst '$USERNAME $HOME_DIR' \
+export USERNAME HOME_DIR ROOST_DIR_NAME
+envsubst '$USERNAME $HOME_DIR $ROOST_DIR_NAME' \
     < "$REMOTE_DIR/files/cron-roost" \
-    > /etc/cron.d/roost
+    > "/etc/cron.d/$ROOST_DIR_NAME"
 
-chmod 644 /etc/cron.d/roost
+chmod 644 "/etc/cron.d/$ROOST_DIR_NAME"
 
-# Clean up old name
+# Clean up old names
 rm -f /etc/cron.d/self-host
+if [ "$ROOST_DIR_NAME" != "roost" ]; then
+    rm -f /etc/cron.d/roost
+fi
 echo "  [+] Cron jobs configured"
 
 # --- Initial grepai setup ---
 
 if as_user "command -v grepai" &>/dev/null; then
-    for dir in "$HOME_DIR/roost/memory" "$HOME_DIR/roost/claude/skills"; do
+    for dir in "$ROOST_DIR/memory" "$ROOST_DIR/claude/skills"; do
         if [ ! -f "$dir/.grepai/config.yaml" ]; then
             echo "  [*] Initializing grepai in $dir..."
             as_user "cd $dir && grepai init" && \

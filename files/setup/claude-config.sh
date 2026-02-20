@@ -2,7 +2,7 @@
 # Deploy Claude Code configuration, hook scripts, and dangerous command blocker.
 source "$(dirname "$0")/../_setup-env.sh"
 
-CLAUDE_DIR="$HOME_DIR/roost/claude"
+CLAUDE_DIR="$ROOST_DIR/claude"
 
 # --- Configuration files ---
 
@@ -28,6 +28,13 @@ for hook in session-lock session-unlock reflect notify auto-commit \
 done
 cp "$REMOTE_DIR/files/hooks/reflect.md" "$CLAUDE_DIR/hooks/reflect.md"
 chown -R "$USERNAME:$USERNAME" "$CLAUDE_DIR/hooks"
+
+# Substitute ~/roost/ paths in settings.json and reflect.md if using a custom directory name
+if [ "$ROOST_DIR_NAME" != "roost" ]; then
+    sed -i "s|~/roost/|~/$ROOST_DIR_NAME/|g" "$CLAUDE_DIR/settings.json"
+    sed -i "s|~/roost/|~/$ROOST_DIR_NAME/|g" "$CLAUDE_DIR/hooks/reflect.md"
+fi
+
 ok "All hook scripts installed"
 
 info "To make hooks immutable (protects against Syncthing tampering):"
@@ -79,7 +86,7 @@ merge_pretooluse "$CLAUDE_DIR/settings.local.json" || true
 # Fix all .claude/scripts/ and .claude/hooks/ references to point to $CLAUDE_DIR/hooks/
 # (claude-code-templates references .claude/scripts/ but puts files in .claude/hooks/)
 if grep -qE '\.claude/(scripts|hooks)/' "$CLAUDE_DIR/settings.json" 2>/dev/null; then
-    sed -i "s|\.claude/scripts/|roost/claude/hooks/|g; s|\.claude/hooks/|roost/claude/hooks/|g" \
+    sed -i "s|\.claude/scripts/|$ROOST_DIR_NAME/claude/hooks/|g; s|\.claude/hooks/|$ROOST_DIR_NAME/claude/hooks/|g" \
         "$CLAUDE_DIR/settings.json"
     echo "  [+] Updated script paths in settings.json"
 fi

@@ -17,6 +17,12 @@ else
     info "RAM: ${RAM_MB}MB, creating ${SWAP_GB}GB swap"
     mkdir -p /swap
     if btrfs filesystem show / &>/dev/null 2>&1; then
+        # @swap subvolume should already be mounted at /swap via fstab
+        # (set up by btrfs-convert.sh). Verify it's a mount point.
+        if ! mountpoint -q /swap; then
+            DISK_UUID=$(findmnt -n -o UUID /)
+            mount -o subvol=@swap "UUID=$DISK_UUID" /swap
+        fi
         btrfs filesystem mkswapfile --size "${SWAP_GB}G" /swap/swapfile
     else
         dd if=/dev/zero of=/swap/swapfile bs=1M count="$SWAP_MB" status=progress

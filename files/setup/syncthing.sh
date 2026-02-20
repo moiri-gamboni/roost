@@ -69,24 +69,24 @@ if [ -f "$SYNCTHING_CONFIG" ]; then
         if [ "${FOLDER_EXISTS:-0}" -eq 0 ]; then
             as_user "curl -sf -X POST -H 'X-API-Key: $API_KEY' \
                 -H 'Content-Type: application/json' \
-                -d '{\"id\": \"roost\", \"label\": \"roost\", \"path\": \"$HOME_DIR/roost\", \"type\": \"sendreceive\", \"rescanIntervalS\": 60, \"fsWatcherEnabled\": true}' \
+                -d '{\"id\": \"roost\", \"label\": \"roost\", \"path\": \"$ROOST_DIR\", \"type\": \"sendreceive\", \"rescanIntervalS\": 60, \"fsWatcherEnabled\": true}' \
                 'http://localhost:8384/rest/config/folders'" &>/dev/null && \
-                ok "Syncthing folder ~/roost/ shared" || \
-                info "Could not share ~/roost/ via API."
+                ok "Syncthing folder ~/$ROOST_DIR_NAME/ shared" || \
+                info "Could not share ~/$ROOST_DIR_NAME/ via API."
         else
-            skip "Syncthing folder ~/roost/ already shared"
+            skip "Syncthing folder ~/$ROOST_DIR_NAME/ already shared"
         fi
 
         # Deploy .stignore
-        cat > "$HOME_DIR/roost/.stignore" << 'STEOF'
+        cat > "$ROOST_DIR/.stignore" << 'STEOF'
 node_modules
 __pycache__
 .venv
 *.pyc
 .git
 STEOF
-        chown "$USERNAME:$USERNAME" "$HOME_DIR/roost/.stignore"
-        ok ".stignore deployed to ~/roost/"
+        chown "$USERNAME:$USERNAME" "$ROOST_DIR/.stignore"
+        ok ".stignore deployed to ~/$ROOST_DIR_NAME/"
 
         # Export API key and device ID for deploy.sh to use for pairing
         SERVER_DEVICE_ID=$(as_user "curl -sf -H 'X-API-Key: $API_KEY' \

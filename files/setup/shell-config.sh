@@ -14,19 +14,23 @@ if ! grep -q "$MARKER" "$HOME_DIR/.bashrc"; then
         echo "$MARKER"
         cat "$REMOTE_DIR/files/bashrc-append.sh"
     } >> "$HOME_DIR/.bashrc"
+    # Substitute roost paths if using a custom directory name
+    if [ "$ROOST_DIR_NAME" != "roost" ]; then
+        sed -i "s|~/roost/|~/$ROOST_DIR_NAME/|g; s|\$HOME/roost/|\$HOME/$ROOST_DIR_NAME/|g" "$HOME_DIR/.bashrc"
+    fi
 fi
 echo "  [+] tmux and shell configured"
 
 # --- Directory structure ---
 
 for dir in \
-    "$HOME_DIR/roost/claude/hooks" \
-    "$HOME_DIR/roost/claude/skills/learned" \
-    "$HOME_DIR/roost/claude/locks" \
-    "$HOME_DIR/roost/memory/debugging" \
-    "$HOME_DIR/roost/memory/projects" \
-    "$HOME_DIR/roost/memory/patterns" \
-    "$HOME_DIR/roost/code/life" \
+    "$ROOST_DIR/claude/hooks" \
+    "$ROOST_DIR/claude/skills/learned" \
+    "$ROOST_DIR/claude/locks" \
+    "$ROOST_DIR/memory/debugging" \
+    "$ROOST_DIR/memory/projects" \
+    "$ROOST_DIR/memory/patterns" \
+    "$ROOST_DIR/code/life" \
     "$HOME_DIR/.cloudflared" \
     "$HOME_DIR/.locks" \
     "$HOME_DIR/services" \

@@ -8,9 +8,9 @@ Claude Roost is a single deploy script that provisions and configures a Hetzner 
 
 ## Script Execution
 
-**`deploy.sh`** runs from your laptop and handles everything: provisioning via `hcloud` CLI, btrfs conversion (via rescue mode), and full server setup over SSH. It pauses for interactive auth (Tailscale, Claude Code OAuth, Cloudflare Tunnel). Idempotent and safe to re-run.
+**`deploy.sh`** runs from your laptop and handles everything: provisioning via `hcloud` CLI, btrfs conversion (via rescue mode), and full server setup over SSH. The only remaining manual step is Claude Code OAuth (done after deploy via `claude` on the server). Use `--yes` / `-y` to skip the confirmation prompt. Idempotent and safe to re-run.
 
-The script sources `.env` for configuration and logs to `logs/` (gitignored).
+The script sources `.env` for configuration, shows a pre-flight summary before provisioning, and logs to `logs/` (gitignored).
 
 ## Key Design Patterns
 
@@ -20,9 +20,9 @@ The script sources `.env` for configuration and logs to `logs/` (gitignored).
 
 **Shared environment via `files/_setup-env.sh`**: Sourced by every setup script. Reads `.env` values from the server copy, exports `USERNAME`, `HOME_DIR`, etc., and provides `as_user()` helper.
 
-**Firewall model**: The Hetzner cloud firewall is the single gate for public SSH access. UFW on the server allows SSH on port 22, so removing the cloud firewall SSH rule locks out public SSH. Tailscale handles private access; Cloudflare Tunnel handles public web traffic. The only other public port is UDP 41641 (Tailscale WireGuard).
+**Firewall model**: The Hetzner cloud firewall has a temporary SSH rule that exists only during deploys. `deploy.sh` adds it at the start and removes it at the end, so public SSH is locked out between deploys. UFW on the server allows SSH on port 22 (the cloud firewall controls whether traffic reaches it). Tailscale handles private access; Cloudflare Tunnel handles public web traffic. The only permanent public port is UDP 41641 (Tailscale WireGuard).
 
-**`~/roost/` directory**: All synced state lives under `~/roost/`, making Syncthing configuration a single folder share. `CLAUDE_CONFIG_DIR=~/roost/claude` redirects Claude Code's config there.
+**`~/roost/` directory**: All synced state lives under `~/$ROOST_DIR_NAME/` (default `~/roost/`, configurable via `ROOST_DIR_NAME` in `.env`), making Syncthing configuration a single folder share. `CLAUDE_CONFIG_DIR=~/$ROOST_DIR_NAME/claude` redirects Claude Code's config there.
 
 ## File Layout
 
@@ -46,6 +46,8 @@ The script sources `.env` for configuration and logs to `logs/` (gitignored).
   - `hetzner-watch.sh` -- Polls Hetzner API for server type availability, sends ntfy alerts
 
 ## Server Directory Structure
+
+The directory name `roost` is configurable via `ROOST_DIR_NAME` in `.env`.
 
 ```
 ~/roost/                    Syncthing-synced root
@@ -96,7 +98,7 @@ Additionally, `claude-config.sh` installs the `dangerous-command-blocker` PreToo
 
 ## Configuration
 
-All configuration lives in `.env` (copied from `.env.example`). Required vars: `SERVER_NAME`, `USERNAME`, `DOMAIN`. Hetzner API auth is handled by `hcloud context create` (not stored in `.env`). The `.env` file is gitignored.
+All configuration lives in `.env` (copied from `.env.example`). Required vars: `SERVER_NAME`, `USERNAME`, `DOMAIN`, `TAILSCALE_AUTHKEY`, `CLOUDFLARE_API_TOKEN`. Additional vars: `ROOST_DIR_NAME` (default `roost`), `CLOUDFLARE_ACCOUNT_ID` (optional, auto-detected), `CLOUDFLARE_TUNNEL_NAME` (defaults to `$ROOST_DIR_NAME`). SSH key is auto-selected interactively from Hetzner keys (or upload a new one); `SSH_KEY_NAME` in `.env` is no longer needed. Hetzner API auth is handled by `hcloud context create` (not stored in `.env`). Cloudflare tunnel creation and DNS routing use the Cloudflare API (no browser login or `cert.pem`). Use `--yes` / `-y` to skip the deploy confirmation prompt. The `.env` file is gitignored.
 
 ## Shell Conventions
 
