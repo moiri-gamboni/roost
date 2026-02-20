@@ -17,5 +17,5 @@ fi
 apt update
 ok "Package list updated"
 
-apt install -y tmux build-essential jq unzip btrfs-progs snapper glances util-linux
+apt install -y tmux mosh build-essential jq unzip btrfs-progs snapper glances util-linux
 ok "Base packages installed"
