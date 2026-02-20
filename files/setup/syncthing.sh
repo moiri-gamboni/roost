@@ -62,6 +62,41 @@ if [ -f "$SYNCTHING_CONFIG" ]; then
             'http://localhost:8384/rest/config/options'" &>/dev/null && \
             ok "Syncthing sync address set to tcp://$TAILSCALE_IP:22000" || \
             info "Could not set Syncthing listen address via API. Configure manually."
+        # Share ~/roost/ folder (idempotent; skipped if folder already exists)
+        FOLDER_EXISTS=$(as_user "curl -sf -H 'X-API-Key: $API_KEY' \
+            'http://localhost:8384/rest/config/folders'" 2>/dev/null \
+            | grep -c '"roost"' || true)
+        if [ "${FOLDER_EXISTS:-0}" -eq 0 ]; then
+            as_user "curl -sf -X POST -H 'X-API-Key: $API_KEY' \
+                -H 'Content-Type: application/json' \
+                -d '{\"id\": \"roost\", \"label\": \"roost\", \"path\": \"$HOME_DIR/roost\", \"type\": \"sendreceive\", \"rescanIntervalS\": 60, \"fsWatcherEnabled\": true}' \
+                'http://localhost:8384/rest/config/folders'" &>/dev/null && \
+                ok "Syncthing folder ~/roost/ shared" || \
+                info "Could not share ~/roost/ via API."
+        else
+            skip "Syncthing folder ~/roost/ already shared"
+        fi
+
+        # Deploy .stignore
+        cat > "$HOME_DIR/roost/.stignore" << 'STEOF'
+node_modules
+__pycache__
+.venv
+*.pyc
+.git
+STEOF
+        chown "$USERNAME:$USERNAME" "$HOME_DIR/roost/.stignore"
+        ok ".stignore deployed to ~/roost/"
+
+        # Export API key and device ID for deploy.sh to use for pairing
+        SERVER_DEVICE_ID=$(as_user "curl -sf -H 'X-API-Key: $API_KEY' \
+            'http://localhost:8384/rest/system/status'" 2>/dev/null \
+            | grep -oP '"myID"\s*:\s*"\K[^"]+' || true)
+        if [ -n "$SERVER_DEVICE_ID" ]; then
+            echo "$API_KEY" > "$HOME_DIR/.syncthing-api-key"
+            echo "$SERVER_DEVICE_ID" > "$HOME_DIR/.syncthing-device-id"
+            chown "$USERNAME:$USERNAME" "$HOME_DIR/.syncthing-api-key" "$HOME_DIR/.syncthing-device-id"
+        fi
     else
         info "Could not read Syncthing API key. Configure listen address manually."
     fi

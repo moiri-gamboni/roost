@@ -7,7 +7,7 @@ Automated setup for a Hetzner server running Claude Code agents, web apps, and s
 After running the deploy script you will have:
 
 - Hardened Ubuntu 24.04 with btrfs snapshots and automatic security updates
-- Private networking via Tailscale (no public ports except Tailscale WireGuard)
+- Private networking via Tailscale (SSH gated by Hetzner cloud firewall, no public HTTP/HTTPS ports)
 - Public web apps via Cloudflare Tunnel (zero open HTTP/HTTPS ports)
 - Claude Code with session persistence, auto-commit hooks, and push notifications
 - Semantic search over notes and code (Ollama + grepai)
@@ -43,7 +43,7 @@ The `hcloud` CLI needs an API token before it can talk to your Hetzner project.
 Generate one in the Hetzner Console (Security > API Tokens, read+write), then:
 
 ```bash
-hcloud context create claude-roost
+hcloud context create roost
 # Paste your API token when prompted
 ```
 
@@ -51,8 +51,8 @@ This saves the token locally. You only need to do this once.
 
 ### SSH key setup
 
-The SSH key is only used for initial server access. Once Tailscale SSH is
-running (minutes into setup), it becomes a recovery-only fallback.
+The SSH key is used for server access. The Hetzner cloud firewall controls
+whether public SSH is reachable; Tailscale provides an additional private path.
 
 **If you already have a key** (`~/.ssh/id_ed25519.pub` or `~/.ssh/id_rsa.pub`):
 
@@ -89,7 +89,7 @@ extras/                 Optional standalone utilities
 Configure `hcloud` if you haven't already:
 
 ```bash
-hcloud context create claude-roost
+hcloud context create roost
 # Paste your Hetzner API token when prompted
 ```
 
@@ -137,34 +137,11 @@ The script runs `cloudflared tunnel login`, which prints a URL. Open it in your
 browser and select your domain. The script then creates the tunnel and writes
 the configuration automatically.
 
-### Step 3: Verify SSH Access
-
-The deploy script automatically removes the temporary SSH firewall rule after
-verifying Tailscale SSH works. If it could not verify (e.g. Tailscale was not
-ready), remove it manually:
-
-1. Go to the Hetzner Console, edit the **claude-roost-fw** cloud firewall
-2. **Delete** the SSH (port 22) rule
-3. Verify that `ssh root@<public-ip>` now times out
-4. Verify that `ssh <username>@<tailscale-ip>` still works
-
-From this point on, the server has no public TCP ports open.
-
-### Step 4: Post-Setup (Manual)
+### Step 3: Post-Setup (Manual)
 
 These steps must be completed manually after the deploy script finishes.
 
 #### On the server (via Tailscale SSH):
-
-**Claude Code plugins:**
-
-```bash
-claude
-/plugin marketplace add moiri-gamboni/praxis
-/plugin install praxis@praxis-marketplace
-/plugin install ralph@claude-plugins-official
-/exit
-```
 
 **Verify services:**
 
@@ -212,46 +189,29 @@ systemctl status ram-monitor.timer
    sudo systemctl reload caddy
    ```
 
-#### Configure Syncthing:
+#### Syncthing (automatic pairing):
 
-1. SSH tunnel to the Syncthing UI:
-   ```bash
-   ssh -L 8384:localhost:8384 <username>@<tailscale-ip>
-   ```
-2. Open http://localhost:8384 in your browser
-3. Install Syncthing on your laptop (https://syncthing.net/downloads/)
-4. Pair the devices using the device IDs shown in each Syncthing UI
-5. Share `~/roost/` (contains claude config, memory, and code projects)
-6. Add a `.stignore` file to `~/roost/` with:
-   ```
-   node_modules
-   __pycache__
-   .venv
-   ```
-7. Enable staggered file versioning on code workspaces:
-   - Clean interval: 3600, Max age: 604800
-8. Update `~/roost/claude/machines.json` with Syncthing device IDs and Tailscale hostnames:
-   ```json
-   {
-     "devices": {
-       "AAAAAAA-BBBBBBB-CCCCCCC-DDDDDDD-EEEEEEE-FFFFFFF-GGGGGGG-HHHHHHH": {
-         "hostname": "server",
-         "label": "Hetzner CX43"
-       },
-       "IIIIIII-JJJJJJJ-KKKKKKK-LLLLLLL-MMMMMMM-NNNNNNN-OOOOOOO-PPPPPPP": {
-         "hostname": "laptop",
-         "label": "MacBook Pro"
-       }
-     }
-   }
-   ```
-   This file is used by session lock files to identify which machine holds active
-   Claude Code sessions. Find device IDs in the Syncthing web UI under Actions > Show ID.
+The deploy script automatically pairs the server and laptop Syncthing instances
+if Syncthing is installed and running on your laptop. It shares `~/roost/` in
+both directions and deploys a `.stignore` file on the server.
+
+**Prerequisites** (install before running deploy.sh):
+- Syncthing on your laptop (https://syncthing.net/downloads/)
+- Syncthing service running (the deploy script reads its API)
+
+If Syncthing is not found on the laptop, the script prints the server's device
+ID so you can pair manually later. Re-running `deploy.sh` will retry pairing.
+
+To access the Syncthing web UI (for monitoring or advanced config):
+```bash
+ssh -L 8384:localhost:8384 <username>@<tailscale-ip>
+# then open http://localhost:8384
+```
 
 #### Laptop setup:
 
 1. Install and connect Tailscale
-2. Install Syncthing and pair with the server (see above)
+2. Install Syncthing (pairing is handled by `deploy.sh`)
 3. Set `CLAUDE_CONFIG_DIR=$HOME/roost/claude` in your shell profile
 4. (Optional) Create a sleep hook that sends `/exit` to Claude tmux sessions
    before suspend, so sessions sync cleanly:
@@ -309,7 +269,6 @@ Sensitive services never touch the public internet.
 │   ├── hooks/              Hook scripts
 │   ├── skills/learned/     Learned skills
 │   ├── locks/              Session lock files
-│   ├── machines.json       Multi-machine coordination
 │   └── projects/           Session transcripts (auto-managed)
 ├── memory/                 Structured notes (grepai-indexed)
 │   ├── debugging/

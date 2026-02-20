@@ -55,8 +55,8 @@ if [ "$NTFY_VALID" = false ]; then
 
     # Create user and generate token
     NTFY_PASS=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 24)
-    ntfy user add --role=admin --password="$NTFY_PASS" hooks 2>/dev/null || \
-        info "ntfy user creation failed (may already exist)"
+    NTFY_PASSWORD="$NTFY_PASS" ntfy user add --role=admin --ignore-exists hooks || \
+        info "ntfy user creation failed"
     TOKEN=$(ntfy token add hooks 2>/dev/null | grep -oP 'tk_\S+' || true)
 
     if [ -n "$TOKEN" ]; then

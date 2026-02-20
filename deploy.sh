@@ -52,11 +52,11 @@ fi
 # SSH Plumbing
 # ============================================
 
-REMOTE_DIR="/root/claude-roost"
+REMOTE_DIR="/root/roost-deploy"
 
 # Control sockets for SSH multiplexing (one per mode to avoid host key conflicts)
-SSH_CONTROL_SOCKET="/tmp/claude-roost-ssh-%r@%h:%p"
-SSH_RESCUE_CONTROL_SOCKET="/tmp/claude-roost-rescue-%r@%h:%p"
+SSH_CONTROL_SOCKET="/tmp/roost-ssh-%r@%h:%p"
+SSH_RESCUE_CONTROL_SOCKET="/tmp/roost-rescue-%r@%h:%p"
 
 SSH_OPTS=(
     -o ControlMaster=auto
@@ -188,29 +188,30 @@ fi
 # --- Cloud Firewall ---
 
 info "Configuring cloud firewall..."
-if hcloud firewall describe claude-roost-fw &>/dev/null; then
-    skip "Firewall 'claude-roost-fw' exists"
+if hcloud firewall describe roost-fw &>/dev/null; then
+    skip "Firewall 'roost-fw' exists"
 else
-    hcloud firewall create --name claude-roost-fw
+    hcloud firewall create --name roost-fw
 
     # Tailscale WireGuard (permanent)
-    hcloud firewall add-rule claude-roost-fw \
+    hcloud firewall add-rule roost-fw \
         --direction in --protocol udp --port 41641 \
         --source-ips 0.0.0.0/0 --source-ips ::/0 \
         --description "Tailscale WireGuard"
 
-    # SSH (temporary, remove after Tailscale is confirmed working)
-    hcloud firewall add-rule claude-roost-fw \
+    # SSH (cloud firewall is the single gate for public SSH access;
+    # UFW on the server allows port 22, so removing this rule locks out public SSH)
+    hcloud firewall add-rule roost-fw \
         --direction in --protocol tcp --port 22 \
         --source-ips 0.0.0.0/0 --source-ips ::/0 \
-        --description "SSH (temporary)"
+        --description "SSH"
 
-    ok "Firewall 'claude-roost-fw' created"
+    ok "Firewall 'roost-fw' created"
 fi
 
 # Attach firewall to existing server (hcloud is silent if already attached)
 if [ "$EXISTING" = true ]; then
-    hcloud firewall apply-to-resource claude-roost-fw --type server --server "$SERVER_NAME" || true
+    hcloud firewall apply-to-resource roost-fw --type server --server "$SERVER_NAME" || true
     ok "Firewall attached to $SERVER_NAME"
 fi
 
@@ -234,7 +235,7 @@ else
         --type "$SERVER_TYPE"
         --image ubuntu-24.04
         --ssh-key "$SSH_KEY_NAME"
-        --firewall claude-roost-fw
+        --firewall roost-fw
         --enable-backup
     )
 
@@ -282,29 +283,27 @@ ok "Server IP: $SERVER_IP"
 # --- Wait for SSH ---
 
 info "Waiting for SSH access..."
-SSH_USER="root"
-
-# Try root first via wait_for_ssh; if that fails on an existing server, try USERNAME
-if ! wait_for_ssh normal 30; then
-    if [ "$EXISTING" = true ] && [ -n "${USERNAME:-}" ]; then
-        echo "  Root login failed, trying $USERNAME..."
-        # wait_for_ssh uses SSH_USER which is still root; inline the check for USERNAME
-        if ssh "${SSH_OPTS[@]}" "$USERNAME@$SERVER_IP" true 2>/dev/null; then
-            SSH_USER="$USERNAME"
-        else
-            echo "Error: SSH not available for root or $USERNAME after 150s"
-            exit 1
+SSH_USER=""
+for i in $(seq 1 10); do
+    for user in root "$USERNAME"; do
+        if ssh "${SSH_OPTS[@]}" "$user@$SERVER_IP" true 2>/dev/null; then
+            SSH_USER="$user"
+            break 2
         fi
-    else
-        exit 1
-    fi
+    done
+    sleep 5
+done
+
+if [ -z "$SSH_USER" ]; then
+    echo "Error: SSH not available for root or $USERNAME after 50s"
+    exit 1
 fi
 
 ok "SSH ready (user: $SSH_USER)"
 
 # Adjust paths and sudo for non-root SSH
 if [ "$SSH_USER" != "root" ]; then
-    REMOTE_DIR="/home/$SSH_USER/claude-roost"
+    REMOTE_DIR="/home/$SSH_USER/roost-deploy"
     ROOT_CMD="sudo"
 else
     ROOT_CMD=""
@@ -313,7 +312,11 @@ fi
 # --- Copy setup files ---
 
 info "Copying setup files to server..."
-ssh "${SSH_OPTS[@]}" "$SSH_USER@$SERVER_IP" "mkdir -p $REMOTE_DIR"
+if [ -n "${ROOT_CMD:-}" ]; then
+    remote "$ROOT_CMD mkdir -p $REMOTE_DIR && $ROOT_CMD chown $SSH_USER:$SSH_USER $REMOTE_DIR"
+else
+    ssh "${SSH_OPTS[@]}" "$SSH_USER@$SERVER_IP" "mkdir -p $REMOTE_DIR"
+fi
 sync_files
 ok "Files copied to $REMOTE_DIR"
 
@@ -369,7 +372,7 @@ else
     # After fresh btrfs conversion, root login still works
     SSH_USER="root"
     ROOT_CMD=""
-    REMOTE_DIR="/root/claude-roost"
+    REMOTE_DIR="/root/roost-deploy"
 
     wait_for_ssh normal 40
 
@@ -414,12 +417,11 @@ if [ "$SSH_USER" = "root" ]; then
 
     SSH_USER="$USERNAME"
     ROOT_CMD="sudo"
-    REMOTE_DIR="/home/$USERNAME/claude-roost"
+    REMOTE_DIR="/home/$USERNAME/roost-deploy"
 
     # Copy setup files to user's home so scripts can find _setup-env.sh
-    remote "sudo mkdir -p $REMOTE_DIR"
+    remote "sudo mkdir -p $REMOTE_DIR && sudo chown $USERNAME:$USERNAME $REMOTE_DIR"
     sync_files
-    remote "sudo chown -R $USERNAME:$USERNAME $REMOTE_DIR"
 
     ok "Now operating as $SSH_USER"
 fi
@@ -455,25 +457,41 @@ ok "Snapper configuration applied"
 section "Tailscale"
 remote_script "setup/tailscale.sh"
 
-# Check if Tailscale is already connected
-if remote "$ROOT_CMD tailscale ip -4" &>/dev/null; then
+# Check if Tailscale is authenticated and the backend accepts the node.
+# "tailscale ip -4" can return a stale IP even after the node is deleted from the
+# admin console, so check "tailscale status" for NeedsLogin state instead.
+# Use timeout because tailscale commands can hang if the daemon is in a bad state.
+info "Checking Tailscale status..."
+TS_STATUS=$(remote "$ROOT_CMD timeout 10 tailscale status --json 2>/dev/null" | jq -r '.BackendState // empty' 2>/dev/null || true)
+info "Tailscale backend state: ${TS_STATUS:-<empty/timeout>}"
+if [ "$TS_STATUS" = "Running" ]; then
     skip "Tailscale already connected"
 else
+    # Force reauth in case the daemon has stale state from a deleted node
     if [ -n "${TAILSCALE_AUTHKEY:-}" ]; then
-        remote "$ROOT_CMD tailscale up --ssh --auth-key '$TAILSCALE_AUTHKEY'"
+        remote "$ROOT_CMD tailscale up --ssh --force-reauth --hostname=$SERVER_NAME --auth-key '$TAILSCALE_AUTHKEY'"
         ok "Tailscale connected (auth key)"
     else
         info "Starting Tailscale authentication..."
         info "A URL will appear below. Open it in your browser to authenticate."
         echo ""
-        remote_tty "$ROOT_CMD tailscale up --ssh"
+        remote_tty "$ROOT_CMD tailscale up --ssh --force-reauth --hostname=$SERVER_NAME"
         echo ""
         ok "Tailscale connected"
     fi
 fi
 
-TAILSCALE_IP=$(remote "$ROOT_CMD tailscale ip -4")
+# Verify Tailscale is actually working
+TAILSCALE_IP=$(remote "$ROOT_CMD timeout 10 tailscale ip -4" 2>/dev/null || true)
+if [ -z "$TAILSCALE_IP" ]; then
+    echo "Error: Tailscale failed to connect. Check 'tailscale status' on the server."
+    exit 1
+fi
 info "Tailscale IP: $TAILSCALE_IP"
+TAILSCALE_DNS=$(remote "$ROOT_CMD timeout 10 tailscale status --json 2>/dev/null" | jq -r '.Self.DNSName // empty' 2>/dev/null | sed 's/\.$//' || true)
+if [ -n "$TAILSCALE_DNS" ]; then
+    info "Tailscale DNS: $TAILSCALE_DNS"
+fi
 
 # ============================================
 # Firewall (UFW)
@@ -483,25 +501,6 @@ section "Firewall (UFW)"
 remote_script "setup/ufw.sh"
 ok "UFW configured"
 
-# Remove temporary SSH rule from Hetzner Cloud Firewall
-info "Verifying Tailscale SSH works before removing temporary SSH rule..."
-if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$USERNAME@$TAILSCALE_IP" true 2>/dev/null; then
-    # Check if the temporary SSH rule exists
-    RULE_COUNT=$(hcloud firewall describe claude-roost-fw -o json \
-        | jq '[.rules[] | select(.direction=="in" and .protocol=="tcp" and .port=="22")] | length')
-    if [ "${RULE_COUNT:-0}" -gt 0 ]; then
-        hcloud firewall delete-rule claude-roost-fw \
-            --direction in --protocol tcp --port 22 \
-            --source-ips 0.0.0.0/0 --source-ips ::/0 && \
-            ok "Temporary SSH firewall rule removed" || \
-            info "Could not remove SSH rule automatically. Remove it manually from the Hetzner console."
-    else
-        skip "No temporary SSH rule found"
-    fi
-else
-    info "Could not verify Tailscale SSH. Remove the temporary SSH rule manually:"
-    info "  hcloud firewall delete-rule claude-roost-fw --direction in --protocol tcp --port 22 --source-ips 0.0.0.0/0 --source-ips ::/0"
-fi
 
 # ============================================
 # Development Tools (fnm, Node.js, Go, uv, gitleaks)
@@ -509,7 +508,7 @@ fi
 
 section "Development Tools"
 remote_script "setup/dev-tools.sh"
-ok "fnm + Node.js 22, Go, uv, gitleaks installed"
+ok "fnm + Node LTS, Go, uv, gitleaks installed"
 
 # ============================================
 # Ollama
@@ -526,6 +525,13 @@ ok "Ollama + Qwen3-Embedding-0.6B ready"
 section "Claude Code"
 remote_script "setup/claude-code.sh"
 ok "Claude Code installed"
+
+# Install plugins non-interactively
+info "Installing Claude Code plugins..."
+remote "sudo -u $USERNAME CLAUDE_CONFIG_DIR=/home/$USERNAME/roost/claude /home/$USERNAME/.local/bin/claude plugin marketplace add moiri-gamboni/praxis" 2>/dev/null || true
+remote "sudo -u $USERNAME CLAUDE_CONFIG_DIR=/home/$USERNAME/roost/claude /home/$USERNAME/.local/bin/claude plugin install praxis@praxis-marketplace" 2>/dev/null || true
+remote "sudo -u $USERNAME CLAUDE_CONFIG_DIR=/home/$USERNAME/roost/claude /home/$USERNAME/.local/bin/claude plugin install ralph@claude-plugins-official" 2>/dev/null || true
+ok "Claude Code plugins installed"
 
 # Interactive OAuth prompt (needs TTY for read)
 info "Claude Code requires an interactive OAuth login."
@@ -576,6 +582,114 @@ section "Syncthing"
 remote_script "setup/syncthing.sh" "$TAILSCALE_IP"
 ok "Syncthing running"
 
+# --- Pair server and laptop Syncthing instances ---
+SERVER_DEVICE_ID=$(remote "cat /home/$USERNAME/.syncthing-device-id 2>/dev/null" || true)
+if [ -n "$SERVER_DEVICE_ID" ] && command -v syncthing &>/dev/null; then
+    info "Pairing Syncthing: server <-> laptop..."
+
+    # Get laptop's device ID and API key
+    LAPTOP_ST_CONFIG="${SYNCTHING_CONFIG_DIR:-$HOME/.local/state/syncthing}/config.xml"
+    if [ ! -f "$LAPTOP_ST_CONFIG" ]; then
+        # Try common alternative locations
+        for loc in "$HOME/.config/syncthing/config.xml" "$HOME/Library/Application Support/Syncthing/config.xml"; do
+            [ -f "$loc" ] && LAPTOP_ST_CONFIG="$loc" && break
+        done
+    fi
+
+    if [ -f "$LAPTOP_ST_CONFIG" ]; then
+        LAPTOP_API_KEY=$(grep -oP '<apikey>\K[^<]+' "$LAPTOP_ST_CONFIG" || true)
+        LAPTOP_DEVICE_ID=$(grep -oP '<device id="\K[^"]+' "$LAPTOP_ST_CONFIG" | head -1 || true)
+        # The first <device> in config.xml is always the local device
+        # But more reliably, use the API
+        if [ -n "$LAPTOP_API_KEY" ]; then
+            LAPTOP_DEVICE_ID=$(curl -sf -H "X-API-Key: $LAPTOP_API_KEY" \
+                "http://localhost:8384/rest/system/status" 2>/dev/null \
+                | jq -r '.myID // empty' || true)
+        fi
+
+        if [ -n "$LAPTOP_API_KEY" ] && [ -n "$LAPTOP_DEVICE_ID" ]; then
+            SERVER_API_KEY=$(remote "cat /home/$USERNAME/.syncthing-api-key 2>/dev/null" || true)
+
+            # Add server device to laptop (idempotent)
+            LAPTOP_HAS_SERVER=$(curl -sf -H "X-API-Key: $LAPTOP_API_KEY" \
+                "http://localhost:8384/rest/config/devices" 2>/dev/null \
+                | jq -r ".[].deviceID" 2>/dev/null | grep -c "$SERVER_DEVICE_ID" || true)
+            if [ "${LAPTOP_HAS_SERVER:-0}" -eq 0 ]; then
+                curl -sf -X POST -H "X-API-Key: $LAPTOP_API_KEY" \
+                    -H "Content-Type: application/json" \
+                    -d "{\"deviceID\": \"$SERVER_DEVICE_ID\", \"name\": \"$SERVER_NAME\", \"addresses\": [\"tcp://$TAILSCALE_IP:22000\"]}" \
+                    "http://localhost:8384/rest/config/devices" &>/dev/null && \
+                    ok "Laptop: added server device" || \
+                    info "Could not add server to laptop Syncthing"
+            else
+                skip "Laptop: server device already added"
+            fi
+
+            # Add laptop device to server (idempotent)
+            if [ -n "$SERVER_API_KEY" ]; then
+                SERVER_HAS_LAPTOP=$(remote "curl -sf -H 'X-API-Key: $SERVER_API_KEY' \
+                    'http://localhost:8384/rest/config/devices'" 2>/dev/null \
+                    | jq -r '.[].deviceID' 2>/dev/null | grep -c "$LAPTOP_DEVICE_ID" || true)
+                if [ "${SERVER_HAS_LAPTOP:-0}" -eq 0 ]; then
+                    remote "curl -sf -X POST -H 'X-API-Key: $SERVER_API_KEY' \
+                        -H 'Content-Type: application/json' \
+                        -d '{\"deviceID\": \"$LAPTOP_DEVICE_ID\", \"name\": \"laptop\", \"addresses\": [\"dynamic\"]}' \
+                        'http://localhost:8384/rest/config/devices'" &>/dev/null && \
+                        ok "Server: added laptop device" || \
+                        info "Could not add laptop to server Syncthing"
+                else
+                    skip "Server: laptop device already added"
+                fi
+
+                # Share roost folder with laptop on server side
+                remote "curl -sf -X PATCH -H 'X-API-Key: $SERVER_API_KEY' \
+                    -H 'Content-Type: application/json' \
+                    -d '{\"devices\": [{\"deviceID\": \"$SERVER_DEVICE_ID\"}, {\"deviceID\": \"$LAPTOP_DEVICE_ID\"}]}' \
+                    'http://localhost:8384/rest/config/folders/roost'" &>/dev/null && \
+                    ok "Server: roost folder shared with laptop" || \
+                    info "Could not share roost folder with laptop"
+            fi
+
+            # Share roost folder on laptop (create or update)
+            LAPTOP_ROOST_DIR="${ROOST_DIR:-$HOME/roost}"
+            LAPTOP_HAS_ROOST=$(curl -sf -H "X-API-Key: $LAPTOP_API_KEY" \
+                "http://localhost:8384/rest/config/folders" 2>/dev/null \
+                | jq -r '.[].id' 2>/dev/null | grep -c '^roost$' || true)
+            if [ "${LAPTOP_HAS_ROOST:-0}" -eq 0 ]; then
+                mkdir -p "$LAPTOP_ROOST_DIR"
+                curl -sf -X POST -H "X-API-Key: $LAPTOP_API_KEY" \
+                    -H "Content-Type: application/json" \
+                    -d "{\"id\": \"roost\", \"label\": \"roost\", \"path\": \"$LAPTOP_ROOST_DIR\", \"type\": \"sendreceive\", \"rescanIntervalS\": 60, \"fsWatcherEnabled\": true, \"devices\": [{\"deviceID\": \"$LAPTOP_DEVICE_ID\"}, {\"deviceID\": \"$SERVER_DEVICE_ID\"}]}" \
+                    "http://localhost:8384/rest/config/folders" &>/dev/null && \
+                    ok "Laptop: roost folder shared" || \
+                    info "Could not create roost folder on laptop"
+            else
+                # Folder exists; ensure server device is included
+                curl -sf -X PATCH -H "X-API-Key: $LAPTOP_API_KEY" \
+                    -H "Content-Type: application/json" \
+                    -d "{\"devices\": [{\"deviceID\": \"$LAPTOP_DEVICE_ID\"}, {\"deviceID\": \"$SERVER_DEVICE_ID\"}]}" \
+                    "http://localhost:8384/rest/config/folders/roost" &>/dev/null && \
+                    skip "Laptop: roost folder already shared" || \
+                    info "Could not update roost folder on laptop"
+            fi
+
+            ok "Syncthing paired: server <-> laptop"
+        else
+            info "Could not read laptop Syncthing API key or device ID."
+            info "Pair manually: server device ID is $SERVER_DEVICE_ID"
+        fi
+    else
+        info "Syncthing not configured on laptop ($LAPTOP_ST_CONFIG not found)."
+        info "Install Syncthing, then re-run deploy.sh to pair automatically."
+        info "Server device ID: $SERVER_DEVICE_ID"
+    fi
+elif [ -n "$SERVER_DEVICE_ID" ]; then
+    info "Syncthing not installed on laptop. Install it and re-run to pair."
+    info "Server device ID: $SERVER_DEVICE_ID"
+fi
+# Clean up temp files
+remote "rm -f /home/$USERNAME/.syncthing-api-key /home/$USERNAME/.syncthing-device-id" 2>/dev/null || true
+
 # ============================================
 # Cloudflare Tunnel
 # ============================================
@@ -600,22 +714,34 @@ fi
 
 # Create tunnel
 TUNNEL_EXISTS=false
-if remote "cloudflared tunnel list" 2>/dev/null | grep -q "${CLOUDFLARE_TUNNEL_NAME:-claude-roost}"; then
-    skip "Tunnel '${CLOUDFLARE_TUNNEL_NAME:-claude-roost}' already exists"
-    TUNNEL_EXISTS=true
+TUNNEL_NAME="${CLOUDFLARE_TUNNEL_NAME:-roost}"
+if remote "cloudflared tunnel list" 2>/dev/null | grep -q "$TUNNEL_NAME"; then
+    # Tunnel exists; check if credentials file is present locally
+    EXISTING_ID=$(remote "cloudflared tunnel list -o json" | jq -r ".[] | select(.name == \"$TUNNEL_NAME\") | .id" 2>/dev/null || true)
+    if [ -n "$EXISTING_ID" ] && remote "test -f /home/$USERNAME/.cloudflared/${EXISTING_ID}.json"; then
+        skip "Tunnel '$TUNNEL_NAME' already exists"
+        TUNNEL_EXISTS=true
+    else
+        # Credentials lost (e.g. backup restore); delete and recreate
+        info "Tunnel '$TUNNEL_NAME' exists but credentials are missing, recreating..."
+        remote "cloudflared tunnel delete $TUNNEL_NAME" 2>/dev/null || true
+        remote "cloudflared tunnel create $TUNNEL_NAME"
+        TUNNEL_EXISTS=true
+        ok "Tunnel '$TUNNEL_NAME' recreated"
+    fi
 elif remote "test -f /home/$USERNAME/.cloudflared/cert.pem"; then
-    remote "cloudflared tunnel create ${CLOUDFLARE_TUNNEL_NAME:-claude-roost}"
+    remote "cloudflared tunnel create $TUNNEL_NAME"
     TUNNEL_EXISTS=true
-    ok "Tunnel '${CLOUDFLARE_TUNNEL_NAME:-claude-roost}' created"
+    ok "Tunnel '$TUNNEL_NAME' created"
 fi
 
 # Write tunnel config (runtime-generated because it needs TUNNEL_ID)
 if [ "$TUNNEL_EXISTS" = true ]; then
-    TUNNEL_ID=$(remote "cloudflared tunnel list -o json" | jq -r ".[] | select(.name == \"${CLOUDFLARE_TUNNEL_NAME:-claude-roost}\") | .id" || echo "")
+    TUNNEL_ID=$(remote "cloudflared tunnel list -o json" | jq -r ".[] | select(.name == \"$TUNNEL_NAME\") | .id" || echo "")
 
     if [ -n "$TUNNEL_ID" ]; then
         export TUNNEL_ID
-        export TUNNEL_NAME="${CLOUDFLARE_TUNNEL_NAME:-claude-roost}"
+        export TUNNEL_NAME
         envsubst '$TUNNEL_ID $TUNNEL_NAME $DOMAIN' \
             < "$SCRIPT_DIR/files/cloudflare-config.yml" \
             | remote "cat > /tmp/_cf_config.yml"
@@ -676,6 +802,15 @@ section "Cron Jobs + grepai Index"
 remote_script "setup/cron.sh"
 ok "Cron jobs configured and grepai initialized"
 
+# Install unattended-upgrades last so it can't hold the dpkg lock
+# during earlier apt operations.
+section "Unattended Upgrades"
+remote_script "setup/unattended-upgrades.sh"
+ok "Unattended security upgrades configured"
+
+# Clean up deploy files from server
+remote "rm -rf $REMOTE_DIR"
+
 # ============================================
 # Done
 # ============================================
@@ -685,36 +820,29 @@ echo "============================================"
 echo "  Deploy complete!"
 echo "============================================"
 echo ""
+TS_HOST="${TAILSCALE_DNS:-$TAILSCALE_IP}"
 echo "  Tailscale IP:  $TAILSCALE_IP"
-echo "  SSH:           ssh $USERNAME@$TAILSCALE_IP"
-echo "  Glances:       http://$TAILSCALE_IP:61208"
+if [ -n "$TAILSCALE_DNS" ]; then
+echo "  Tailscale DNS: $TAILSCALE_DNS"
+fi
+echo "  SSH:           ssh $USERNAME@$TS_HOST"
+echo "  Glances:       http://$TS_HOST:61208"
 echo "  ntfy test:     curl -H 'Authorization: Bearer \$(cat ~/services/.ntfy-token)' -d 'hello' http://localhost:2586/claude-$USERNAME"
-echo "  Syncthing UI:  ssh -L 8384:localhost:8384 $USERNAME@$TAILSCALE_IP"
+echo "  Syncthing UI:  ssh -L 8384:localhost:8384 $USERNAME@$TS_HOST"
 echo "                 then open http://localhost:8384"
 echo ""
 echo "  Remaining manual steps:"
 echo ""
 echo "  1. Authenticate Claude Code (if not done during setup):"
-echo "       ssh $USERNAME@$TAILSCALE_IP"
+echo "       ssh $USERNAME@$TS_HOST"
 echo "       claude"
 echo ""
-echo "  2. Install Claude Code plugins:"
-echo "       claude"
-echo "       /plugin marketplace add moiri-gamboni/praxis"
-echo "       /plugin install praxis@praxis-marketplace"
-echo "       /plugin install ralph@claude-plugins-official"
-echo ""
-echo "  3. Configure Syncthing:"
-echo "       Pair with your laptop via the web UI."
-echo "       Share ~/roost/ (sessions, memory, code -- all synced)"
-echo "       Add .stignore: node_modules, __pycache__, .venv"
-echo ""
-echo "  4. Add your first app:"
+echo "  2. Add your first app:"
 echo "       Add a Caddy entry:  sudo nano /etc/caddy/Caddyfile"
 echo "       Add a Cloudflare ingress rule:  nano ~/.cloudflared/config.yml"
 echo "       Reload Caddy:  sudo systemctl reload caddy"
-echo "       Route DNS:  cloudflared tunnel route dns ${CLOUDFLARE_TUNNEL_NAME:-claude-roost} app.$DOMAIN"
+echo "       Route DNS:  cloudflared tunnel route dns ${CLOUDFLARE_TUNNEL_NAME:-roost} app.$DOMAIN"
 echo ""
-echo "  5. Phone setup: install Tailscale, Termux, ntfy from F-Droid."
+echo "  3. Phone setup: install Tailscale, Termux, ntfy from F-Droid."
 echo "     See README for details."
 echo ""

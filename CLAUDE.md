@@ -20,7 +20,7 @@ The script sources `.env` for configuration and logs to `logs/` (gitignored).
 
 **Shared environment via `files/_setup-env.sh`**: Sourced by every setup script. Reads `.env` values from the server copy, exports `USERNAME`, `HOME_DIR`, etc., and provides `as_user()` helper.
 
-**No public ports**: The server has no open TCP ports. Tailscale handles private access; Cloudflare Tunnel handles public web traffic. The only public UDP port is 41641 (Tailscale WireGuard).
+**Firewall model**: The Hetzner cloud firewall is the single gate for public SSH access. UFW on the server allows SSH on port 22, so removing the cloud firewall SSH rule locks out public SSH. Tailscale handles private access; Cloudflare Tunnel handles public web traffic. The only other public port is UDP 41641 (Tailscale WireGuard).
 
 **`~/roost/` directory**: All synced state lives under `~/roost/`, making Syncthing configuration a single folder share. `CLAUDE_CONFIG_DIR=~/roost/claude` redirects Claude Code's config there.
 
@@ -38,7 +38,6 @@ The script sources `.env` for configuration and logs to `logs/` (gitignored).
   - `glances.service` -- Systemd unit for Glances monitoring
   - `ram-monitor.service` / `ram-monitor.timer` -- Systemd units for per-process RAM alerting (10s interval)
   - `cron-self-host` -- Crontab entries for health checks, scheduled tasks, auto-update
-  - `machines.json` -- Claude Code multi-machine coordination template
   - `hooks/` -- Shell scripts for Claude Code hooks and cron jobs
     - `_hook-env.sh` -- Shared library: JSON input parsing (`hook_json`), ntfy helpers, rate limiting, logging
     - `reflect.md` -- Prompt injected by `reflect.sh` before context compaction
@@ -55,7 +54,6 @@ The script sources `.env` for configuration and logs to `logs/` (gitignored).
 │   ├── hooks/              Hook scripts
 │   ├── skills/learned/     Learned skills
 │   ├── locks/              Session lock files
-│   ├── machines.json       Multi-machine coordination
 │   └── projects/           Session transcripts (auto-managed)
 ├── memory/                 Structured notes (grepai-indexed)
 └── code/                   Project repositories

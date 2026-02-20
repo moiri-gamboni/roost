@@ -1,5 +1,5 @@
 # Sourced by deploy.sh SSH sessions to set up environment variables and helpers.
-# Expected location on server: /root/claude-roost/files/_setup-env.sh
+# Expected location on server: /root/roost-deploy/files/_setup-env.sh
 
 set -euo pipefail
 
@@ -16,7 +16,7 @@ HOME_DIR="/home/$USERNAME"
 _AS_USER_ENV='
 export PATH="$PATH:/usr/local/go/bin:$HOME/go/bin:$HOME/.local/bin:$HOME/bin"
 export FNM_DIR="$HOME/.local/share/fnm"
-if [ -x "$FNM_DIR/fnm" ]; then eval "$($FNM_DIR/fnm env --shell bash)"; fi
+if [ -d "$FNM_DIR" ]; then export PATH="$FNM_DIR:$PATH"; eval "$($FNM_DIR/fnm env --shell bash)"; fi
 '
 
 as_user() {

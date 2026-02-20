@@ -7,16 +7,15 @@ source "$(dirname "$0")/../_setup-env.sh"
 if as_user "command -v fnm" &>/dev/null; then
     skip "fnm already installed"
 else
-    as_user "curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell"
+    as_user "curl -fsSL https://fnm.vercel.app/install | bash"
     ok "fnm installed"
 fi
 
-if as_user "fnm exec --using=22 node -v" &>/dev/null; then
-    skip "Node.js 22 already installed via fnm"
+if as_user "fnm current" 2>/dev/null | grep -qv 'none'; then
+    skip "Node.js $(as_user 'node -v') already installed via fnm"
 else
-    as_user "fnm install 22"
-    as_user "fnm default 22"
-    ok "Node.js $(as_user 'fnm exec --using=22 node -v') installed"
+    as_user "fnm install --lts"
+    ok "Node.js $(as_user 'node -v') installed"
 fi
 
 # --- Go ---

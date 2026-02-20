@@ -17,7 +17,9 @@ fi
 umount "$DISK" 2>/dev/null || true
 
 echo "[1/6] Checking filesystem..."
-e2fsck -f "$DISK"
+# e2fsck returns 1 when it corrects errors and 2 when it corrects errors and
+# suggests a reboot. Both are success for our purposes; only 4+ means real failure.
+e2fsck -fy "$DISK" || { rc=$?; [ "$rc" -lt 4 ] || exit "$rc"; }
 
 echo "[2/6] Converting ext4 to btrfs (this may take a few minutes)..."
 btrfs-convert "$DISK"
@@ -49,21 +51,45 @@ fi
 echo "New fstab entry:"
 grep -E '^\S+\s+/\s' /mnt/@rootfs/etc/fstab
 
-echo "[6/6] Updating GRUB..."
-mount --bind /dev /mnt/@rootfs/dev
-mount --bind /proc /mnt/@rootfs/proc
-mount --bind /sys /mnt/@rootfs/sys
-mount --bind /dev/pts /mnt/@rootfs/dev/pts
+echo "[6/6] Reinstalling GRUB for btrfs..."
 
-chroot /mnt/@rootfs /bin/bash -c "
+# Remount the subvolume directly at /mnt so the chroot root matches the mount
+# point in /proc/self/mountinfo. This lets grub-probe resolve / to the device.
+cd /
+umount /mnt
+mount -o subvol=@rootfs,discard=async,space_cache=v2 "$DISK" /mnt
+
+mount --bind /dev /mnt/dev
+mount --bind /dev/pts /mnt/dev/pts
+mount --bind /proc /mnt/proc
+mount --bind /sys /mnt/sys
+mount --bind /run /mnt/run
+
+# Mount EFI partition if present
+EFI_PART=$(blkid -t TYPE=vfat -o device 2>/dev/null || true)
+if [ -n "$EFI_PART" ] && [ -d /mnt/boot/efi ]; then
+    mount "$EFI_PART" /mnt/boot/efi
+    echo "Mounted EFI partition $EFI_PART"
+fi
+
+PARENT_DISK="${DISK%[0-9]*}"
+chroot /mnt /bin/bash -c "
+    set -euo pipefail
     update-initramfs -u
+    grub-install $PARENT_DISK
+    if [ -d /boot/efi ]; then
+        grub-install --target=x86_64-efi --efi-directory=/boot/efi --no-nvram
+    fi
     update-grub
 "
 
-umount /mnt/@rootfs/dev/pts
-umount /mnt/@rootfs/dev
-umount /mnt/@rootfs/proc
-umount /mnt/@rootfs/sys
+# Cleanup mounts
+[ -n "$EFI_PART" ] && umount /mnt/boot/efi 2>/dev/null || true
+umount /mnt/run
+umount /mnt/sys
+umount /mnt/proc
+umount /mnt/dev/pts
+umount /mnt/dev
 cd /
 umount /mnt
 
