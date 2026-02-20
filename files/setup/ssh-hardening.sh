@@ -15,6 +15,6 @@ LoginGraceTime 30
 EOF
 
 chmod 644 "$DROPIN"
-systemctl restart sshd
+systemctl restart ssh
 
 ok "SSH hardened via $DROPIN"

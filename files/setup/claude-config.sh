@@ -9,9 +9,6 @@ CLAUDE_DIR="$HOME_DIR/roost/claude"
 # settings.json (hooks, cleanup policy, compact policy)
 cp "$REMOTE_DIR/files/settings.json" "$CLAUDE_DIR/settings.json"
 
-# machines.json
-cp "$REMOTE_DIR/files/machines.json" "$CLAUDE_DIR/machines.json"
-
 chown -R "$USERNAME:$USERNAME" "$CLAUDE_DIR"
 echo "  [+] Claude Code configuration written"
 
