@@ -352,7 +352,7 @@ Make sure DNS is routed: `cloudflared tunnel route dns <name> <hostname>`.
 
 **Services not starting after reboot:**
 If Tailscale needs re-authentication (key expiry), Caddy and Syncthing will wait
-60 seconds then fail. Re-authenticate Tailscale (`tailscale up --ssh`), then
+60 seconds then fail. Re-authenticate Tailscale (`tailscale up`), then
 restart the failed services (`sudo systemctl restart caddy syncthing@<username>`).
 
 **Claude Code OAuth expired:**
