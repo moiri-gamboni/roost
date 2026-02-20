@@ -808,6 +808,14 @@ section "Unattended Upgrades"
 remote_script "setup/unattended-upgrades.sh"
 ok "Unattended security upgrades configured"
 
+# ============================================
+# Initial Snapshot
+# ============================================
+
+section "Initial Snapshot"
+remote "$ROOT_CMD snapper -c root create --description 'post-deploy $(date +%Y-%m-%d)'"
+ok "Initial btrfs snapshot created"
+
 # Clean up deploy files from server
 remote "rm -rf $REMOTE_DIR"
 

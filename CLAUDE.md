@@ -37,7 +37,7 @@ The script sources `.env` for configuration and logs to `logs/` (gitignored).
   - `syncthing-tailscale.conf` -- Systemd drop-in for Syncthing to wait for Tailscale
   - `glances.service` -- Systemd unit for Glances monitoring
   - `ram-monitor.service` / `ram-monitor.timer` -- Systemd units for per-process RAM alerting (10s interval)
-  - `cron-self-host` -- Crontab entries for health checks, scheduled tasks, auto-update
+  - `cron-roost` -- Crontab entries for health checks, scheduled tasks, auto-update
   - `hooks/` -- Shell scripts for Claude Code hooks and cron jobs
     - `_hook-env.sh` -- Shared library: JSON input parsing (`hook_json`), ntfy helpers, rate limiting, logging
     - `reflect.md` -- Prompt injected by `reflect.sh` before context compaction

@@ -6,10 +6,13 @@ source "$(dirname "$0")/../_setup-env.sh"
 
 export USERNAME HOME_DIR
 envsubst '$USERNAME $HOME_DIR' \
-    < "$REMOTE_DIR/files/cron-self-host" \
-    > /etc/cron.d/self-host
+    < "$REMOTE_DIR/files/cron-roost" \
+    > /etc/cron.d/roost
 
-chmod 644 /etc/cron.d/self-host
+chmod 644 /etc/cron.d/roost
+
+# Clean up old name
+rm -f /etc/cron.d/self-host
 echo "  [+] Cron jobs configured"
 
 # --- Initial grepai setup ---

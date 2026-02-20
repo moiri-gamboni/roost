@@ -11,6 +11,7 @@ if [ -f "$TARGET" ] && [ "$(cat "$TARGET")" = "$RENDERED" ]; then
 else
     echo "$RENDERED" > "$TARGET"
     systemctl daemon-reload
-    systemctl enable --now glances
+    systemctl enable glances
+    systemctl restart glances
     ok "Glances running"
 fi

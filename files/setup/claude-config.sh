@@ -39,30 +39,47 @@ echo "  [*] Installing dangerous-command-blocker hook..."
 as_user "cd ~ && CLAUDE_CONFIG_DIR=$CLAUDE_DIR npx --yes claude-code-templates@latest --hook=security/dangerous-command-blocker --yes" || \
     echo "  [*] Could not install dangerous-command-blocker (install manually later)"
 
-# Move files that landed in ~/.claude/ instead of $CLAUDE_DIR
-if [ -d "$HOME_DIR/.claude/scripts" ]; then
-    mkdir -p "$CLAUDE_DIR/scripts"
-    cp -rn "$HOME_DIR/.claude/scripts/"* "$CLAUDE_DIR/scripts/" 2>/dev/null || true
-    rm -rf "$HOME_DIR/.claude/scripts"
-    chown -R "$USERNAME:$USERNAME" "$CLAUDE_DIR/scripts"
-    echo "  [+] Moved hook scripts from ~/.claude/ to $CLAUDE_DIR/"
-fi
+# claude-code-templates ignores CLAUDE_CONFIG_DIR and writes to ~/.claude/:
+#   - ~/.claude/settings.local.json  (PreToolUse hook config)
+#   - ~/.claude/hooks/dangerous-command-blocker.py  (the actual script)
+# The config may reference .claude/scripts/ even though the file is in .claude/hooks/.
+# We consolidate everything into $CLAUDE_DIR/hooks/ and fix the paths.
 
-# Merge any PreToolUse hooks the template wrote to ~/.claude/settings.json
-if [ -f "$HOME_DIR/.claude/settings.json" ]; then
-    NEW_HOOKS=$(jq '.hooks.PreToolUse // empty' "$HOME_DIR/.claude/settings.json" 2>/dev/null)
-    if [ -n "$NEW_HOOKS" ] && [ "$NEW_HOOKS" != "null" ]; then
-        jq --argjson new "$NEW_HOOKS" '.hooks.PreToolUse = (.hooks.PreToolUse // []) + $new' \
-            "$CLAUDE_DIR/settings.json" > "$CLAUDE_DIR/settings.json.tmp"
-        mv "$CLAUDE_DIR/settings.json.tmp" "$CLAUDE_DIR/settings.json"
-        chown "$USERNAME:$USERNAME" "$CLAUDE_DIR/settings.json"
-        echo "  [+] Merged PreToolUse hooks into $CLAUDE_DIR/settings.json"
+# Move script files from ~/.claude/hooks/ and ~/.claude/scripts/ into $CLAUDE_DIR/hooks/
+for subdir in hooks scripts; do
+    if [ -d "$HOME_DIR/.claude/$subdir" ]; then
+        mkdir -p "$CLAUDE_DIR/hooks"
+        cp -rn "$HOME_DIR/.claude/$subdir/"* "$CLAUDE_DIR/hooks/" 2>/dev/null || true
+        rm -rf "$HOME_DIR/.claude/$subdir"
+        chown -R "$USERNAME:$USERNAME" "$CLAUDE_DIR/hooks"
+        echo "  [+] Moved ~/.claude/$subdir/ into $CLAUDE_DIR/hooks/"
     fi
-    rm -f "$HOME_DIR/.claude/settings.json"
-fi
+done
 
-# Fix script paths to use $CLAUDE_DIR instead of ~/.claude/
-if grep -q '\.claude/scripts/' "$CLAUDE_DIR/settings.json" 2>/dev/null; then
-    sed -i "s|\.claude/scripts/|roost/claude/scripts/|g" "$CLAUDE_DIR/settings.json"
+# Merge PreToolUse hooks into our settings.json
+merge_pretooluse() {
+    local src="$1"
+    [ -f "$src" ] || return 1
+    local new_hooks
+    new_hooks=$(jq '.hooks.PreToolUse // empty' "$src" 2>/dev/null)
+    [ -n "$new_hooks" ] && [ "$new_hooks" != "null" ] || return 1
+    jq --argjson new "$new_hooks" '.hooks.PreToolUse = (.hooks.PreToolUse // []) + $new' \
+        "$CLAUDE_DIR/settings.json" > "$CLAUDE_DIR/settings.json.tmp"
+    mv "$CLAUDE_DIR/settings.json.tmp" "$CLAUDE_DIR/settings.json"
+    chown "$USERNAME:$USERNAME" "$CLAUDE_DIR/settings.json"
+    echo "  [+] Merged PreToolUse hooks from $src"
+    rm -f "$src"
+    return 0
+}
+
+merge_pretooluse "$HOME_DIR/.claude/settings.json" || true
+merge_pretooluse "$HOME_DIR/.claude/settings.local.json" || true
+merge_pretooluse "$CLAUDE_DIR/settings.local.json" || true
+
+# Fix all .claude/scripts/ and .claude/hooks/ references to point to $CLAUDE_DIR/hooks/
+# (claude-code-templates references .claude/scripts/ but puts files in .claude/hooks/)
+if grep -qE '\.claude/(scripts|hooks)/' "$CLAUDE_DIR/settings.json" 2>/dev/null; then
+    sed -i "s|\.claude/scripts/|roost/claude/hooks/|g; s|\.claude/hooks/|roost/claude/hooks/|g" \
+        "$CLAUDE_DIR/settings.json"
     echo "  [+] Updated script paths in settings.json"
 fi
