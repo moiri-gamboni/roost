@@ -68,13 +68,14 @@ echo "--- Hetzner Cloud Firewall ---"
 if command -v hcloud &>/dev/null; then
     FW_RULES=$(hcloud firewall describe "${SERVER_NAME}-fw" -o json 2>/dev/null | jq -r '.rules[]' 2>/dev/null || true)
     if [ -n "$FW_RULES" ]; then
-        # Count inbound rules — should be SSH (22/tcp) + Tailscale (41641/udp) only
+        # Count inbound rules — should be Tailscale (41641/udp) only
+        # SSH rule is temporary (added at start of deploy, removed at end)
         INBOUND_COUNT=$(hcloud firewall describe "${SERVER_NAME}-fw" -o json 2>/dev/null \
             | jq '[.rules[] | select(.direction == "in")] | length' 2>/dev/null || echo "?")
-        if [ "$INBOUND_COUNT" = "2" ]; then
-            pass "Cloud firewall: $INBOUND_COUNT inbound rules (SSH + Tailscale)"
+        if [ "$INBOUND_COUNT" = "1" ]; then
+            pass "Cloud firewall: Tailscale only (SSH rule removed)"
         else
-            pass "Cloud firewall: $INBOUND_COUNT inbound rules"
+            fail "Cloud firewall: $INBOUND_COUNT inbound rules (expected 1; SSH rule should be removed after deploy)"
         fi
     else
         skip "Cloud firewall" "could not query rules"
@@ -87,8 +88,7 @@ fi
 PUBLIC_IP=$(hcloud server ip "$SERVER_NAME" 2>/dev/null || true)
 if [ -n "$PUBLIC_IP" ]; then
     if ssh -o ConnectTimeout=5 -o BatchMode=yes "$USERNAME@$PUBLIC_IP" true 2>/dev/null; then
-        # Public SSH connected — may or may not be desired
-        skip "Public SSH" "connected (cloud firewall SSH rule still active)"
+        fail "Public SSH reachable (cloud firewall SSH rule should be removed after deploy)"
     else
         pass "Public SSH blocked"
     fi
@@ -139,7 +139,7 @@ echo "--- Snapper ---"
 
 if run command -v snapper >/dev/null 2>&1; then
     pass "Snapper installed"
-    SNAP_COUNT=$(run snapper -c root list --columns number 2>/dev/null | tail -n +3 | wc -l)
+    SNAP_COUNT=$(run sudo snapper -c root list --columns number 2>/dev/null | tail -n +3 | wc -l)
     if [ "$SNAP_COUNT" -gt 0 ]; then
         pass "Snapper has snapshots ($SNAP_COUNT)"
     else
@@ -262,11 +262,13 @@ else
     fail "cloudflared config"
 fi
 
-TUNNEL_NAME="${CLOUDFLARE_TUNNEL_NAME:-roost}"
-if run cloudflared tunnel list 2>/dev/null | grep -q "$TUNNEL_NAME"; then
-    pass "Tunnel '$TUNNEL_NAME' exists"
+TUNNEL_NAME="${CLOUDFLARE_TUNNEL_NAME:-${ROOST_DIR_NAME:-roost}}"
+# Check for credentials JSON (API-based auth doesn't use cert.pem or `cloudflared tunnel list`)
+TUNNEL_ID=$(run "grep -oP '\"TunnelID\"\\s*:\\s*\"\\K[^\"]+' $HOME_DIR/.cloudflared/*.json 2>/dev/null | head -1" || true)
+if [ -n "$TUNNEL_ID" ]; then
+    pass "Tunnel credentials exist (ID: $TUNNEL_ID)"
 else
-    fail "Tunnel '$TUNNEL_NAME' not found"
+    fail "Tunnel credentials not found in ~/.cloudflared/"
 fi
 
 # ── Ollama ────────────────────────────────────────────────────

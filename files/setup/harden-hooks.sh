@@ -6,8 +6,8 @@
 # Usage: sudo bash harden-hooks.sh
 source "$(dirname "$0")/../_setup-env.sh"
 
-HOOKS_DIR="$HOME_DIR/roost/claude/hooks"
-CLAUDE_DIR="$HOME_DIR/roost/claude"
+HOOKS_DIR="$ROOST_DIR/claude/hooks"
+CLAUDE_DIR="$ROOST_DIR/claude"
 
 if [ ! -d "$HOOKS_DIR" ]; then
     echo "Error: $HOOKS_DIR does not exist"

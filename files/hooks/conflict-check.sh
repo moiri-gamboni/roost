@@ -2,7 +2,7 @@
 # Check for Syncthing conflict files and notify via ntfy.
 source "$(dirname "$0")/_hook-env.sh"
 
-ROOST_DIR="$HOME/roost"
+ROOST_DIR="$HOME/${ROOST_DIR_NAME:-roost}"
 LAST_CHECK="$HOOK_RUNTIME_DIR/.last-conflict-check"
 touch -a "$LAST_CHECK" 2>/dev/null
 

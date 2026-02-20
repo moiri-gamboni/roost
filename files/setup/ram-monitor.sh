@@ -2,10 +2,10 @@
 # Deploy the RAM monitor systemd timer.
 source "$(dirname "$0")/../_setup-env.sh"
 
-export USERNAME HOME_DIR
+export USERNAME HOME_DIR ROOST_DIR_NAME
 
 for unit in ram-monitor.service ram-monitor.timer; do
-    RENDERED=$(envsubst '$USERNAME $HOME_DIR' < "$REMOTE_DIR/files/$unit")
+    RENDERED=$(envsubst '$USERNAME $HOME_DIR $ROOST_DIR_NAME' < "$REMOTE_DIR/files/$unit")
     TARGET="/etc/systemd/system/$unit"
 
     if [ -f "$TARGET" ] && [ "$(cat "$TARGET")" = "$RENDERED" ]; then

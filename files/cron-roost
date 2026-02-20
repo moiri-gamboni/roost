@@ -1,18 +1,18 @@
 # Environment
 HOME=$HOME_DIR
-CLAUDE_CONFIG_DIR=$HOME_DIR/roost/claude
+CLAUDE_CONFIG_DIR=$HOME_DIR/$ROOST_DIR_NAME/claude
 
 # Health check every 5 minutes
-*/5 * * * * $USERNAME flock -n $HOME_DIR/.locks/health-check $HOME_DIR/roost/claude/hooks/health-check.sh
+*/5 * * * * $USERNAME flock -n $HOME_DIR/.locks/health-check $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/health-check.sh
 
 # Morning summary
-0 8 * * * $USERNAME flock -n $HOME_DIR/.locks/morning-summary $HOME_DIR/roost/claude/hooks/scheduled-task.sh "Check ntfy history and summarize what happened overnight" $HOME_DIR/roost/code/life
+0 8 * * * $USERNAME flock -n $HOME_DIR/.locks/morning-summary $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/scheduled-task.sh "Check ntfy history and summarize what happened overnight" $HOME_DIR/$ROOST_DIR_NAME/code/life
 
 # Weekly memory cleanup
-0 10 * * 0 $USERNAME flock -n $HOME_DIR/.locks/memory-cleanup $HOME_DIR/roost/claude/hooks/scheduled-task.sh "Review ~/roost/memory/ for duplicate or mergeable notes. Deduplicate and merge where appropriate. Do not delete notes that passed the 6-month test at write time unless you can document a clear reason in the commit message." $HOME_DIR/roost/code/life
+0 10 * * 0 $USERNAME flock -n $HOME_DIR/.locks/memory-cleanup $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/scheduled-task.sh "Review ~/$ROOST_DIR_NAME/memory/ for duplicate or mergeable notes. Deduplicate and merge where appropriate. Do not delete notes that passed the 6-month test at write time unless you can document a clear reason in the commit message." $HOME_DIR/$ROOST_DIR_NAME/code/life
 
 # Weekly auto-update (Sunday 3am, before weekly memory cleanup at 10am)
-0 3 * * 0 $USERNAME flock -n $HOME_DIR/.locks/auto-update $HOME_DIR/roost/claude/hooks/auto-update.sh
+0 3 * * 0 $USERNAME flock -n $HOME_DIR/.locks/auto-update $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/auto-update.sh
 
 # Syncthing conflict detection
-*/30 * * * * $USERNAME flock -n $HOME_DIR/.locks/conflict-check $HOME_DIR/roost/claude/hooks/conflict-check.sh
+*/30 * * * * $USERNAME flock -n $HOME_DIR/.locks/conflict-check $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/conflict-check.sh

@@ -24,20 +24,22 @@ e2fsck -fy "$DISK" || { rc=$?; [ "$rc" -lt 4 ] || exit "$rc"; }
 echo "[2/6] Converting ext4 to btrfs (this may take a few minutes)..."
 btrfs-convert "$DISK"
 
-echo "[3/6] Mounting and creating @rootfs subvolume..."
+echo "[3/7] Mounting and creating subvolumes..."
 mount -o discard=async,space_cache=v2 "$DISK" /mnt
 btrfs subvolume create /mnt/@rootfs
+btrfs subvolume create /mnt/@swap
 
-echo "[4/6] Moving files into subvolume..."
+echo "[4/7] Moving files into subvolume..."
 cd /mnt
 shopt -s dotglob
 for item in *; do
     [ "$item" = "@rootfs" ] && continue
+    [ "$item" = "@swap" ] && continue
     mv "$item" @rootfs/
 done
 btrfs subvolume set-default /mnt/@rootfs
 
-echo "[5/6] Updating fstab..."
+echo "[5/7] Updating fstab..."
 DISK_UUID=$(blkid -s UUID -o value "$DISK")
 
 # Replace the root mount line
@@ -48,10 +50,16 @@ else
     sed -i "s|^\S\+\s\+/\s\+ext4\s\+\S\+\s\+[0-9]\+\s\+[0-9]\+|UUID=${DISK_UUID} / btrfs defaults,discard=async,space_cache=v2,subvol=@rootfs 0 0|" /mnt/@rootfs/etc/fstab
 fi
 
-echo "New fstab entry:"
-grep -E '^\S+\s+/\s' /mnt/@rootfs/etc/fstab
+# Add @swap subvolume mount (swap.sh will create the swap file inside it)
+echo "UUID=${DISK_UUID} /swap btrfs defaults,subvol=@swap 0 0" >> /mnt/@rootfs/etc/fstab
 
-echo "[6/6] Reinstalling GRUB for btrfs..."
+echo "[6/7] Creating /swap mount point..."
+mkdir -p /mnt/@rootfs/swap
+
+echo "New fstab entries:"
+grep -E '^\S+\s+/(swap\s|\s)' /mnt/@rootfs/etc/fstab
+
+echo "[7/7] Reinstalling GRUB for btrfs..."
 
 # Remount the subvolume directly at /mnt so the chroot root matches the mount
 # point in /proc/self/mountinfo. This lets grub-probe resolve / to the device.

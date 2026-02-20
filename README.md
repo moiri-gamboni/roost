@@ -27,13 +27,16 @@ Before starting, you will need:
    (https://console.hetzner.cloud/ > your project > Security > API Tokens)
 
 2. **Cloudflare account** with a domain whose DNS is managed by Cloudflare
+   - API token with `Zone:DNS:Edit` permission (create at https://dash.cloudflare.com/profile/api-tokens)
 
 3. **Tailscale account** (free for personal use, https://tailscale.com/)
+   - Pre-authenticated auth key (generate at https://login.tailscale.com/admin/settings/keys)
 
 4. **Claude Code subscription**
 
 5. **On your laptop:**
    - `hcloud` CLI (https://github.com/hetznercloud/cli)
+   - `jq` (https://jqlang.org/download/)
    - SSH key pair added to Hetzner (see below)
    - Git
 
@@ -51,27 +54,22 @@ This saves the token locally. You only need to do this once.
 
 ### SSH key setup
 
-The SSH key is used for server access. The Hetzner cloud firewall controls
-whether public SSH is reachable; Tailscale provides an additional private path.
+The SSH key is used for server access. The deploy script auto-selects from
+your Hetzner SSH keys (or lets you upload a new one), so you do not need to
+set `SSH_KEY_NAME` in `.env`.
 
-**If you already have a key** (`~/.ssh/id_ed25519.pub` or `~/.ssh/id_rsa.pub`):
+Make sure you have at least one SSH key registered with Hetzner. If not:
 
 ```bash
+# Generate a key (if you don't have one)
+ssh-keygen -t ed25519 -C "your@email.com"
+
 # Upload to Hetzner via CLI
 hcloud ssh-key create --name my-key --public-key-from-file ~/.ssh/id_ed25519.pub
 ```
 
 Or paste the contents of your `.pub` file into the Hetzner Console
 (Security > SSH Keys > Add SSH Key).
-
-**If you need to create one:**
-
-```bash
-ssh-keygen -t ed25519 -C "your@email.com"
-hcloud ssh-key create --name my-key --public-key-from-file ~/.ssh/id_ed25519.pub
-```
-
-Set `SSH_KEY_NAME` in `.env` to the name you used (e.g. `my-key`).
 
 ## File Overview
 
@@ -93,18 +91,21 @@ hcloud context create roost
 # Paste your Hetzner API token when prompted
 ```
 
-Edit `.env` and fill in:
+Edit `.env` and fill in the required values:
 
-- `SSH_KEY_NAME` (must match the name in Hetzner's SSH key list)
 - `USERNAME` (the non-root user to create on the server)
 - `DOMAIN` (your Cloudflare-managed domain)
+- `TAILSCALE_AUTHKEY` (generate at https://login.tailscale.com/admin/settings/keys)
+- `CLOUDFLARE_API_TOKEN` (create at https://dash.cloudflare.com/profile/api-tokens, needs `Zone:DNS:Edit`)
 
-Optional: set `SERVER_LOCATION` to a comma-separated list of locations
-(e.g. `"nbg1,fsn1"`). Only listed locations are tried, in order.
-When empty, all locations are tried in an order optimized for Western Europe.
+Optional settings:
 
-Optional: set `TAILSCALE_AUTHKEY` to skip the interactive Tailscale login.
-You can generate one at https://login.tailscale.com/admin/settings/keys.
+- `SERVER_LOCATION` -- comma-separated list of locations (e.g. `"nbg1,fsn1"`). Only listed locations are tried, in order. When empty, all locations are tried in an order optimized for Western Europe.
+- `ROOST_DIR_NAME` -- name of the synced directory under `~/` (default `roost`). Must match on server and laptop.
+- `CLOUDFLARE_ACCOUNT_ID` -- speeds up tunnel creation by skipping account lookup. Required only if you have multiple Cloudflare accounts.
+- `CLOUDFLARE_TUNNEL_NAME` -- defaults to `$ROOST_DIR_NAME`.
+
+SSH key is auto-selected during deploy (interactive menu of your Hetzner keys, or upload a new one).
 
 ### Step 2: Deploy
 
@@ -113,29 +114,21 @@ chmod +x deploy.sh
 ./deploy.sh
 ```
 
+Or skip the confirmation prompt:
+
+```bash
+./deploy.sh --yes
+```
+
+The script shows a pre-flight summary (server name, user, domain, SSH key, tunnel name) and asks for confirmation before provisioning (unless `--yes` is used).
+
 This single command handles everything: creating the server, converting to
-btrfs, and installing all software and services. It is idempotent (safe to
-re-run after partial failures or to apply changes).
+btrfs, installing all software and services, creating the Cloudflare tunnel
+via API, and joining Tailscale via auth key. It is idempotent (safe to re-run
+after partial failures or to apply changes).
 
-The script pauses at three points for manual authentication:
-
-#### Pause 1: Tailscale Authentication
-
-If you did not set `TAILSCALE_AUTHKEY` in .env, the script prints a URL.
-Open it in your browser, sign in to Tailscale, and authorize the device.
-The script continues automatically once authentication succeeds.
-
-#### Pause 2: Claude Code OAuth
-
-The script pauses and asks you to authenticate Claude Code. Open a **second
-terminal**, SSH in as your user, run `claude`, and complete the OAuth flow in
-your browser. You can also skip this and do it after the script finishes.
-
-#### Pause 3: Cloudflare Tunnel Login
-
-The script runs `cloudflared tunnel login`, which prints a URL. Open it in your
-browser and select your domain. The script then creates the tunnel and writes
-the configuration automatically.
+No interactive pauses during deploy. After the script finishes, authenticate
+Claude Code by SSHing into the server and running `claude`.
 
 ### Step 3: Post-Setup (Manual)
 
@@ -183,17 +176,26 @@ systemctl status ram-monitor.timer
    - hostname: appname.yourdomain.dev
      service: http://localhost:80
    ```
-4. Route DNS and reload:
+4. Route DNS via the Cloudflare API and reload Caddy:
    ```bash
-   cloudflared tunnel route dns <tunnel-name> appname.yourdomain.dev
+   # Get your zone ID
+   curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+     "https://api.cloudflare.com/client/v4/zones?name=yourdomain.dev" | jq '.result[0].id'
+
+   # Create CNAME record (replace ZONE_ID and TUNNEL_ID)
+   curl -X POST "https://api.cloudflare.com/client/v4/zones/ZONE_ID/dns_records" \
+     -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"type":"CNAME","name":"appname.yourdomain.dev","content":"TUNNEL_ID.cfargotunnel.com","proxied":true}'
+
    sudo systemctl reload caddy
    ```
 
 #### Syncthing (automatic pairing):
 
 The deploy script automatically pairs the server and laptop Syncthing instances
-if Syncthing is installed and running on your laptop. It shares `~/roost/` in
-both directions and deploys a `.stignore` file on the server.
+if Syncthing is installed and running on your laptop. It shares `~/$ROOST_DIR_NAME/`
+(default `~/roost/`) in both directions and deploys a `.stignore` file on the server.
 
 **Prerequisites** (install before running deploy.sh):
 - Syncthing on your laptop (https://syncthing.net/downloads/)
@@ -212,7 +214,7 @@ ssh -L 8384:localhost:8384 <username>@<tailscale-ip>
 
 1. Install and connect Tailscale
 2. Install Syncthing (pairing is handled by `deploy.sh`)
-3. Set `CLAUDE_CONFIG_DIR=$HOME/roost/claude` in your shell profile
+3. Set `CLAUDE_CONFIG_DIR=$HOME/roost/claude` in your shell profile (replace `roost` with your `ROOST_DIR_NAME` if you changed it; it must match the server)
 4. (Optional) Create a sleep hook that sends `/exit` to Claude tmux sessions
    before suspend, so sessions sync cleanly:
    ```ini
@@ -261,6 +263,8 @@ Tailscale handles all private access (admin, notifications, sync).
 Sensitive services never touch the public internet.
 
 ### Directory Structure (on server)
+
+The directory name `roost` is configurable via `ROOST_DIR_NAME` in `.env`.
 
 ```
 ~/roost/                    Syncthing-synced root
@@ -348,7 +352,8 @@ Update Syncthing listen address via the REST API or re-run `deploy.sh`.
 **Cloudflare Tunnel not working:**
 Check `journalctl -u cloudflared`.
 Verify `/etc/cloudflared/config.yml` has the correct tunnel ID and credentials path.
-Make sure DNS is routed: `cloudflared tunnel route dns <name> <hostname>`.
+Make sure DNS is routed (use the Cloudflare API; see "Add your first web app" above).
+Note: there is no `cert.pem` on the server; tunnels are created via API token.
 
 **Services not starting after reboot:**
 If Tailscale needs re-authentication (key expiry), Caddy and Syncthing will wait
@@ -358,6 +363,10 @@ restart the failed services (`sudo systemctl restart caddy syncthing@<username>`
 **Claude Code OAuth expired:**
 Scheduled tasks and headless `claude -p` will fail. The health check will
 alert via ntfy. SSH in and run `claude` interactively to re-authenticate.
+
+**Syncthing not syncing / wrong directory:**
+If you changed `ROOST_DIR_NAME`, make sure the value matches on both the server
+(`.env`) and your laptop (`CLAUDE_CONFIG_DIR` and Syncthing folder path).
 
 **deploy.sh failed partway through:**
 The script is idempotent. Fix the issue and re-run it.

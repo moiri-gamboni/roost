@@ -10,11 +10,30 @@
 #     Run: hcloud context create <name>
 #   - .env filled in (copy from .env.example)
 #
-# Usage: ./deploy.sh
+# Usage: ./deploy.sh [-y|--yes]
+#
+# Options:
+#   -y, --yes    Skip confirmation prompts (except SSH key selection)
 set -euo pipefail
+
+# Parse arguments before sourcing .env
+AUTO_CONFIRM=false
+for arg in "$@"; do
+    case "$arg" in
+        -y|--yes) AUTO_CONFIRM=true ;;
+        *)
+            echo "Unknown option: $arg"
+            echo "Usage: ./deploy.sh [-y|--yes]"
+            exit 1
+            ;;
+    esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/.env"
+
+# Configurable sync directory name (default: roost)
+ROOST_DIR_NAME="${ROOST_DIR_NAME:-roost}"
 
 # ============================================
 # Logging
@@ -30,7 +49,7 @@ echo "Log: $LOGFILE"
 # Validation
 # ============================================
 
-for var in SERVER_NAME USERNAME DOMAIN; do
+for var in SERVER_NAME USERNAME DOMAIN TAILSCALE_AUTHKEY CLOUDFLARE_API_TOKEN; do
     if [ -z "${!var:-}" ]; then
         echo "Error: $var is not set in .env"
         exit 1
@@ -42,10 +61,161 @@ if ! command -v hcloud &>/dev/null; then
     exit 1
 fi
 
+if ! command -v jq &>/dev/null; then
+    echo "Error: jq not found. Install it: https://jqlang.org/download/"
+    exit 1
+fi
+
 if ! hcloud server-type list -o noheader >/dev/null 2>&1; then
     echo "Error: hcloud CLI not authenticated."
     echo "Run: hcloud context create <name>"
     exit 1
+fi
+
+# --- SSH Key Selection ---
+
+if [ -z "${SSH_KEY_NAME:-}" ]; then
+    info_msg() { echo "  [*] $1"; }
+
+    info_msg "No SSH_KEY_NAME set. Querying Hetzner for existing keys..."
+    KEYS_JSON=$(hcloud ssh-key list -o json)
+    KEY_COUNT=$(echo "$KEYS_JSON" | jq 'length')
+
+    # Build menu: existing keys + upload option
+    echo ""
+    echo "  Available SSH keys:"
+    if [ "$KEY_COUNT" -gt 0 ]; then
+        for i in $(seq 0 $((KEY_COUNT - 1))); do
+            KEY_NAME=$(echo "$KEYS_JSON" | jq -r ".[$i].name")
+            echo "    $((i + 1)). $KEY_NAME"
+        done
+    fi
+    echo "    $((KEY_COUNT + 1)). Upload a new key"
+    echo ""
+
+    read -p "  Select an option [1-$((KEY_COUNT + 1))]: " key_choice
+
+    if [ "$key_choice" -eq $((KEY_COUNT + 1)) ] 2>/dev/null; then
+        # Upload a new key: scan for local public keys
+        LOCAL_KEYS=()
+        while IFS= read -r -d '' pubkey; do
+            LOCAL_KEYS+=("$pubkey")
+        done < <(find "$HOME/.ssh" -name 'id_*.pub' -print0 2>/dev/null)
+
+        if [ ${#LOCAL_KEYS[@]} -eq 0 ]; then
+            echo "Error: No SSH public keys found in ~/.ssh/"
+            echo "Generate one with: ssh-keygen -t ed25519"
+            exit 1
+        fi
+
+        echo ""
+        echo "  Local public keys:"
+        for i in "${!LOCAL_KEYS[@]}"; do
+            echo "    $((i + 1)). ${LOCAL_KEYS[$i]}"
+        done
+        echo ""
+
+        read -p "  Select a key to upload [1-${#LOCAL_KEYS[@]}]: " upload_choice
+        upload_idx=$((upload_choice - 1))
+
+        if [ "$upload_idx" -lt 0 ] || [ "$upload_idx" -ge ${#LOCAL_KEYS[@]} ]; then
+            echo "Error: Invalid selection"
+            exit 1
+        fi
+
+        SELECTED_PUBKEY="${LOCAL_KEYS[$upload_idx]}"
+        DEFAULT_KEY_NAME=$(basename "$SELECTED_PUBKEY" .pub)
+        read -p "  Name for this key [$DEFAULT_KEY_NAME]: " key_name
+        key_name="${key_name:-$DEFAULT_KEY_NAME}"
+
+        hcloud ssh-key create --name "$key_name" --public-key-from-file "$SELECTED_PUBKEY"
+        SSH_KEY_NAME="$key_name"
+        echo "  [+] Uploaded and selected SSH key: $SSH_KEY_NAME"
+    elif [ "$key_choice" -ge 1 ] 2>/dev/null && [ "$key_choice" -le "$KEY_COUNT" ] 2>/dev/null; then
+        SSH_KEY_NAME=$(echo "$KEYS_JSON" | jq -r ".[$((key_choice - 1))].name")
+        echo "  [+] Selected SSH key: $SSH_KEY_NAME"
+    else
+        echo "Error: Invalid selection"
+        exit 1
+    fi
+    echo ""
+
+    unset -f info_msg
+fi
+
+# --- Cloudflare API: resolve Account ID and Zone ID ---
+
+info_msg() { echo "  [*] $1"; }
+
+CF_API="https://api.cloudflare.com/client/v4"
+CF_AUTH=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json")
+
+# Zone ID (resolve first; the account ID can be derived from the zone if needed)
+ZONE_JSON=$(curl -s "${CF_AUTH[@]}" "$CF_API/zones?name=$DOMAIN")
+CF_ZONE_ID=$(echo "$ZONE_JSON" | jq -r '.result[0].id // empty')
+if [ -z "$CF_ZONE_ID" ]; then
+    echo "Error: No Cloudflare zone found for domain '$DOMAIN'."
+    echo "API response:"
+    echo "$ZONE_JSON" | jq '.errors // .' 2>/dev/null || echo "$ZONE_JSON"
+    echo "Ensure the domain is added to your Cloudflare account and the API token has Zone > DNS > Edit permission."
+    exit 1
+fi
+info_msg "Cloudflare Zone ID: $CF_ZONE_ID"
+
+# Account ID (from .env, /accounts endpoint, or derived from the zone)
+if [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+    CF_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID"
+else
+    # Try /accounts first (requires account-level token permissions)
+    ACCOUNTS_JSON=$(curl -s "${CF_AUTH[@]}" "$CF_API/accounts" 2>/dev/null || true)
+    ACCOUNT_COUNT=$(echo "$ACCOUNTS_JSON" | jq '.result | length' 2>/dev/null || echo 0)
+    if [ "$ACCOUNT_COUNT" -eq 1 ]; then
+        CF_ACCOUNT_ID=$(echo "$ACCOUNTS_JSON" | jq -r '.result[0].id')
+    elif [ "$ACCOUNT_COUNT" -gt 1 ]; then
+        echo "Error: Multiple Cloudflare accounts found. Set CLOUDFLARE_ACCOUNT_ID in .env."
+        echo "Accounts:"
+        echo "$ACCOUNTS_JSON" | jq -r '.result[] | "  \(.id)  \(.name)"'
+        exit 1
+    else
+        # Token may lack account-level access; extract account from the zone response
+        CF_ACCOUNT_ID=$(echo "$ZONE_JSON" | jq -r '.result[0].account.id // empty')
+        if [ -z "$CF_ACCOUNT_ID" ]; then
+            echo "Error: Could not determine Cloudflare Account ID."
+            echo "Set CLOUDFLARE_ACCOUNT_ID in .env."
+            exit 1
+        fi
+    fi
+fi
+info_msg "Cloudflare Account ID: $CF_ACCOUNT_ID"
+
+unset -f info_msg
+
+# --- Pre-flight Summary ---
+
+TUNNEL_NAME="${CLOUDFLARE_TUNNEL_NAME:-$ROOST_DIR_NAME}"
+
+echo ""
+echo "========================================"
+echo "  Deploy Summary"
+echo "========================================"
+echo ""
+echo "  Hetzner server:    $SERVER_NAME (${SERVER_TYPE:-not set})"
+echo "  Server user:       $USERNAME"
+echo "  Cloudflare domain: $DOMAIN"
+echo "  Sync directory:    ~/$ROOST_DIR_NAME"
+echo "  Hetzner SSH key:   $SSH_KEY_NAME"
+echo "  Cloudflare tunnel: $TUNNEL_NAME"
+echo ""
+
+if [ "$AUTO_CONFIRM" = false ]; then
+    read -p "  Proceed? [y/N] " confirm
+    case "$confirm" in
+        [yY]|[yY][eE][sS]) ;;
+        *)
+            echo "Aborted."
+            exit 0
+            ;;
+    esac
 fi
 
 # ============================================
@@ -199,15 +369,16 @@ else
         --source-ips 0.0.0.0/0 --source-ips ::/0 \
         --description "Tailscale WireGuard"
 
-    # SSH (cloud firewall is the single gate for public SSH access;
-    # UFW on the server allows port 22, so removing this rule locks out public SSH)
-    hcloud firewall add-rule roost-fw \
-        --direction in --protocol tcp --port 22 \
-        --source-ips 0.0.0.0/0 --source-ips ::/0 \
-        --description "SSH"
-
     ok "Firewall 'roost-fw' created"
 fi
+
+# Temporary SSH rule for deploy (removed at end of script).
+# Delete first to avoid duplicates from interrupted previous runs.
+SSH_RULE_ARGS=(--direction in --protocol tcp --port 22
+    --source-ips 0.0.0.0/0 --source-ips ::/0 --description "SSH")
+hcloud firewall delete-rule roost-fw "${SSH_RULE_ARGS[@]}" 2>/dev/null || true
+hcloud firewall add-rule roost-fw "${SSH_RULE_ARGS[@]}"
+ok "Temporary SSH rule added"
 
 # Attach firewall to existing server (hcloud is silent if already attached)
 if [ "$EXISTING" = true ]; then
@@ -468,17 +639,8 @@ if [ "$TS_STATUS" = "Running" ]; then
     skip "Tailscale already connected"
 else
     # Force reauth in case the daemon has stale state from a deleted node
-    if [ -n "${TAILSCALE_AUTHKEY:-}" ]; then
-        remote "$ROOT_CMD tailscale up --force-reauth --hostname=$SERVER_NAME --auth-key '$TAILSCALE_AUTHKEY'"
-        ok "Tailscale connected (auth key)"
-    else
-        info "Starting Tailscale authentication..."
-        info "A URL will appear below. Open it in your browser to authenticate."
-        echo ""
-        remote_tty "$ROOT_CMD tailscale up --force-reauth --hostname=$SERVER_NAME"
-        echo ""
-        ok "Tailscale connected"
-    fi
+    remote "$ROOT_CMD tailscale up --force-reauth --hostname=$SERVER_NAME --auth-key '$TAILSCALE_AUTHKEY'"
+    ok "Tailscale connected (auth key)"
 fi
 
 # Verify Tailscale is actually working
@@ -492,6 +654,10 @@ TAILSCALE_DNS=$(remote "$ROOT_CMD timeout 10 tailscale status --json 2>/dev/null
 if [ -n "$TAILSCALE_DNS" ]; then
     info "Tailscale DNS: $TAILSCALE_DNS"
 fi
+
+# Cache Tailscale host keys in known_hosts for future SSH access
+ssh-keyscan -H "$TAILSCALE_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
+[ -n "$TAILSCALE_DNS" ] && ssh-keyscan -H "$TAILSCALE_DNS" >> ~/.ssh/known_hosts 2>/dev/null || true
 
 # ============================================
 # Firewall (UFW)
@@ -528,19 +694,10 @@ ok "Claude Code installed"
 
 # Install plugins non-interactively
 info "Installing Claude Code plugins..."
-remote "sudo -u $USERNAME CLAUDE_CONFIG_DIR=/home/$USERNAME/roost/claude /home/$USERNAME/.local/bin/claude plugin marketplace add moiri-gamboni/praxis" 2>/dev/null || true
-remote "sudo -u $USERNAME CLAUDE_CONFIG_DIR=/home/$USERNAME/roost/claude /home/$USERNAME/.local/bin/claude plugin install praxis@praxis-marketplace" 2>/dev/null || true
-remote "sudo -u $USERNAME CLAUDE_CONFIG_DIR=/home/$USERNAME/roost/claude /home/$USERNAME/.local/bin/claude plugin install ralph@claude-plugins-official" 2>/dev/null || true
+remote "sudo -u $USERNAME CLAUDE_CONFIG_DIR=/home/$USERNAME/$ROOST_DIR_NAME/claude /home/$USERNAME/.local/bin/claude plugin marketplace add moiri-gamboni/praxis" 2>/dev/null || true
+remote "sudo -u $USERNAME CLAUDE_CONFIG_DIR=/home/$USERNAME/$ROOST_DIR_NAME/claude /home/$USERNAME/.local/bin/claude plugin install praxis@praxis-marketplace" 2>/dev/null || true
+remote "sudo -u $USERNAME CLAUDE_CONFIG_DIR=/home/$USERNAME/$ROOST_DIR_NAME/claude /home/$USERNAME/.local/bin/claude plugin install ralph@claude-plugins-official" 2>/dev/null || true
 ok "Claude Code plugins installed"
-
-# Interactive OAuth prompt (needs TTY for read)
-info "Claude Code requires an interactive OAuth login."
-info "To authenticate now, open a second terminal:"
-info "  ssh $USERNAME@$TAILSCALE_IP"
-info "  claude"
-info "Complete the OAuth flow, then /exit."
-echo ""
-read -p "  Press Enter when done (or 's' to skip)... " response || true
 
 # ============================================
 # Shell Configuration + Directory Structure
@@ -641,36 +798,36 @@ if [ -n "$SERVER_DEVICE_ID" ] && command -v syncthing &>/dev/null; then
                     skip "Server: laptop device already added"
                 fi
 
-                # Share roost folder with laptop on server side
+                # Share folder with laptop on server side
                 remote "curl -sf -X PATCH -H 'X-API-Key: $SERVER_API_KEY' \
                     -H 'Content-Type: application/json' \
                     -d '{\"devices\": [{\"deviceID\": \"$SERVER_DEVICE_ID\"}, {\"deviceID\": \"$LAPTOP_DEVICE_ID\"}]}' \
-                    'http://localhost:8384/rest/config/folders/roost'" &>/dev/null && \
-                    ok "Server: roost folder shared with laptop" || \
-                    info "Could not share roost folder with laptop"
+                    'http://localhost:8384/rest/config/folders/$ROOST_DIR_NAME'" &>/dev/null && \
+                    ok "Server: $ROOST_DIR_NAME folder shared with laptop" || \
+                    info "Could not share $ROOST_DIR_NAME folder with laptop"
             fi
 
-            # Share roost folder on laptop (create or update)
-            LAPTOP_ROOST_DIR="${ROOST_DIR:-$HOME/roost}"
+            # Share folder on laptop (create or update)
+            LAPTOP_ROOST_DIR="${ROOST_DIR:-$HOME/$ROOST_DIR_NAME}"
             LAPTOP_HAS_ROOST=$(curl -sf -H "X-API-Key: $LAPTOP_API_KEY" \
                 "http://localhost:8384/rest/config/folders" 2>/dev/null \
-                | jq -r '.[].id' 2>/dev/null | grep -c '^roost$' || true)
+                | jq -r '.[].id' 2>/dev/null | grep -c "^${ROOST_DIR_NAME}\$" || true)
             if [ "${LAPTOP_HAS_ROOST:-0}" -eq 0 ]; then
                 mkdir -p "$LAPTOP_ROOST_DIR"
                 curl -sf -X POST -H "X-API-Key: $LAPTOP_API_KEY" \
                     -H "Content-Type: application/json" \
-                    -d "{\"id\": \"roost\", \"label\": \"roost\", \"path\": \"$LAPTOP_ROOST_DIR\", \"type\": \"sendreceive\", \"rescanIntervalS\": 60, \"fsWatcherEnabled\": true, \"devices\": [{\"deviceID\": \"$LAPTOP_DEVICE_ID\"}, {\"deviceID\": \"$SERVER_DEVICE_ID\"}]}" \
+                    -d "{\"id\": \"$ROOST_DIR_NAME\", \"label\": \"$ROOST_DIR_NAME\", \"path\": \"$LAPTOP_ROOST_DIR\", \"type\": \"sendreceive\", \"rescanIntervalS\": 60, \"fsWatcherEnabled\": true, \"devices\": [{\"deviceID\": \"$LAPTOP_DEVICE_ID\"}, {\"deviceID\": \"$SERVER_DEVICE_ID\"}]}" \
                     "http://localhost:8384/rest/config/folders" &>/dev/null && \
-                    ok "Laptop: roost folder shared" || \
-                    info "Could not create roost folder on laptop"
+                    ok "Laptop: $ROOST_DIR_NAME folder shared" || \
+                    info "Could not create $ROOST_DIR_NAME folder on laptop"
             else
                 # Folder exists; ensure server device is included
                 curl -sf -X PATCH -H "X-API-Key: $LAPTOP_API_KEY" \
                     -H "Content-Type: application/json" \
                     -d "{\"devices\": [{\"deviceID\": \"$LAPTOP_DEVICE_ID\"}, {\"deviceID\": \"$SERVER_DEVICE_ID\"}]}" \
-                    "http://localhost:8384/rest/config/folders/roost" &>/dev/null && \
-                    skip "Laptop: roost folder already shared" || \
-                    info "Could not update roost folder on laptop"
+                    "http://localhost:8384/rest/config/folders/$ROOST_DIR_NAME" &>/dev/null && \
+                    skip "Laptop: $ROOST_DIR_NAME folder already shared" || \
+                    info "Could not update $ROOST_DIR_NAME folder on laptop"
             fi
 
             ok "Syncthing paired: server <-> laptop"
@@ -699,76 +856,74 @@ section "Cloudflare Tunnel"
 # Install cloudflared binary
 remote_script "setup/cloudflare.sh"
 
-# Authenticate with Cloudflare
-if remote "test -f /home/$USERNAME/.cloudflared/cert.pem"; then
-    skip "Cloudflare already authenticated"
-else
-    info "Cloudflare Tunnel requires browser authentication."
-    info "A URL will appear. Open it in your browser and select your domain ($DOMAIN)."
-    echo ""
-    remote_tty "cloudflared tunnel login" || {
-        info "cloudflared login failed or was skipped. You can run it later:"
-        info "  su - $USERNAME -c 'cloudflared tunnel login'"
-    }
+# Create or reuse tunnel via Cloudflare API
+TUNNEL_RESPONSE=$(curl -sf "${CF_AUTH[@]}" \
+    "$CF_API/accounts/$CF_ACCOUNT_ID/cfd_tunnel?name=$TUNNEL_NAME&is_deleted=false")
+EXISTING_TUNNEL_ID=$(echo "$TUNNEL_RESPONSE" | jq -r '.result[0].id // empty')
+
+if [ -n "$EXISTING_TUNNEL_ID" ]; then
+    TUNNEL_ID="$EXISTING_TUNNEL_ID"
+    # Check if credentials file exists on the server
+    if remote "test -f /home/$USERNAME/.cloudflared/${TUNNEL_ID}.json"; then
+        skip "Tunnel '$TUNNEL_NAME' already exists (ID: $TUNNEL_ID)"
+    else
+        # Tunnel exists in Cloudflare but credentials are missing on server.
+        # Must delete and recreate to get fresh credentials.
+        info "Tunnel '$TUNNEL_NAME' exists but credentials are missing, recreating..."
+        curl -sf -X DELETE "${CF_AUTH[@]}" \
+            "$CF_API/accounts/$CF_ACCOUNT_ID/cfd_tunnel/$TUNNEL_ID" >/dev/null
+        EXISTING_TUNNEL_ID=""
+    fi
 fi
 
-# Create tunnel
-TUNNEL_EXISTS=false
-TUNNEL_NAME="${CLOUDFLARE_TUNNEL_NAME:-roost}"
-if remote "cloudflared tunnel list" 2>/dev/null | grep -q "$TUNNEL_NAME"; then
-    # Tunnel exists; check if credentials file is present locally
-    EXISTING_ID=$(remote "cloudflared tunnel list -o json" | jq -r ".[] | select(.name == \"$TUNNEL_NAME\") | .id" 2>/dev/null || true)
-    if [ -n "$EXISTING_ID" ] && remote "test -f /home/$USERNAME/.cloudflared/${EXISTING_ID}.json"; then
-        skip "Tunnel '$TUNNEL_NAME' already exists"
-        TUNNEL_EXISTS=true
-    else
-        # Credentials lost (e.g. backup restore); delete and recreate
-        info "Tunnel '$TUNNEL_NAME' exists but credentials are missing, recreating..."
-        remote "cloudflared tunnel delete $TUNNEL_NAME" 2>/dev/null || true
-        remote "cloudflared tunnel create $TUNNEL_NAME"
-        TUNNEL_EXISTS=true
-        ok "Tunnel '$TUNNEL_NAME' recreated"
+if [ -z "$EXISTING_TUNNEL_ID" ]; then
+    # Generate tunnel secret
+    TUNNEL_SECRET=$(openssl rand -base64 32)
+
+    CREATE_RESPONSE=$(curl -sf -X POST "${CF_AUTH[@]}" \
+        -d "{\"name\":\"$TUNNEL_NAME\",\"tunnel_secret\":\"$TUNNEL_SECRET\",\"config_src\":\"local\"}" \
+        "$CF_API/accounts/$CF_ACCOUNT_ID/cfd_tunnel")
+
+    TUNNEL_ID=$(echo "$CREATE_RESPONSE" | jq -r '.result.id // empty')
+    if [ -z "$TUNNEL_ID" ]; then
+        echo "Error: Failed to create Cloudflare tunnel."
+        echo "$CREATE_RESPONSE" | jq '.errors // .' 2>/dev/null || echo "$CREATE_RESPONSE"
+        exit 1
     fi
-elif remote "test -f /home/$USERNAME/.cloudflared/cert.pem"; then
-    remote "cloudflared tunnel create $TUNNEL_NAME"
-    TUNNEL_EXISTS=true
-    ok "Tunnel '$TUNNEL_NAME' created"
+    ok "Tunnel '$TUNNEL_NAME' created (ID: $TUNNEL_ID)"
+
+    # Write credentials file to server
+    CREDS_JSON="{\"AccountTag\":\"$CF_ACCOUNT_ID\",\"TunnelSecret\":\"$TUNNEL_SECRET\",\"TunnelID\":\"$TUNNEL_ID\"}"
+    remote "mkdir -p /home/$USERNAME/.cloudflared"
+    echo "$CREDS_JSON" | remote "cat > /home/$USERNAME/.cloudflared/${TUNNEL_ID}.json"
+    remote "chmod 600 /home/$USERNAME/.cloudflared/${TUNNEL_ID}.json"
+    ok "Tunnel credentials written"
 fi
 
 # Write tunnel config (runtime-generated because it needs TUNNEL_ID)
-if [ "$TUNNEL_EXISTS" = true ]; then
-    TUNNEL_ID=$(remote "cloudflared tunnel list -o json" | jq -r ".[] | select(.name == \"$TUNNEL_NAME\") | .id" || echo "")
+export TUNNEL_ID
+export TUNNEL_NAME
+envsubst '$TUNNEL_ID $TUNNEL_NAME $DOMAIN' \
+    < "$SCRIPT_DIR/files/cloudflare-config.yml" \
+    | remote "cat > /tmp/_cf_config.yml"
+remote "$ROOT_CMD mv /tmp/_cf_config.yml /home/$USERNAME/.cloudflared/config.yml"
+remote "$ROOT_CMD chown -R $USERNAME:$USERNAME /home/$USERNAME/.cloudflared"
+ok "Tunnel config written (ID: $TUNNEL_ID)"
 
-    if [ -n "$TUNNEL_ID" ]; then
-        export TUNNEL_ID
-        export TUNNEL_NAME
-        envsubst '$TUNNEL_ID $TUNNEL_NAME $DOMAIN' \
-            < "$SCRIPT_DIR/files/cloudflare-config.yml" \
-            | remote "cat > /tmp/_cf_config.yml"
-        remote "$ROOT_CMD mv /tmp/_cf_config.yml /home/$USERNAME/.cloudflared/config.yml"
-        remote "$ROOT_CMD chown -R $USERNAME:$USERNAME /home/$USERNAME/.cloudflared"
-        ok "Tunnel config written (ID: $TUNNEL_ID)"
+# Copy credentials and config to /etc/cloudflared/ for the system service
+remote "$ROOT_CMD mkdir -p /etc/cloudflared"
+remote "$ROOT_CMD cp /home/$USERNAME/.cloudflared/${TUNNEL_ID}.json /etc/cloudflared/"
+remote "$ROOT_CMD cp /home/$USERNAME/.cloudflared/config.yml /etc/cloudflared/"
+remote "$ROOT_CMD chmod 700 /etc/cloudflared"
+remote "$ROOT_CMD chmod 600 /etc/cloudflared/${TUNNEL_ID}.json /etc/cloudflared/config.yml"
 
-        # Copy credentials and config to /etc/cloudflared/ for the system service
-        remote "$ROOT_CMD mkdir -p /etc/cloudflared"
-        remote "$ROOT_CMD cp /home/$USERNAME/.cloudflared/${TUNNEL_ID}.json /etc/cloudflared/"
-        remote "$ROOT_CMD cp /home/$USERNAME/.cloudflared/config.yml /etc/cloudflared/"
-        remote "$ROOT_CMD chmod 700 /etc/cloudflared"
-        remote "$ROOT_CMD chmod 600 /etc/cloudflared/${TUNNEL_ID}.json /etc/cloudflared/config.yml"
-
-        # Install cloudflared as a systemd service (if not already installed)
-        if ! remote "$ROOT_CMD systemctl is-active cloudflared" &>/dev/null; then
-            remote "$ROOT_CMD cloudflared service install"
-            remote "$ROOT_CMD systemctl enable cloudflared"
-        fi
-        remote "$ROOT_CMD systemctl restart cloudflared"
-        ok "cloudflared running as systemd service"
-    else
-        info "Could not determine tunnel ID. Write ~/.cloudflared/config.yml manually."
-    fi
-else
-    info "Tunnel not created (authenticate first, then run this script again)."
+# Install cloudflared as a systemd service (if not already installed)
+if ! remote "$ROOT_CMD systemctl is-active cloudflared" &>/dev/null; then
+    remote "$ROOT_CMD cloudflared service install"
+    remote "$ROOT_CMD systemctl enable cloudflared"
 fi
+remote "$ROOT_CMD systemctl restart cloudflared"
+ok "cloudflared running as systemd service"
 
 # ============================================
 # Agent Tools
@@ -819,6 +974,13 @@ ok "Initial btrfs snapshot created"
 # Clean up deploy files from server
 remote "rm -rf $REMOTE_DIR"
 
+# Close SSH multiplexing before removing the firewall rule
+ssh -O exit -o ControlPath="$SSH_CONTROL_SOCKET" "root@$SERVER_IP" 2>/dev/null || true
+
+# Remove temporary SSH rule (public SSH locked out; use Tailscale from now on)
+hcloud firewall delete-rule roost-fw "${SSH_RULE_ARGS[@]}" 2>/dev/null || true
+ok "Temporary SSH rule removed (public SSH locked out)"
+
 # ============================================
 # Done
 # ============================================
@@ -841,7 +1003,7 @@ echo "                 then open http://localhost:8384"
 echo ""
 echo "  Remaining manual steps:"
 echo ""
-echo "  1. Authenticate Claude Code (if not done during setup):"
+echo "  1. Authenticate Claude Code:"
 echo "       ssh $USERNAME@$TS_HOST"
 echo "       claude"
 echo ""
@@ -849,7 +1011,11 @@ echo "  2. Add your first app:"
 echo "       Add a Caddy entry:  sudo nano /etc/caddy/Caddyfile"
 echo "       Add a Cloudflare ingress rule:  nano ~/.cloudflared/config.yml"
 echo "       Reload Caddy:  sudo systemctl reload caddy"
-echo "       Route DNS:  cloudflared tunnel route dns ${CLOUDFLARE_TUNNEL_NAME:-roost} app.$DOMAIN"
+echo "       Route DNS:"
+echo "         curl -X POST \"https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records\" \\"
+echo "           -H \"Authorization: Bearer \$CLOUDFLARE_API_TOKEN\" \\"
+echo "           -H \"Content-Type: application/json\" \\"
+echo "           -d '{\"type\":\"CNAME\",\"name\":\"app.$DOMAIN\",\"content\":\"$TUNNEL_ID.cfargotunnel.com\",\"proxied\":true}'"
 echo ""
 echo "  3. Phone setup: install Tailscale, Termux, ntfy from F-Droid."
 echo "     See README for details."
