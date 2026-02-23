@@ -947,7 +947,7 @@ ok "Glances running at http://$TAILSCALE_IP:61208"
 
 section "RAM Monitor"
 remote_script "setup/ram-monitor.sh"
-ok "RAM monitor checking every 10s (2GB threshold)"
+ok "RAM monitor checking every 30s (3GB threshold)"
 
 # ============================================
 # Cron Jobs + grepai Index
