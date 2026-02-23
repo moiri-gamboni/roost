@@ -9,7 +9,7 @@ After running the deploy script you will have:
 - Hardened Ubuntu 24.04 with btrfs snapshots and automatic security updates
 - Private networking via Tailscale (SSH gated by Hetzner cloud firewall, no public HTTP/HTTPS ports)
 - Public web apps via Cloudflare Tunnel (zero open HTTP/HTTPS ports)
-- Claude Code with session persistence, auto-commit hooks, and push notifications
+- Claude Code with agent teams, session persistence, auto-commit hooks, and push notifications
 - Semantic search over notes and code (Ollama + grepai)
 - Session search and lineage tracking (claude-code-tools)
 - Push notifications to your phone (ntfy)
@@ -17,7 +17,8 @@ After running the deploy script you will have:
 - System monitoring (Glances) with automated health alerts
 - RAM monitoring with per-process alerts (3GB threshold)
 - Syncthing conflict file detection and notification
-- Scheduled Claude Code tasks via cron
+- Scheduled Claude Code tasks via cron (morning summary, weekly memory cleanup)
+- Shell helpers for managing Claude Code agents (`agent_start`, `agent_list`, `agent_kill`)
 
 ## Prerequisites
 
@@ -76,6 +77,7 @@ Or paste the contents of your `.pub` file into the Hetzner Console
 ```
 .env.example            Configuration template (copy to .env and fill in)
 deploy.sh               Provisions and configures the server (run from your laptop)
+test-server.sh          Post-deploy verification (runs ~50 checks over SSH)
 files/                  Config files, templates, and hook scripts deployed to the server
 extras/                 Optional standalone utilities
 ```
@@ -136,7 +138,17 @@ These steps must be completed manually after the deploy script finishes.
 
 #### On the server (via Tailscale SSH):
 
-**Verify services:**
+**Verify the deploy:**
+
+Run the verification script from your laptop. It tests ~50 checks over SSH
+(connectivity, filesystem, SSH hardening, all services, hooks, directory
+structure, dev tools, cron):
+
+```bash
+./test-server.sh
+```
+
+Or verify individual services manually:
 
 ```bash
 # btrfs
@@ -190,6 +202,34 @@ systemctl status ram-monitor.timer
 
    sudo systemctl reload caddy
    ```
+
+#### Shell helpers
+
+SSH sessions auto-attach to a tmux session named `main` (or create one).
+The following functions are available in the shell for managing Claude Code agents:
+
+```bash
+# Start a headless agent in a new tmux window (sends ntfy notification when done)
+agent_start <name> <project-dir> <task>
+
+# List active agent windows with last activity time
+agent_list
+
+# Send Ctrl-C to stop an agent by tmux window name
+agent_kill <name>
+```
+
+#### Scheduled tasks
+
+Two Claude Code tasks run automatically via cron:
+
+| Schedule | Task |
+|---|---|
+| Daily 8:00 | **Morning summary**: checks ntfy history and summarizes overnight events |
+| Sunday 10:00 | **Memory cleanup**: deduplicates and merges notes in `~/roost/memory/` |
+
+Both run as headless `claude -p` sessions in a `cron` tmux session. If Claude
+Code OAuth has expired, the health check (every 5 minutes) will alert via ntfy.
 
 #### Syncthing (automatic pairing):
 
@@ -282,6 +322,33 @@ The directory name `roost` is configurable via `ROOST_DIR_NAME` in `.env`.
     └── life/               Default project for scheduled tasks
 ```
 
+### Claude Code Configuration
+
+The deployed `settings.json` includes:
+
+- **Agent teams** enabled (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`)
+- **Session transcripts** never cleaned up (`cleanupPeriodDays: 99999`)
+- **Auto-compaction** disabled (`autoCompactEnabled: false`); the PreCompact hook injects a reflection prompt instead
+- **Dangerous command blocker** (PreToolUse hook via `claude-code-templates`) blocks destructive shell commands
+- **Semantic search** via grepai, initialized on `~/roost/memory/` and `~/roost/claude/skills/`
+
+#### Hardening hooks (opt-in)
+
+Hook scripts live inside the Syncthing-synced `~/roost/` directory. If a
+Syncthing peer were compromised, modified hooks could propagate to the server
+and execute on the next Claude Code event. With only two personal peers
+(laptop + server), this adds no new attack surface since a compromised laptop
+already has SSH and Tailscale access. If you add a third peer that has
+Syncthing write access but not SSH/Tailscale access, you can lock down hooks:
+
+```bash
+sudo bash ~/deploy/files/setup/harden-hooks.sh
+```
+
+This sets the immutable attribute (`chattr +i`) on all hook scripts,
+`reflect.md`, and `settings.json`. To update hooks later, `deploy.sh`
+automatically strips the flag before redeploying.
+
 ## Recovery
 
 | Layer | Tool | Granularity | Speed |
@@ -290,7 +357,23 @@ The directory name `roost` is configurable via `ROOST_DIR_NAME` in `.env`.
 | Full filesystem | btrfs snapshots (snapper) | Every 30 min | Seconds |
 | Disaster recovery | Hetzner backups | Daily | Minutes (reboot) |
 
+Snapper retention: 24 hourly, 7 daily, 4 weekly (no monthly or yearly).
+
 Rollback a btrfs snapshot: `snapper list`, then `snapper rollback <number>`, then reboot.
+
+## Auto-updates
+
+A weekly cron job (Sunday 3am) updates all installed tools. Before updating,
+it creates a btrfs snapshot. After finishing, it sends an ntfy summary with
+what was updated, what failed, and any available major version bumps.
+
+Updated tools: Claude Code, claude-code-tools, claude-code-transcripts, Go,
+fnm, Node.js, uv, Ollama models, grepai, gitleaks, and OS packages.
+
+Safeguards:
+- New releases must be at least 7 days old before being applied (cooldown)
+- Major version bumps are blocked and reported via ntfy (manual upgrade required)
+- Logs are written to `~/roost/claude/logs/auto-update-*.log` (pruned after 8 weeks)
 
 ## Costs
 
