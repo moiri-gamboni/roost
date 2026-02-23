@@ -15,7 +15,7 @@ After running the deploy script you will have:
 - Push notifications to your phone (ntfy)
 - File sync between server and laptop (Syncthing)
 - System monitoring (Glances) with automated health alerts
-- RAM monitoring with per-process alerts (2GB threshold)
+- RAM monitoring with per-process alerts (3GB threshold)
 - Syncthing conflict file detection and notification
 - Scheduled Claude Code tasks via cron
 

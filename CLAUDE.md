@@ -82,7 +82,7 @@ Cron-triggered hooks (not Claude Code events):
 - `conflict-check.sh` -- Detects Syncthing conflict files in `~/roost/`, alerts via ntfy
 
 Systemd timer (not cron):
-- `ram-monitor.sh` -- Alerts when any process exceeds 2GB RSS (runs every 10s via `ram-monitor.timer`, tracks notified PIDs to avoid repeats)
+- `ram-monitor.sh` -- Alerts when any process exceeds 3GB RSS (runs every 10s via `ram-monitor.timer`, tracks notified PIDs to avoid repeats)
 
 ## Native Services
 
