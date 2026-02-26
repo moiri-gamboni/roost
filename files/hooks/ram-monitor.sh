@@ -1,5 +1,5 @@
 #!/bin/bash
-# Alert when any process exceeds 2GB RSS.
+# Alert when any process exceeds 3GB RSS.
 # Tracks notified PIDs to avoid repeat alerts until the process restarts.
 source "$(dirname "$0")/_hook-env.sh"
 
@@ -15,11 +15,13 @@ ps -eo pid,rss,comm --no-headers | while read -r pid rss comm; do
         prev_rss=$(awk -v p="$pid" '$1 == p {print $2}' "$STATE_FILE")
         if [ -z "$prev_rss" ]; then
             gb=$(awk "BEGIN {printf \"%.1f\", $rss/1048576}")
+            logger -t "$_HOOK_TAG" "ALERT: $comm (PID $pid) using ${gb}GB RSS"
             ntfy_send -t "High RAM: $comm" -p "high" "PID $pid using ${gb}GB RSS"
             echo "$pid $rss" >> "$STATE_FILE"
         elif [ $((rss - prev_rss)) -gt "$GROWTH_KB" ]; then
             gb=$(awk "BEGIN {printf \"%.1f\", $rss/1048576}")
             prev_gb=$(awk "BEGIN {printf \"%.1f\", $prev_rss/1048576}")
+            logger -t "$_HOOK_TAG" "GROWTH: $comm (PID $pid) now ${gb}GB (was ${prev_gb}GB)"
             ntfy_send -t "RAM growing: $comm" -p "high" "PID $pid now ${gb}GB (was ${prev_gb}GB)"
             sed -i "s/^${pid} .*/${pid} ${rss}/" "$STATE_FILE"
         fi
