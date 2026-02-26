@@ -2,6 +2,10 @@
 # Source this at the top of every hook that needs ntfy, JSON input, or logging.
 set -uo pipefail
 
+# --- Hook name (used as journald tag: roost/<name>) ---
+_HOOK_NAME="$(basename "${BASH_SOURCE[1]:-unknown}" .sh)"
+_HOOK_TAG="roost/$_HOOK_NAME"
+
 # --- JSON input (lazy: reads stdin only on first call) ---
 _HOOK_INPUT=""
 _HOOK_INPUT_READ=false
@@ -39,11 +43,7 @@ if [ -z "$NTFY_TOKEN" ] && [ -f "$HOME/services/.ntfy-token" ]; then
     NTFY_TOKEN=$(<"$HOME/services/.ntfy-token")
 fi
 
-# --- Alert log fallback ---
-ALERT_LOG="${CLAUDE_CONFIG_DIR}/logs/alerts.log"
-mkdir -p "$(dirname "$ALERT_LOG")"
-
-# Send an ntfy notification. Falls back to file logging if ntfy is unreachable.
+# Send an ntfy notification. Falls back to journald if ntfy is unreachable.
 # Usage: ntfy_send [-t TITLE] [-p PRIORITY] [-a ACTIONS] MESSAGE
 ntfy_send() {
     local title="" priority="default" actions="" message=""
@@ -63,7 +63,7 @@ ntfy_send() {
     [ -n "$NTFY_TOKEN" ] && headers+=(-H "Authorization: Bearer $NTFY_TOKEN")
 
     if ! curl -sf -m 5 -X POST "$NTFY_URL" "${headers[@]}" --data-urlencode "message=$message" >/dev/null 2>&1; then
-        echo "[$(date -Iseconds)] [${priority}] ${title:+$title: }$message" >> "$ALERT_LOG"
+        logger -t "$_HOOK_TAG" -p user.warning "ntfy failed: ${title:+$title: }$message"
     fi
 }
 
@@ -87,13 +87,9 @@ rate_limit_ok() {
     return 0
 }
 
-# --- Hook execution logging ---
-HOOK_LOG="${CLAUDE_CONFIG_DIR}/logs/hooks.log"
-
+# --- Hook execution logging (journald) ---
 _hook_exit() {
     local rc=$?
-    echo "[$(date -Iseconds)] ${_HOOK_NAME} exit=$rc" >> "$HOOK_LOG" 2>/dev/null
+    logger -t "$_HOOK_TAG" "exit=$rc"
 }
-
-_HOOK_NAME="$(basename "${BASH_SOURCE[1]:-unknown}")"
 trap _hook_exit EXIT

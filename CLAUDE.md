@@ -73,7 +73,7 @@ Hooks are defined in `files/settings.json` and deployed to `~/roost/claude/hooks
 | Stop | `auto-commit.sh` | Stages tracked + new files, runs gitleaks, commits with session ID |
 | Notification | `notify.sh` | Sends push notifications via local ntfy (with rate limiting and priority levels) |
 
-All hook scripts source `_hook-env.sh` which provides `hook_json()` for parsing Claude Code's JSON input, `ntfy_send()` for notifications with fallback logging, and `rate_limit_ok()` to prevent notification floods.
+All hook scripts source `_hook-env.sh` which provides `hook_json()` for parsing Claude Code's JSON input, `ntfy_send()` for notifications (with journald fallback), `rate_limit_ok()` to prevent notification floods, and journald logging via `logger -t "$_HOOK_TAG"` (tags: `roost/<script-name>`).
 
 Cron-triggered hooks (not Claude Code events):
 - `health-check.sh` -- Checks Ollama, Caddy, ntfy, Syncthing, Tailscale, cloudflared, disk, inodes, swap; alerts via ntfy
@@ -104,4 +104,5 @@ All configuration lives in `.env` (copied from `.env.example`). Required vars: `
 
 - All scripts use `set -euo pipefail` (except `hetzner-watch.sh` which omits `-e` so polling loops survive failed checks; `_hook-env.sh` uses `set -uo pipefail` without `-e` for resilient hook execution)
 - Hook scripts source `_hook-env.sh` which provides lazy JSON input reading via `hook_input()` / `hook_json()`, not raw `cat`
-- ntfy notifications go to `http://localhost:2586/claude-$(whoami)` via `ntfy_send()` helper with fallback to file logging
+- ntfy notifications go to `http://localhost:2586/claude-$(whoami)` via `ntfy_send()` helper with journald fallback
+- All hook scripts log to journald via `logger -t "roost/<script-name>"`; query with `journalctl -t roost/health-check`, etc.

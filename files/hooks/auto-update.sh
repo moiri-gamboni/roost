@@ -4,25 +4,20 @@
 # Major version bumps are blocked and reported; only minor/patch updates proceed.
 source "$(dirname "$0")/_hook-env.sh"
 
-LOGDIR="$CLAUDE_CONFIG_DIR/logs"
-mkdir -p "$LOGDIR"
-LOGFILE="$LOGDIR/auto-update-$(date +%Y-%m-%d).log"
 UPDATED=""
 FAILED=""
 MAJOR_UPGRADES=""
 
-log() { echo "[$(date '+%H:%M:%S')] $1" | tee -a "$LOGFILE"; }
-
 track() {
     local name="$1"
     shift
-    log "Updating $name..."
-    if "$@" >> "$LOGFILE" 2>&1; then
+    logger -t "$_HOOK_TAG" "Updating $name..."
+    if "$@" 2>&1 | logger -t "$_HOOK_TAG"; then
         UPDATED="$UPDATED\n- $name"
-        log "$name: OK"
+        logger -t "$_HOOK_TAG" "$name: OK"
     else
         FAILED="$FAILED\n- $name"
-        log "$name: FAILED"
+        logger -t "$_HOOK_TAG" -p user.err "$name: FAILED"
     fi
 }
 
@@ -62,7 +57,7 @@ major_guard() {
     lat_major=$(major_version "$latest")
     if [ "$cur_major" != "$lat_major" ]; then
         MAJOR_UPGRADES="$MAJOR_UPGRADES\n- $name: installed=$current, available=$latest"
-        log "$name: major version change ($current -> $latest), skipping"
+        logger -t "$_HOOK_TAG" "$name: major version change ($current -> $latest), skipping"
         return 1
     fi
     return 0
@@ -87,12 +82,12 @@ pypi_cooldown_ok() {
     [ $((now_epoch - upload_epoch)) -ge $((days * 86400)) ]
 }
 
-log "=== Auto-update started ==="
+logger -t "$_HOOK_TAG" "=== Auto-update started ==="
 
 # Pre-update snapshot
 if command -v snapper &>/dev/null && snapper list-configs 2>/dev/null | grep -q root; then
-    sudo snapper create --description "pre-auto-update $(date +%Y-%m-%d)" >> "$LOGFILE" 2>&1
-    log "Snapshot created"
+    sudo snapper create --description "pre-auto-update $(date +%Y-%m-%d)" 2>&1 | logger -t "$_HOOK_TAG"
+    logger -t "$_HOOK_TAG" "Snapshot created"
 fi
 
 # --- Claude Code ---
@@ -110,7 +105,7 @@ for pkg in claude-code-tools claude-code-transcripts; do
             track "$pkg" uv tool upgrade "$pkg"
         fi
     else
-        log "$pkg: skipped (release < 7 days old)"
+        logger -t "$_HOOK_TAG" "$pkg: skipped (release < 7 days old)"
     fi
 done
 
@@ -123,10 +118,10 @@ if github_release_cooldown_ok "golang/go" 7; then
             track "Go $GO_LATEST" bash -c "curl -fsSL 'https://go.dev/dl/go${GO_LATEST}.linux-amd64.tar.gz' -o /tmp/go.tar.gz && sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz"
         fi
     else
-        log "Go: up to date (${GO_LATEST:-unknown})"
+        logger -t "$_HOOK_TAG" "Go: up to date (${GO_LATEST:-unknown})"
     fi
 else
-    log "Go: skipped (release < 7 days old)"
+    logger -t "$_HOOK_TAG" "Go: skipped (release < 7 days old)"
 fi
 
 # --- fnm + Node.js (7-day cooldown + major version guard) ---
@@ -141,7 +136,7 @@ if github_release_cooldown_ok "Schniz/fnm" 7; then
     # Node.js is pinned to major 22 by fnm install 22, so no major guard needed
     track "Node.js 22" bash -c 'eval "$(~/.local/share/fnm/fnm env --shell bash)" && fnm install 22 && fnm default 22'
 else
-    log "fnm: skipped (release < 7 days old)"
+    logger -t "$_HOOK_TAG" "fnm: skipped (release < 7 days old)"
 fi
 
 # --- uv (7-day cooldown + major version guard) ---
@@ -154,7 +149,7 @@ if github_release_cooldown_ok "astral-sh/uv" 7; then
         track "uv" bash -c "curl -LsSf https://astral.sh/uv/install.sh | sh"
     fi
 else
-    log "uv: skipped (release < 7 days old)"
+    logger -t "$_HOOK_TAG" "uv: skipped (release < 7 days old)"
 fi
 
 # --- Ollama models (pinned tag, no guard needed) ---
@@ -171,7 +166,7 @@ if github_release_cooldown_ok "yoanbernabeu/grepai" 7; then
         fi
     fi
 else
-    log "grepai: skipped (release < 7 days old)"
+    logger -t "$_HOOK_TAG" "grepai: skipped (release < 7 days old)"
 fi
 
 # --- gitleaks (7-day cooldown + major version guard) ---
@@ -184,14 +179,14 @@ if github_release_cooldown_ok "gitleaks/gitleaks" 7; then
         fi
     fi
 else
-    log "gitleaks: skipped (release < 7 days old)"
+    logger -t "$_HOOK_TAG" "gitleaks: skipped (release < 7 days old)"
 fi
 
 # --- OS packages ---
 track "OS packages" bash -c "sudo DEBIAN_FRONTEND=noninteractive apt update -qq && sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y"
 
 # --- Summary ---
-log "=== Auto-update finished ==="
+logger -t "$_HOOK_TAG" "=== Auto-update finished ==="
 
 BODY=""
 [ -n "$UPDATED" ] && BODY="Updated:$UPDATED"
@@ -203,10 +198,3 @@ ntfy_send \
     -t "Weekly update $(date +%Y-%m-%d)" \
     -p "$([ -n "$FAILED" ] && echo high || echo low)" \
     "$(echo -e "$BODY")"
-
-# Prune old logs (keep 8 weeks)
-find "$LOGDIR" -name "auto-update-*.log" -mtime +56 -delete
-
-# Rotate hooks log (keep last 1000 lines)
-tail -1000 "$CLAUDE_CONFIG_DIR/logs/hooks.log" > "$CLAUDE_CONFIG_DIR/logs/hooks.log.tmp" 2>/dev/null && \
-    mv "$CLAUDE_CONFIG_DIR/logs/hooks.log.tmp" "$CLAUDE_CONFIG_DIR/logs/hooks.log" || true

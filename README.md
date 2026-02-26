@@ -373,7 +373,7 @@ fnm, Node.js, uv, Ollama models, grepai, gitleaks, and OS packages.
 Safeguards:
 - New releases must be at least 7 days old before being applied (cooldown)
 - Major version bumps are blocked and reported via ntfy (manual upgrade required)
-- Logs are written to `~/roost/claude/logs/auto-update-*.log` (pruned after 8 weeks)
+- Logs are written to journald (query with `journalctl -t roost/auto-update`)
 
 ## Costs
 
