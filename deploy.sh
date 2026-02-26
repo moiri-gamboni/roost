@@ -167,7 +167,7 @@ if [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
     CF_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID"
 else
     # Try /accounts first (requires account-level token permissions)
-    ACCOUNTS_JSON=$(curl -s "${CF_AUTH[@]}" "$CF_API/accounts" 2>/dev/null || true)
+    ACCOUNTS_JSON=$(curl -s "${CF_AUTH[@]}" "$CF_API/accounts" || true)
     ACCOUNT_COUNT=$(echo "$ACCOUNTS_JSON" | jq '.result | length' 2>/dev/null || echo 0)
     if [ "$ACCOUNT_COUNT" -eq 1 ]; then
         CF_ACCOUNT_ID=$(echo "$ACCOUNTS_JSON" | jq -r '.result[0].id')
@@ -298,8 +298,8 @@ wait_for_ssh() {
 
 # Close SSH control sockets on exit
 cleanup() {
-    ssh -o ControlPath="$SSH_CONTROL_SOCKET" -O exit "$SSH_USER@${SERVER_IP:-}" 2>/dev/null || true
-    ssh -o ControlPath="$SSH_RESCUE_CONTROL_SOCKET" -O exit "root@${SERVER_IP:-}" 2>/dev/null || true
+    ssh -o ControlPath="$SSH_CONTROL_SOCKET" -O exit "$SSH_USER@${SERVER_IP:-}" || true
+    ssh -o ControlPath="$SSH_RESCUE_CONTROL_SOCKET" -O exit "root@${SERVER_IP:-}" || true
 }
 trap cleanup EXIT
 
@@ -317,6 +317,7 @@ section() {
 
 info() { echo "  [*] $1"; }
 ok()   { echo "  [+] $1"; }
+warn() { echo "  [!] $1"; }
 skip() { echo "  [-] $1 (already done)"; }
 
 # Sync project files to server, excluding non-deploy artifacts
@@ -376,7 +377,7 @@ fi
 # Delete first to avoid duplicates from interrupted previous runs.
 SSH_RULE_ARGS=(--direction in --protocol tcp --port 22
     --source-ips 0.0.0.0/0 --source-ips ::/0 --description "SSH")
-hcloud firewall delete-rule roost-fw "${SSH_RULE_ARGS[@]}" 2>/dev/null || true
+hcloud firewall delete-rule roost-fw "${SSH_RULE_ARGS[@]}" || true
 hcloud firewall add-rule roost-fw "${SSH_RULE_ARGS[@]}"
 ok "Temporary SSH rule added"
 
@@ -538,7 +539,7 @@ else
     hcloud server reboot "$SERVER_NAME"
 
     # Host key changes between rescue and normal OS
-    ssh-keygen -R "$SERVER_IP" 2>/dev/null || true
+    ssh-keygen -R "$SERVER_IP" || true
 
     # After fresh btrfs conversion, root login still works
     SSH_USER="root"
@@ -584,7 +585,7 @@ if [ "$SSH_USER" = "root" ]; then
     info "Switching SSH to $USERNAME..."
 
     # Close existing control socket (root) so new connections use the new user
-    ssh -o ControlPath="$SSH_CONTROL_SOCKET" -O exit "$SSH_USER@$SERVER_IP" 2>/dev/null || true
+    ssh -o ControlPath="$SSH_CONTROL_SOCKET" -O exit "$SSH_USER@$SERVER_IP" || true
 
     SSH_USER="$USERNAME"
     ROOT_CMD="sudo"
@@ -633,7 +634,7 @@ remote_script "setup/tailscale.sh"
 # admin console, so check "tailscale status" for NeedsLogin state instead.
 # Use timeout because tailscale commands can hang if the daemon is in a bad state.
 info "Checking Tailscale status..."
-TS_STATUS=$(remote "$ROOT_CMD timeout 10 tailscale status --json 2>/dev/null" | jq -r '.BackendState // empty' 2>/dev/null || true)
+TS_STATUS=$(remote "$ROOT_CMD timeout 10 tailscale status --json" | jq -r '.BackendState // empty' 2>/dev/null || true)
 info "Tailscale backend state: ${TS_STATUS:-<empty/timeout>}"
 if [ "$TS_STATUS" = "Running" ]; then
     skip "Tailscale already connected"
@@ -644,20 +645,20 @@ else
 fi
 
 # Verify Tailscale is actually working
-TAILSCALE_IP=$(remote "$ROOT_CMD timeout 10 tailscale ip -4" 2>/dev/null || true)
+TAILSCALE_IP=$(remote "$ROOT_CMD timeout 10 tailscale ip -4" || true)
 if [ -z "$TAILSCALE_IP" ]; then
     echo "Error: Tailscale failed to connect. Check 'tailscale status' on the server."
     exit 1
 fi
 info "Tailscale IP: $TAILSCALE_IP"
-TAILSCALE_DNS=$(remote "$ROOT_CMD timeout 10 tailscale status --json 2>/dev/null" | jq -r '.Self.DNSName // empty' 2>/dev/null | sed 's/\.$//' || true)
+TAILSCALE_DNS=$(remote "$ROOT_CMD timeout 10 tailscale status --json" | jq -r '.Self.DNSName // empty' 2>/dev/null | sed 's/\.$//' || true)
 if [ -n "$TAILSCALE_DNS" ]; then
     info "Tailscale DNS: $TAILSCALE_DNS"
 fi
 
 # Cache Tailscale host keys in known_hosts for future SSH access
-ssh-keyscan -H "$TAILSCALE_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
-[ -n "$TAILSCALE_DNS" ] && ssh-keyscan -H "$TAILSCALE_DNS" >> ~/.ssh/known_hosts 2>/dev/null || true
+ssh-keyscan -H "$TAILSCALE_IP" >> ~/.ssh/known_hosts || true
+[ -n "$TAILSCALE_DNS" ] && ssh-keyscan -H "$TAILSCALE_DNS" >> ~/.ssh/known_hosts || true
 
 # ============================================
 # Firewall (UFW)
@@ -694,10 +695,10 @@ ok "Claude Code installed"
 
 # Install plugins non-interactively
 info "Installing Claude Code plugins..."
-remote "sudo -u $USERNAME CLAUDE_CONFIG_DIR=/home/$USERNAME/$ROOST_DIR_NAME/claude /home/$USERNAME/.local/bin/claude plugin marketplace add moiri-gamboni/praxis" 2>/dev/null || true
-remote "sudo -u $USERNAME CLAUDE_CONFIG_DIR=/home/$USERNAME/$ROOST_DIR_NAME/claude /home/$USERNAME/.local/bin/claude plugin install praxis@praxis-marketplace" 2>/dev/null || true
-remote "sudo -u $USERNAME CLAUDE_CONFIG_DIR=/home/$USERNAME/$ROOST_DIR_NAME/claude /home/$USERNAME/.local/bin/claude plugin install ralph@claude-plugins-official" 2>/dev/null || true
-ok "Claude Code plugins installed"
+remote "sudo -u $USERNAME CLAUDE_CONFIG_DIR=/home/$USERNAME/$ROOST_DIR_NAME/claude /home/$USERNAME/.local/bin/claude plugin marketplace add moiri-gamboni/praxis" || warn "Failed to add praxis marketplace"
+remote "sudo -u $USERNAME CLAUDE_CONFIG_DIR=/home/$USERNAME/$ROOST_DIR_NAME/claude /home/$USERNAME/.local/bin/claude plugin install praxis@praxis-marketplace" || warn "Failed to install praxis plugin"
+remote "sudo -u $USERNAME CLAUDE_CONFIG_DIR=/home/$USERNAME/$ROOST_DIR_NAME/claude /home/$USERNAME/.local/bin/claude plugin install ralph@claude-plugins-official" || warn "Failed to install ralph plugin"
+ok "Claude Code plugins step complete"
 
 # ============================================
 # Shell Configuration + Directory Structure
@@ -740,7 +741,7 @@ remote_script "setup/syncthing.sh" "$TAILSCALE_IP"
 ok "Syncthing running"
 
 # --- Pair server and laptop Syncthing instances ---
-SERVER_DEVICE_ID=$(remote "cat /home/$USERNAME/.syncthing-device-id 2>/dev/null" || true)
+SERVER_DEVICE_ID=$(remote "cat /home/$USERNAME/.syncthing-device-id" || true)
 if [ -n "$SERVER_DEVICE_ID" ] && command -v syncthing &>/dev/null; then
     info "Pairing Syncthing: server <-> laptop..."
 
@@ -760,17 +761,17 @@ if [ -n "$SERVER_DEVICE_ID" ] && command -v syncthing &>/dev/null; then
         # But more reliably, use the API
         if [ -n "$LAPTOP_API_KEY" ]; then
             LAPTOP_DEVICE_ID=$(curl -sf -H "X-API-Key: $LAPTOP_API_KEY" \
-                "http://localhost:8384/rest/system/status" 2>/dev/null \
+                "http://localhost:8384/rest/system/status" \
                 | jq -r '.myID // empty' || true)
         fi
 
         if [ -n "$LAPTOP_API_KEY" ] && [ -n "$LAPTOP_DEVICE_ID" ]; then
-            SERVER_API_KEY=$(remote "cat /home/$USERNAME/.syncthing-api-key 2>/dev/null" || true)
+            SERVER_API_KEY=$(remote "cat /home/$USERNAME/.syncthing-api-key" || true)
 
             # Add server device to laptop (idempotent)
             LAPTOP_HAS_SERVER=$(curl -sf -H "X-API-Key: $LAPTOP_API_KEY" \
-                "http://localhost:8384/rest/config/devices" 2>/dev/null \
-                | jq -r ".[].deviceID" 2>/dev/null | grep -c "$SERVER_DEVICE_ID" || true)
+                "http://localhost:8384/rest/config/devices" \
+                | jq -r ".[].deviceID" | grep -c "$SERVER_DEVICE_ID" || true)
             if [ "${LAPTOP_HAS_SERVER:-0}" -eq 0 ]; then
                 curl -sf -X POST -H "X-API-Key: $LAPTOP_API_KEY" \
                     -H "Content-Type: application/json" \
@@ -785,8 +786,8 @@ if [ -n "$SERVER_DEVICE_ID" ] && command -v syncthing &>/dev/null; then
             # Add laptop device to server (idempotent)
             if [ -n "$SERVER_API_KEY" ]; then
                 SERVER_HAS_LAPTOP=$(remote "curl -sf -H 'X-API-Key: $SERVER_API_KEY' \
-                    'http://localhost:8384/rest/config/devices'" 2>/dev/null \
-                    | jq -r '.[].deviceID' 2>/dev/null | grep -c "$LAPTOP_DEVICE_ID" || true)
+                    'http://localhost:8384/rest/config/devices'" \
+                    | jq -r '.[].deviceID' | grep -c "$LAPTOP_DEVICE_ID" || true)
                 if [ "${SERVER_HAS_LAPTOP:-0}" -eq 0 ]; then
                     remote "curl -sf -X POST -H 'X-API-Key: $SERVER_API_KEY' \
                         -H 'Content-Type: application/json' \
@@ -810,8 +811,8 @@ if [ -n "$SERVER_DEVICE_ID" ] && command -v syncthing &>/dev/null; then
             # Share folder on laptop (create or update)
             LAPTOP_ROOST_DIR="${ROOST_DIR:-$HOME/$ROOST_DIR_NAME}"
             LAPTOP_HAS_ROOST=$(curl -sf -H "X-API-Key: $LAPTOP_API_KEY" \
-                "http://localhost:8384/rest/config/folders" 2>/dev/null \
-                | jq -r '.[].id' 2>/dev/null | grep -c "^${ROOST_DIR_NAME}\$" || true)
+                "http://localhost:8384/rest/config/folders" \
+                | jq -r '.[].id' | grep -c "^${ROOST_DIR_NAME}\$" || true)
             if [ "${LAPTOP_HAS_ROOST:-0}" -eq 0 ]; then
                 mkdir -p "$LAPTOP_ROOST_DIR"
                 curl -sf -X POST -H "X-API-Key: $LAPTOP_API_KEY" \
@@ -845,7 +846,7 @@ elif [ -n "$SERVER_DEVICE_ID" ]; then
     info "Server device ID: $SERVER_DEVICE_ID"
 fi
 # Clean up temp files
-remote "rm -f /home/$USERNAME/.syncthing-api-key /home/$USERNAME/.syncthing-device-id" 2>/dev/null || true
+remote "rm -f /home/$USERNAME/.syncthing-api-key /home/$USERNAME/.syncthing-device-id" || true
 
 # ============================================
 # Cloudflare Tunnel
@@ -975,10 +976,10 @@ ok "Initial btrfs snapshot created"
 remote "rm -rf $REMOTE_DIR"
 
 # Close SSH multiplexing before removing the firewall rule
-ssh -O exit -o ControlPath="$SSH_CONTROL_SOCKET" "root@$SERVER_IP" 2>/dev/null || true
+ssh -O exit -o ControlPath="$SSH_CONTROL_SOCKET" "root@$SERVER_IP" || true
 
 # Remove temporary SSH rule (public SSH locked out; use Tailscale from now on)
-hcloud firewall delete-rule roost-fw "${SSH_RULE_ARGS[@]}" 2>/dev/null || true
+hcloud firewall delete-rule roost-fw "${SSH_RULE_ARGS[@]}" || true
 ok "Temporary SSH rule removed (public SSH locked out)"
 
 # ============================================
