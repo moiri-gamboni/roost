@@ -18,7 +18,7 @@ After running the deploy script you will have:
 - RAM monitoring with per-process alerts (3GB threshold)
 - Syncthing conflict file detection and notification
 - Scheduled Claude Code tasks via cron (morning summary, weekly memory cleanup)
-- Shell helpers for managing Claude Code agents (`agent_start`, `agent_list`, `agent_kill`)
+- Shell helpers for managing Claude Code agents (`agent`, `agents`, `agent_attach`, `agent_stop`, `agent_kill`)
 
 ## Prerequisites
 
@@ -205,19 +205,30 @@ systemctl status ram-monitor.timer
 
 #### Shell helpers
 
-SSH sessions auto-attach to a tmux session named `main` (or create one).
-The following functions are available in the shell for managing Claude Code agents:
+The following functions are available for managing Claude Code agents in tmux:
 
 ```bash
-# Start a headless agent in a new tmux window (sends ntfy notification when done)
-agent_start <name> <project-dir> <task>
+# Start an interactive Claude session in a new tmux window
+agent [path] [claude-args...]    # path defaults to cwd, window named after dir
+agent                            # interactive claude in cwd
+agent ~/roost/code/myapp         # opens in that dir
+agent ~/roost/code/myapp -c      # continue last session in that dir
 
-# List active agent windows with last activity time
-agent_list
+# List agent windows with activity times
+agents
 
-# Send Ctrl-C to stop an agent by tmux window name
+# Switch to an agent's tmux window
+agent_attach <name>
+
+# Gracefully stop (Ctrl-D, triggers SessionEnd hooks including auto-commit)
+agent_stop <name>
+
+# Force stop (double Ctrl-C)
 agent_kill <name>
 ```
+
+Using `/rename` inside a session updates the tmux window name automatically.
+Sessions that aren't manually renamed get an auto-generated name on exit.
 
 #### Scheduled tasks
 
