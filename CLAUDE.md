@@ -68,7 +68,7 @@ Hooks are defined in `files/settings.json` and deployed to `~/roost/claude/hooks
 | Hook Event | Script | Purpose |
 |---|---|---|
 | SessionStart | `session-lock.sh` | Writes a lock file with hostname/tmux/PID metadata for multi-machine coordination |
-| SessionEnd | `session-unlock.sh` | Removes the lock file |
+| SessionEnd | `session-unlock.sh` | Removes the lock file; auto-names unnamed sessions via `claude -p --model sonnet` (background) |
 | PreCompact | `reflect.sh` | Injects a prompt reminding the agent to save learnings before context compaction |
 | Stop | `auto-commit.sh` | Stages tracked + new files, runs gitleaks, commits with session ID |
 | Notification | `notify.sh` | Sends push notifications via local ntfy (with rate limiting and priority levels) |
