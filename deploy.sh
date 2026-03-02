@@ -693,12 +693,36 @@ section "Claude Code"
 remote_script "setup/claude-code.sh"
 ok "Claude Code installed"
 
-# Install plugins non-interactively
-info "Installing Claude Code plugins..."
-remote "sudo -u $USERNAME CLAUDE_CONFIG_DIR=/home/$USERNAME/$ROOST_DIR_NAME/claude /home/$USERNAME/.local/bin/claude plugin marketplace add moiri-gamboni/praxis" || warn "Failed to add praxis marketplace"
-remote "sudo -u $USERNAME CLAUDE_CONFIG_DIR=/home/$USERNAME/$ROOST_DIR_NAME/claude /home/$USERNAME/.local/bin/claude plugin install praxis@praxis-marketplace" || warn "Failed to install praxis plugin"
-remote "sudo -u $USERNAME CLAUDE_CONFIG_DIR=/home/$USERNAME/$ROOST_DIR_NAME/claude /home/$USERNAME/.local/bin/claude plugin install ralph@claude-plugins-official" || warn "Failed to install ralph plugin"
-ok "Claude Code plugins step complete"
+# Plugins require OAuth, which requires an interactive session.
+# Check if already authenticated; if not, prompt the user to log in.
+CLAUDE_CMD="CLAUDE_CONFIG_DIR=/home/$USERNAME/$ROOST_DIR_NAME/claude /home/$USERNAME/.local/bin/claude"
+if remote "sudo -u $USERNAME $CLAUDE_CMD auth status" | grep -qi "logged in"; then
+    skip "Claude Code already authenticated"
+else
+    SSH_TARGET="${TAILSCALE_DNS:-$TAILSCALE_IP}"
+    echo ""
+    echo "  Claude Code needs OAuth before plugins can be installed."
+    echo "  In another terminal, run:"
+    echo ""
+    echo "    ssh $SSH_TARGET"
+    echo "    claude"
+    echo ""
+    echo "  Complete the login flow, then exit claude and return here."
+    echo ""
+    read -p "  Press Enter once authenticated (or 's' to skip plugins): " auth_response
+    if [ "$auth_response" = "s" ] || [ "$auth_response" = "S" ]; then
+        info "Skipping plugin installation"
+        SKIP_PLUGINS=true
+    fi
+fi
+
+if [ "${SKIP_PLUGINS:-}" != "true" ]; then
+    info "Installing Claude Code plugins..."
+    remote "sudo -u $USERNAME $CLAUDE_CMD plugin marketplace add moiri-gamboni/praxis" || warn "Failed to add praxis marketplace"
+    remote "sudo -u $USERNAME $CLAUDE_CMD plugin install praxis@praxis-marketplace" || warn "Failed to install praxis plugin"
+    remote "sudo -u $USERNAME $CLAUDE_CMD plugin install ralph-loop@claude-plugins-official" || warn "Failed to install ralph plugin"
+    ok "Claude Code plugins installed"
+fi
 
 # ============================================
 # Shell Configuration + Directory Structure
