@@ -696,7 +696,7 @@ ok "Claude Code installed"
 # Plugins require OAuth, which requires an interactive session.
 # Check if already authenticated; if not, prompt the user to log in.
 CLAUDE_CMD="CLAUDE_CONFIG_DIR=/home/$USERNAME/$ROOST_DIR_NAME/claude /home/$USERNAME/.local/bin/claude"
-if remote "sudo -u $USERNAME $CLAUDE_CMD auth status" | grep -qi "logged in"; then
+if remote "sudo -u $USERNAME $CLAUDE_CMD auth status" | grep -q '"loggedIn": true'; then
     skip "Claude Code already authenticated"
 else
     SSH_TARGET="${TAILSCALE_DNS:-$TAILSCALE_IP}"
