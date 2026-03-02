@@ -27,6 +27,8 @@ for dir in \
     "$ROOST_DIR/claude/hooks" \
     "$ROOST_DIR/claude/skills/learned" \
     "$ROOST_DIR/claude/locks" \
+    "$ROOST_DIR/cloudflared/apps" \
+    "$ROOST_DIR/shell" \
     "$ROOST_DIR/memory/debugging" \
     "$ROOST_DIR/memory/projects" \
     "$ROOST_DIR/memory/patterns" \
@@ -40,3 +42,8 @@ do
 done
 chown -R "$USERNAME:$USERNAME" "$HOME_DIR"
 echo "  [+] Directory structure created"
+
+# --- Deploy bashrc.sh to roost/shell/ ---
+cp "$REMOTE_DIR/files/shell/bashrc.sh" "$ROOST_DIR/shell/bashrc.sh"
+chown "$USERNAME:$USERNAME" "$ROOST_DIR/shell/bashrc.sh"
+echo "  [+] Shell config deployed to $ROOST_DIR/shell/bashrc.sh"

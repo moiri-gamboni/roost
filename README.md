@@ -77,6 +77,7 @@ Or paste the contents of your `.pub` file into the Hetzner Console
 ```
 .env.example            Configuration template (copy to .env and fill in)
 deploy.sh               Provisions and configures the server (run from your laptop)
+sync.sh                 Lightweight file sync between repo and server (see "Keeping Files in Sync")
 test-server.sh          Post-deploy verification (runs ~50 checks over SSH)
 files/                  Config files, templates, and hook scripts deployed to the server
 extras/                 Optional standalone utilities
@@ -177,18 +178,26 @@ systemctl status ram-monitor.timer
 **Add your first web app:**
 
 1. Run your app as a systemd service or standalone process listening on localhost
-2. Add a Caddy entry to `/etc/caddy/Caddyfile`:
-   ```
-   http://appname.yourdomain.dev {
+
+2. Add a Caddy route file in `/etc/caddy/sites-enabled/`:
+   ```bash
+   cat > /etc/caddy/sites-enabled/myapp.caddy <<'EOF'
+   http://myapp.yourdomain.dev {
        reverse_proxy localhost:3000
    }
+   EOF
    ```
-3. Add an ingress rule to `/etc/cloudflared/config.yml`:
-   ```yaml
-   - hostname: appname.yourdomain.dev
-     service: http://localhost:80
+
+3. Add a Cloudflare ingress fragment in `~/roost/cloudflared/apps/`:
+   ```bash
+   cat > ~/roost/cloudflared/apps/myapp.yml <<'EOF'
+     - hostname: myapp.yourdomain.dev
+       service: http://localhost:80
+   EOF
    ```
-4. Route DNS via the Cloudflare API and reload Caddy:
+   Note: fragment lines must be pre-indented with 2 spaces (they go under the `ingress:` key).
+
+4. Route DNS via the Cloudflare API:
    ```bash
    # Get your zone ID
    curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
@@ -198,10 +207,23 @@ systemctl status ram-monitor.timer
    curl -X POST "https://api.cloudflare.com/client/v4/zones/ZONE_ID/dns_records" \
      -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"type":"CNAME","name":"appname.yourdomain.dev","content":"TUNNEL_ID.cfargotunnel.com","proxied":true}'
-
-   sudo systemctl reload caddy
+     -d '{"type":"CNAME","name":"myapp.yourdomain.dev","content":"TUNNEL_ID.cfargotunnel.com","proxied":true}'
    ```
+
+5. Apply the changes:
+   ```bash
+   roost-apply --caddy --cloudflare
+   ```
+   This assembles the Cloudflare config from fragments and reloads both services.
+
+**App-specific files live in dedicated locations** so they never conflict with the base configs in the repo:
+
+| What | Where |
+|------|-------|
+| Caddy routes | `/etc/caddy/sites-enabled/<app>.caddy` |
+| Cloudflare ingress | `~/roost/cloudflared/apps/<app>.yml` |
+| Cron jobs | `/etc/cron.d/${ROOST_DIR_NAME}-apps` (filenames must not contain dots) |
+| Health checks | `~/roost/claude/hooks/health-check-apps.sh` (sourced by the main health check if present) |
 
 #### Shell helpers
 
@@ -321,10 +343,13 @@ The directory name `roost` is configurable via `ROOST_DIR_NAME` in `.env`.
 ~/roost/                    Syncthing-synced root
 ├── claude/                 Claude Code config (CLAUDE_CONFIG_DIR)
 │   ├── settings.json       Hooks, cleanup policy
-│   ├── hooks/              Hook scripts
+│   ├── hooks/              Hook scripts + utilities (roost-apply, cloudflare-assemble)
 │   ├── skills/learned/     Learned skills
 │   ├── locks/              Session lock files
 │   └── projects/           Session transcripts (auto-managed)
+├── shell/                  Shell configuration (bashrc.sh, sourced by ~/.bashrc)
+├── cloudflared/            Cloudflare Tunnel config
+│   └── apps/               Per-app ingress YAML fragments
 ├── memory/                 Structured notes (grepai-indexed)
 │   ├── debugging/
 │   ├── projects/
@@ -340,7 +365,7 @@ The deployed `settings.json` includes:
 - **Agent teams** enabled (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`)
 - **Session transcripts** never cleaned up (`cleanupPeriodDays: 99999`)
 - **Auto-compaction** disabled (`autoCompactEnabled: false`); the PreCompact hook injects a reflection prompt instead
-- **Dangerous command blocker** (PreToolUse hook via `claude-code-templates`) blocks destructive shell commands
+- **Dangerous command blocker** (PreToolUse hook, vendored from [claude-code-templates](https://github.com/davila7/claude-code-templates), MIT) blocks destructive shell commands
 - **Semantic search** via grepai, initialized on `~/roost/memory/` and `~/roost/claude/skills/`
 
 #### Hardening hooks (opt-in)
@@ -356,9 +381,50 @@ Syncthing write access but not SSH/Tailscale access, you can lock down hooks:
 sudo bash ~/deploy/files/setup/harden-hooks.sh
 ```
 
-This sets the immutable attribute (`chattr +i`) on all hook scripts,
+This sets the immutable attribute (`chattr +i`) on all hook scripts (`.sh`, `.py`),
 `reflect.md`, and `settings.json`. To update hooks later, `deploy.sh`
 automatically strips the flag before redeploying.
+
+## Keeping Files in Sync
+
+After the initial deploy, you can update individual files without re-running `deploy.sh`.
+
+### sync.sh
+
+Syncs files between the repo and the deployed server. Works both from the laptop (over Tailscale SSH) and from the server itself (local mode, auto-detected by hostname).
+
+```bash
+./sync.sh diff                          # Show all differences
+./sync.sh diff files/hooks/notify.sh    # Diff a specific file
+./sync.sh push                          # Push all changed files to server
+./sync.sh push files/ram-monitor.timer  # Push a specific file
+./sync.sh pull                          # Pull server changes to repo
+./sync.sh list                          # List all managed files
+```
+
+Push shows a diff preview and asks for confirmation (skip with `--yes`/`-y`). It handles `chattr +i` flags, groups `systemctl daemon-reload`, and batches service restarts.
+
+Pull copies plain files directly. For files that use `envsubst` (Caddyfile, systemd units, etc.), pull shows the diff instead, since the variable substitution cannot be reversed automatically.
+
+### roost-apply
+
+Runs on the server after editing config files directly. Detects which configs changed (via checksum comparison) and reloads only the affected services.
+
+```bash
+roost-apply                  # Auto-detect changes, reload affected services
+roost-apply --all            # Reload everything
+roost-apply --caddy          # Reload Caddy only
+roost-apply --cloudflare     # Assemble fragments and restart cloudflared
+roost-apply --systemd        # Daemon-reload + restart changed systemd units
+```
+
+Checksums are stored in `~/.cache/roost-apply/checksums`. On first run, all services are treated as changed and a baseline is saved.
+
+### What goes where
+
+Files under `~/roost/` (hooks, settings, shell config) are synced automatically between server and laptop via Syncthing. System files under `/etc/` (Caddyfile, systemd units, ntfy config) require `sync.sh push` or direct editing + `roost-apply`.
+
+The repo is the canonical source for base infrastructure configs. Server-specific app configs go in the dedicated locations described under "Add your first web app" and are not tracked in the repo.
 
 ## Recovery
 
@@ -439,8 +505,8 @@ Everything survives the resize.
 ## Troubleshooting
 
 **Tailscale IP changed:**
-Update the Caddyfile (`sudo nano /etc/caddy/Caddyfile`), then reload Caddy
-(`sudo systemctl reload caddy`). Restart Glances (`sudo systemctl restart glances`).
+Update the Caddyfile (`sudo nano /etc/caddy/Caddyfile`), then run `roost-apply --caddy`.
+Restart Glances (`sudo systemctl restart glances`).
 Update Syncthing listen address via the REST API or re-run `deploy.sh`.
 
 **Cloudflare Tunnel not working:**

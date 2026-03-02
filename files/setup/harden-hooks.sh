@@ -15,7 +15,7 @@ if [ ! -d "$HOOKS_DIR" ]; then
 fi
 
 # Remove immutable flags first (idempotent)
-chattr -i "$HOOKS_DIR"/*.sh "$HOOKS_DIR"/*.md "$CLAUDE_DIR/settings.json" 2>/dev/null || true
+chattr -i "$HOOKS_DIR"/*.sh "$HOOKS_DIR"/*.md "$HOOKS_DIR"/*.py "$CLAUDE_DIR/settings.json" 2>/dev/null || true
 
 # Set immutable on hook scripts
 for f in "$HOOKS_DIR"/*.sh; do
@@ -27,8 +27,13 @@ for f in "$HOOKS_DIR"/*.md; do
     [ -f "$f" ] && chattr +i "$f"
 done
 
+# Set immutable on Python hooks
+for f in "$HOOKS_DIR"/*.py; do
+    [ -f "$f" ] && chattr +i "$f"
+done
+
 # Set immutable on settings.json (hook definitions)
 [ -f "$CLAUDE_DIR/settings.json" ] && chattr +i "$CLAUDE_DIR/settings.json"
 
 ok "Hook scripts, data files, and settings.json are now immutable (chattr +i)"
-info "To update, first run: sudo chattr -i $HOOKS_DIR/*.sh $HOOKS_DIR/*.md $CLAUDE_DIR/settings.json"
+info "To update, first run: sudo chattr -i $HOOKS_DIR/*.sh $HOOKS_DIR/*.md $HOOKS_DIR/*.py $CLAUDE_DIR/settings.json"

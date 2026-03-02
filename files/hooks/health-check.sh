@@ -56,6 +56,11 @@ SWAP_USED=$(free -m | awk '/Swap:/ {print $3}')
 logger -t "$_HOOK_TAG" "Swap: ${SWAP_USED}MB"
 [ "$SWAP_USED" -gt 2048 ] && FAILURES="$FAILURES\n- Swap usage: ${SWAP_USED}MB (>2GB)"
 
+# Source app-specific health checks if present
+if [ -f "$(dirname "$0")/health-check-apps.sh" ]; then
+    source "$(dirname "$0")/health-check-apps.sh"
+fi
+
 if [ -n "$FAILURES" ]; then
     logger -t "$_HOOK_TAG" "Health check FAILED"
     ntfy_send -t "Service health alert" -p "high" "$(echo -e "Issues detected:$FAILURES")"
