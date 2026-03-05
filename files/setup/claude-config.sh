@@ -10,7 +10,23 @@ CLAUDE_DIR="$ROOST_DIR/claude"
 cp "$REMOTE_DIR/files/settings.json" "$CLAUDE_DIR/settings.json"
 
 chown -R "$USERNAME:$USERNAME" "$CLAUDE_DIR"
-echo "  [+] Claude Code configuration written"
+ok "Claude Code configuration written"
+
+# --- CLAUDE.md files ---
+
+# Global CLAUDE.md (epistemic style, learning, preferences)
+GLOBAL_CLAUDE_DIR="$HOME_DIR/.claude"
+mkdir -p "$GLOBAL_CLAUDE_DIR"
+cp "$REMOTE_DIR/files/global-CLAUDE.md" "$GLOBAL_CLAUDE_DIR/CLAUDE.md"
+chown -R "$USERNAME:$USERNAME" "$GLOBAL_CLAUDE_DIR"
+ok "Global CLAUDE.md installed"
+
+# Code CLAUDE.md (operational conventions, tool preferences)
+CODE_DIR="$ROOST_DIR/code"
+mkdir -p "$CODE_DIR"
+cp "$REMOTE_DIR/files/code-CLAUDE.md" "$CODE_DIR/CLAUDE.md"
+chown -R "$USERNAME:$USERNAME" "$CODE_DIR"
+ok "Code CLAUDE.md installed"
 
 # --- Hook scripts ---
 

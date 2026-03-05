@@ -5,5 +5,5 @@ Before compacting, review this conversation for learnings worth preserving:
    - Does it pass the "6-month test"?
    - If a matching note exists: update it
    - If no match: write a new note using the format in CLAUDE.md
-3. If a reusable procedure was discovered, create/update a skill in ~/roost/claude/skills/learned/
+3. If a reusable procedure was discovered, create/update a skill in ~/roost/claude/skills/
 4. If a project-specific instruction emerged, update the project CLAUDE.md
