@@ -6,6 +6,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Claude Roost is a single deploy script that provisions and configures a Hetzner Cloud server for running Claude Code agents, web apps, and supporting infrastructure. The target is a hardened Ubuntu 24.04 server with btrfs snapshots, Tailscale (private networking), Cloudflare Tunnel (public web apps), and native systemd services.
 
+## Commands
+
+```bash
+# Full provision/deploy from laptop (idempotent, safe to re-run)
+./deploy.sh
+
+# Lightweight file sync (push local changes to server)
+./sync.sh push
+
+# Lightweight file sync (pull server changes, shows diff for envsubst files)
+./sync.sh pull
+
+# Verify server health over SSH
+./test-server.sh
+
+# On server: apply config changes (checksum-based reload)
+roost-apply
+```
+
+## Environment Variables
+
+Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by `hcloud context create roost`, not in `.env`.
+
+| Variable | Required | Description |
+|---|---|---|
+| `SERVER_NAME` | yes | Hetzner server name |
+| `SERVER_TYPE` | yes | Hetzner server type (e.g. `cx43`) |
+| `SERVER_LOCATION` | no | Comma-separated location preference list (e.g. `nbg1,fsn1`); empty = auto |
+| `SSH_KEY_NAME` | no | Hetzner SSH key name; interactive prompt if empty |
+| `USERNAME` | yes | Non-root user created on the server |
+| `DOMAIN` | yes | Domain managed in Cloudflare |
+| `ROOST_DIR_NAME` | no | Synced directory name under `~/` (default: `roost`) |
+| `CLOUDFLARE_API_TOKEN` | yes | Needs Account > Tunnel > Edit and Zone > DNS > Edit |
+| `CLOUDFLARE_TUNNEL_NAME` | no | Defaults to `$ROOST_DIR_NAME` |
+| `CLOUDFLARE_ACCOUNT_ID` | no | Skips account lookup if provided |
+| `TAILSCALE_AUTHKEY` | yes | Pre-authenticated key for unattended setup |
+
 ## Script Roles
 
 - **`deploy.sh`** -- Full provisioning and setup, run from your laptop. Sources `.env`, logs to `logs/` (gitignored). Idempotent and safe to re-run.
@@ -26,16 +63,19 @@ Claude Roost is a single deploy script that provisions and configures a Hetzner 
 
 ## File Layout
 
-- **`deploy.sh`** -- Full provisioning script, run from your laptop (see Script Roles above)
-- **`sync.sh`** -- Lightweight file sync between repo and server (see Script Roles above)
+- **`deploy.sh`** / **`sync.sh`** -- See Script Roles above
 - **`files/`** -- Config files and templates deployed to the server
   - `_setup-env.sh` -- Shared environment sourced by every setup script
   - `settings.json` -- Claude Code settings with hook definitions (SessionStart/End, PreCompact, Stop, PreToolUse, Notification)
+  - `global-CLAUDE.md` -- Deployed to `~/.claude/CLAUDE.md`; epistemic style, learning system, memory format
+  - `code-CLAUDE.md` -- Deployed to `~/roost/code/CLAUDE.md`; safety, planning, search, agent, and tool conventions
   - `Caddyfile` -- Caddy reverse proxy config template (envsubst-expanded); imports `/etc/caddy/sites-enabled/*` for app routes
   - `caddy-tailscale.conf` -- Systemd drop-in for Caddy to wait for Tailscale
   - `cloudflare-config.yml` -- Cloudflare Tunnel base config template (envsubst-expanded); app ingress via fragments
   - `ntfy-server.yml` -- ntfy server configuration
   - `syncthing-tailscale.conf` -- Systemd drop-in for Syncthing to wait for Tailscale
+  - `tmux.conf` -- Tmux configuration deployed to server
+  - `btrfs-convert.sh` -- Rescue-mode script to convert ext4 to btrfs with @rootfs subvolume
   - `glances.service` -- Systemd unit for Glances monitoring
   - `ram-monitor.service` / `ram-monitor.timer` -- Systemd units for per-process RAM alerting (30s interval)
   - `cron-roost` -- Crontab entries for health checks, scheduled tasks, auto-update
@@ -47,9 +87,10 @@ Claude Roost is a single deploy script that provisions and configures a Hetzner 
     - `dangerous-command-blocker.py` -- PreToolUse hook blocking destructive commands (vendored from claude-code-templates, MIT)
     - `roost-apply.sh` -- Server-side service reload with checksum-based change detection
     - `cloudflare-assemble.sh` -- Assembles cloudflare config from base header + app fragments
-  - `setup/` -- Modular setup scripts (system, user, caddy, ntfy, syncthing, claude, etc.)
+  - `setup/` -- Modular setup scripts, run via `remote_script()` in deploy.sh: `system`, `create-user`, `ssh-hardening`, `ufw`, `ipv6-disable`, `swap`, `snapper` (btrfs), `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `syncthing`, `cloudflare`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `harden-hooks`, `unattended-upgrades`
 - **`extras/`** -- Standalone utilities not part of the main setup flow
   - `hetzner-watch.sh` -- Polls Hetzner API for server type availability, sends ntfy alerts
+- **`test-server.sh`** -- Server verification script; tests services over SSH, logs to `logs/`
 
 ## Server Directory Structure
 
@@ -68,6 +109,7 @@ The directory name `roost` is configurable via `ROOST_DIR_NAME` in `.env`.
 │   └── apps/               Per-app ingress YAML fragments
 ├── memory/                 Structured notes (grepai-indexed)
 └── code/                   Project repositories
+    └── CLAUDE.md           Code conventions (auto-discovered by all projects)
 ```
 
 ## Hook Architecture
