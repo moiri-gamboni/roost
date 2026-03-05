@@ -462,7 +462,7 @@ fi
 echo ""
 echo "--- Directory Structure ---"
 
-for dir in roost roost/claude roost/claude/hooks roost/claude/skills/learned \
+for dir in roost roost/claude roost/claude/hooks roost/claude/skills \
            roost/claude/locks roost/memory roost/code roost/code/life; do
     if run test -d "$HOME_DIR/$dir"; then
         pass "~/$dir exists"

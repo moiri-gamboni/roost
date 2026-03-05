@@ -101,7 +101,7 @@ The directory name `roost` is configurable via `ROOST_DIR_NAME` in `.env`.
 ├── claude/                 Claude Code config (CLAUDE_CONFIG_DIR)
 │   ├── settings.json       Hooks, cleanup policy
 │   ├── hooks/              Hook scripts + utilities (roost-apply, cloudflare-assemble)
-│   ├── skills/learned/     Learned skills
+│   ├── skills/             Skills
 │   ├── locks/              Session lock files
 │   └── projects/           Session transcripts (auto-managed)
 ├── shell/                  Shell configuration (bashrc.sh)

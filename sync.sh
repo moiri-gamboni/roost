@@ -235,6 +235,8 @@ files/hooks/dangerous-command-blocker.py|$ROOST_DIR/claude/hooks/dangerous-comma
 files/hooks/reflect.md|$ROOST_DIR/claude/hooks/reflect.md|sed-roost|
 files/hooks/roost-apply.sh|$ROOST_DIR/claude/hooks/roost-apply.sh|plain+x|
 files/shell/bashrc.sh|$ROOST_DIR/shell/bashrc.sh|plain|
+files/code-CLAUDE.md|$ROOST_DIR/code/CLAUDE.md|plain|
+files/global-CLAUDE.md|$HOME_DIR/.claude/CLAUDE.md|plain|
 MANIFEST_A
 
     # Category B: System files (root needed, may require service restarts)

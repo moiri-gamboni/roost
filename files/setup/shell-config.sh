@@ -25,7 +25,7 @@ echo "  [+] tmux and shell configured"
 
 for dir in \
     "$ROOST_DIR/claude/hooks" \
-    "$ROOST_DIR/claude/skills/learned" \
+    "$ROOST_DIR/claude/skills" \
     "$ROOST_DIR/claude/locks" \
     "$ROOST_DIR/cloudflared/apps" \
     "$ROOST_DIR/shell" \
