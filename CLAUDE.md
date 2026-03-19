@@ -67,8 +67,9 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
 - **`files/`** -- Config files and templates deployed to the server
   - `_setup-env.sh` -- Shared environment sourced by every setup script
   - `settings.json` -- Claude Code settings with hook definitions (SessionStart/End, PreCompact, Stop, PreToolUse, Notification)
-  - `global-CLAUDE.md` -- Deployed to `~/.claude/CLAUDE.md`; epistemic style, learning system, memory format
-  - `code-CLAUDE.md` -- Deployed to `~/roost/code/CLAUDE.md`; safety, planning, search, agent, and tool conventions
+  - `private/` -- Gitignored; clone your private `claude-mds` repo here for personal CLAUDE.md files
+    - `global-CLAUDE.md` -- Deployed to `~/.claude/CLAUDE.md`; epistemic style, learning system, memory format
+    - `code-CLAUDE.md` -- Deployed to `~/roost/code/CLAUDE.md`; safety, planning, search, agent, and tool conventions
   - `Caddyfile` -- Caddy reverse proxy config template (envsubst-expanded); imports `/etc/caddy/sites-enabled/*` for app routes
   - `caddy-tailscale.conf` -- Systemd drop-in for Caddy to wait for Tailscale
   - `cloudflare-config.yml` -- Cloudflare Tunnel base config template (envsubst-expanded); app ingress via fragments

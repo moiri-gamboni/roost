@@ -1,3 +1,4 @@
 .env
 logs/
 repomix-output.xml
+files/private/

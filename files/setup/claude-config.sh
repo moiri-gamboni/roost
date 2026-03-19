@@ -12,21 +12,25 @@ cp "$REMOTE_DIR/files/settings.json" "$CLAUDE_DIR/settings.json"
 chown -R "$USERNAME:$USERNAME" "$CLAUDE_DIR"
 ok "Claude Code configuration written"
 
-# --- CLAUDE.md files ---
+# --- CLAUDE.md files (from private config, optional) ---
 
-# Global CLAUDE.md (epistemic style, learning, preferences)
-GLOBAL_CLAUDE_DIR="$HOME_DIR/.claude"
-mkdir -p "$GLOBAL_CLAUDE_DIR"
-cp "$REMOTE_DIR/files/global-CLAUDE.md" "$GLOBAL_CLAUDE_DIR/CLAUDE.md"
-chown -R "$USERNAME:$USERNAME" "$GLOBAL_CLAUDE_DIR"
-ok "Global CLAUDE.md installed"
+if [ -f "$REMOTE_DIR/files/private/global-CLAUDE.md" ]; then
+    cp "$REMOTE_DIR/files/private/global-CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
+    chown "$USERNAME:$USERNAME" "$CLAUDE_DIR/CLAUDE.md"
+    ok "Global CLAUDE.md installed"
+else
+    info "Global CLAUDE.md not found (files/private/ missing). Skipping."
+fi
 
-# Code CLAUDE.md (operational conventions, tool preferences)
 CODE_DIR="$ROOST_DIR/code"
 mkdir -p "$CODE_DIR"
-cp "$REMOTE_DIR/files/code-CLAUDE.md" "$CODE_DIR/CLAUDE.md"
-chown -R "$USERNAME:$USERNAME" "$CODE_DIR"
-ok "Code CLAUDE.md installed"
+if [ -f "$REMOTE_DIR/files/private/code-CLAUDE.md" ]; then
+    cp "$REMOTE_DIR/files/private/code-CLAUDE.md" "$CODE_DIR/CLAUDE.md"
+    chown -R "$USERNAME:$USERNAME" "$CODE_DIR"
+    ok "Code CLAUDE.md installed"
+else
+    info "Code CLAUDE.md not found (files/private/ missing). Skipping."
+fi
 
 # --- Hook scripts ---
 
