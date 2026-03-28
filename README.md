@@ -314,8 +314,9 @@ ssh -L 8384:localhost:8384 <username>@<tailscale-ip>
    - `pkg install mosh openssh`
    - Add alias: `echo "alias cc='mosh <username>@<tailscale-ip>'" >> ~/.bashrc`
 3. **ntfy**: Install from F-Droid
-   - Server: `http://<tailscale-ip>:2586`
-   - Topic: `claude-<username>`
+   - Settings > General > Manage Users: add user `phone` for server `http://<tailscale-ip>:2586`
+     (password in `~/services/.ntfy-phone-pass` on the server)
+   - Subscribe to topic: `claude-<username>`
 
 ## Architecture
 

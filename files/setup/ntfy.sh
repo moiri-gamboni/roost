@@ -53,7 +53,7 @@ if [ "$NTFY_VALID" = false ]; then
         sleep 2
     done
 
-    # Create user and generate token
+    # Create admin user for hooks (server-side publishing)
     NTFY_PASS=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 24)
     NTFY_PASSWORD="$NTFY_PASS" ntfy user add --role=admin --ignore-exists hooks || \
         info "ntfy user creation failed"
@@ -69,4 +69,20 @@ if [ "$NTFY_VALID" = false ]; then
         info "Create manually: ntfy token add hooks"
         info "Then save to $NTFY_TOKEN_FILE"
     fi
+fi
+
+# --- Phone user (read-only access to claude-* topics) ---
+NTFY_PHONE_PASS_FILE="$HOME_DIR/services/.ntfy-phone-pass"
+if ntfy user list 2>/dev/null | grep -q "^user phone"; then
+    skip "ntfy phone user exists"
+else
+    info "Creating ntfy phone user..."
+    PHONE_PASS=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 24)
+    NTFY_PASSWORD="$PHONE_PASS" ntfy user add phone || info "ntfy phone user creation failed"
+    ntfy access phone 'claude-*' read-only
+    echo "$PHONE_PASS" > "$NTFY_PHONE_PASS_FILE"
+    chmod 600 "$NTFY_PHONE_PASS_FILE"
+    chown "$USERNAME:$USERNAME" "$NTFY_PHONE_PASS_FILE"
+    ok "ntfy phone user created (password saved to $NTFY_PHONE_PASS_FILE)"
+    info "Configure ntfy app: server http://<tailscale-ip>:2586, user 'phone'"
 fi
