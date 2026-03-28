@@ -754,7 +754,7 @@ ok "Caddy running (bound to $TAILSCALE_IP)"
 
 section "ntfy"
 remote_script "setup/ntfy.sh"
-ok "ntfy running on localhost:2586"
+ok "ntfy running on 0.0.0.0:2586 (firewall limits access to localhost + Tailscale)"
 
 # ============================================
 # Syncthing (File Sync)
