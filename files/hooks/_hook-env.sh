@@ -62,7 +62,7 @@ ntfy_send() {
     [ -n "$actions" ] && headers+=(-H "Actions: $actions")
     [ -n "$NTFY_TOKEN" ] && headers+=(-H "Authorization: Bearer $NTFY_TOKEN")
 
-    if ! curl -sf -m 5 -X POST "$NTFY_URL" "${headers[@]}" --data-urlencode "message=$message" >/dev/null 2>&1; then
+    if ! curl -sf -m 5 -X POST "$NTFY_URL" "${headers[@]}" -d "$message" >/dev/null 2>&1; then
         logger -t "$_HOOK_TAG" -p user.warning "ntfy failed: ${title:+$title: }$message"
     fi
 }
