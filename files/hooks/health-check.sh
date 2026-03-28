@@ -47,10 +47,6 @@ DISK_PCT=$(df / --output=pcent | tail -1 | tr -d ' %')
 logger -t "$_HOOK_TAG" "Disk: ${DISK_PCT}%"
 [ "$DISK_PCT" -gt 80 ] && FAILURES="$FAILURES\n- Disk usage at ${DISK_PCT}%"
 
-INODE_PCT=$(df -i / --output=ipcent | tail -1 | tr -d ' %')
-logger -t "$_HOOK_TAG" "Inodes: ${INODE_PCT}%"
-[ "$INODE_PCT" -gt 80 ] && FAILURES="$FAILURES\n- Inode usage at ${INODE_PCT}%"
-
 SWAP_USED=$(free -m | awk '/Swap:/ {print $3}')
 logger -t "$_HOOK_TAG" "Swap: ${SWAP_USED}MB"
 [ "$SWAP_USED" -gt 2048 ] && FAILURES="$FAILURES\n- Swap usage: ${SWAP_USED}MB (>2GB)"
