@@ -33,7 +33,6 @@ check "Ollama" "http://localhost:11434/api/tags"
 check_service "caddy"
 check_service "ntfy"
 check_service "syncthing@$(whoami)"
-check "Syncthing" "http://localhost:8384/rest/system/ping"
 
 if tailscale status > /dev/null 2>&1; then
     logger -t "$_HOOK_TAG" "OK: Tailscale"
