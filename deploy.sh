@@ -928,7 +928,7 @@ fi
 # Write tunnel config (runtime-generated because it needs TUNNEL_ID)
 export TUNNEL_ID
 export TUNNEL_NAME
-envsubst '$TUNNEL_ID $TUNNEL_NAME $DOMAIN' \
+envsubst '$TUNNEL_ID $TUNNEL_NAME' \
     < "$SCRIPT_DIR/files/cloudflare-config.yml" \
     | remote "cat > /tmp/_cf_config.yml"
 remote "$ROOT_CMD mv /tmp/_cf_config.yml /home/$USERNAME/.cloudflared/config.yml"

@@ -3,6 +3,6 @@ credentials-file: /etc/cloudflared/${TUNNEL_ID}.json
 
 ingress:
   # Public apps (add entries, then run: cloudflared tunnel route dns ${TUNNEL_NAME} <hostname>)
-  # - hostname: app.${DOMAIN}
+  # - hostname: app.example.com
   #   service: http://localhost:80
   - service: http_status:404
