@@ -31,7 +31,16 @@ for arg in "$@"; do
     esac
 done
 
-source "$SCRIPT_DIR/.env"
+# Source environment: .env (laptop) or .sync-env (server)
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    source "$SCRIPT_DIR/.env"
+elif [ -f "$HOME/${ROOST_DIR_NAME:-roost}/.sync-env" ]; then
+    source "$HOME/${ROOST_DIR_NAME:-roost}/.sync-env"
+else
+    echo "Error: No .env (laptop) or ~/${ROOST_DIR_NAME:-roost}/.sync-env (server) found."
+    echo "Run deploy.sh first, or copy .env.example to .env and fill it in."
+    exit 1
+fi
 
 ROOST_DIR_NAME="${ROOST_DIR_NAME:-roost}"
 TUNNEL_NAME="${CLOUDFLARE_TUNNEL_NAME:-$ROOST_DIR_NAME}"
@@ -134,10 +143,11 @@ ensure_connection() {
     [ "$_CONNECTED" = true ] && return 0
     _CONNECTED=true
     if [ "$LOCAL_MODE" = true ]; then
-        info "Server: $SERVER_NAME (local)"
+        TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || true)
+        info "Server: $SERVER_NAME (local)" >&2
     else
         TAILSCALE_IP=$(resolve_tailscale_ip)
-        info "Server: $SERVER_NAME ($TAILSCALE_IP)"
+        info "Server: $SERVER_NAME ($TAILSCALE_IP)" >&2
     fi
 }
 
