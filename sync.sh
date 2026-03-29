@@ -243,9 +243,9 @@ MANIFEST_A
 
     # Category B: System files (root needed, may require service restarts)
     cat <<'MANIFEST_B'
-files/Caddyfile|/etc/caddy/Caddyfile|envsubst:DOMAIN,TAILSCALE_IP|reload-or-restart:caddy
-files/cloudflare-config.yml|/etc/cloudflared/config.yml|envsubst:TUNNEL_ID,TUNNEL_NAME,DOMAIN|restart:cloudflared
-files/cloudflare-config.yml|$HOME_DIR/.cloudflared/config.yml|envsubst:TUNNEL_ID,TUNNEL_NAME,DOMAIN|
+files/Caddyfile|/etc/caddy/Caddyfile|envsubst:TAILSCALE_IP|reload-or-restart:caddy
+files/cloudflare-config.yml|/etc/cloudflared/config.yml|envsubst:TUNNEL_ID,TUNNEL_NAME|restart:cloudflared
+files/cloudflare-config.yml|$HOME_DIR/.cloudflared/config.yml|envsubst:TUNNEL_ID,TUNNEL_NAME|
 files/ntfy-server.yml|/etc/ntfy/server.yml|plain|restart:ntfy
 files/caddy-tailscale.conf|/etc/systemd/system/caddy.service.d/tailscale.conf|plain|daemon-reload
 files/syncthing-tailscale.conf|/etc/systemd/system/syncthing@.service.d/tailscale.conf|plain|daemon-reload
@@ -312,7 +312,6 @@ render_local() {
             # Export required variables for envsubst
             export TUNNEL_ID
             TUNNEL_ID=$(tunnel_id)
-            export DOMAIN="${DOMAIN:-}"
             export TAILSCALE_IP
             export TUNNEL_NAME
             export USERNAME
