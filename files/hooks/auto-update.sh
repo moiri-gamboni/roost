@@ -133,8 +133,8 @@ if github_release_cooldown_ok "Schniz/fnm" 7; then
     elif [ -z "$FNM_CURRENT" ] || [ -z "$FNM_LATEST" ]; then
         track "fnm" bash -c "curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell"
     fi
-    # Node.js is pinned to major 22 by fnm install 22, so no major guard needed
-    track "Node.js 22" bash -c 'eval "$(~/.local/share/fnm/fnm env --shell bash)" && fnm install 22 && fnm default 22'
+    # Track active LTS
+    track "Node.js LTS" bash -c 'eval "$(~/.local/share/fnm/fnm env --shell bash)" && fnm install --lts && fnm default lts-latest'
 else
     logger -t "$_HOOK_TAG" "fnm: skipped (release < 7 days old)"
 fi
@@ -183,7 +183,7 @@ else
 fi
 
 # --- OS packages ---
-track "OS packages" bash -c "sudo DEBIAN_FRONTEND=noninteractive apt update -qq && sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y"
+track "OS packages" bash -c "sudo DEBIAN_FRONTEND=noninteractive apt update -qq && sudo DEBIAN_FRONTEND=noninteractive apt -o Dpkg::Options::='--force-confold' upgrade -y"
 
 # --- Summary ---
 logger -t "$_HOOK_TAG" "=== Auto-update finished ==="
