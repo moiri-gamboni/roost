@@ -1,6 +1,7 @@
 # Environment
 HOME=$HOME_DIR
 CLAUDE_CONFIG_DIR=$HOME_DIR/$ROOST_DIR_NAME/claude
+BASH_ENV=$HOME_DIR/$ROOST_DIR_NAME/shell/bashrc.sh
 
 # Health check every 5 minutes
 */5 * * * * $USERNAME flock -n $HOME_DIR/.locks/health-check $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/health-check.sh
