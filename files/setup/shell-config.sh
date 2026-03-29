@@ -47,3 +47,12 @@ echo "  [+] Directory structure created"
 cp "$REMOTE_DIR/files/shell/bashrc.sh" "$ROOST_DIR/shell/bashrc.sh"
 chown "$USERNAME:$USERNAME" "$ROOST_DIR/shell/bashrc.sh"
 echo "  [+] Shell config deployed to $ROOST_DIR/shell/bashrc.sh"
+
+# --- Git identity ---
+if [ -n "${GIT_USER_NAME:-}" ] && [ -n "${GIT_USER_EMAIL:-}" ]; then
+    as_user "git config --global user.name '$GIT_USER_NAME'"
+    as_user "git config --global user.email '$GIT_USER_EMAIL'"
+    echo "  [+] Git identity configured"
+else
+    echo "  [-] Git identity skipped (GIT_USER_NAME/GIT_USER_EMAIL not set)"
+fi
