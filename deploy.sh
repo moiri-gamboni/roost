@@ -35,6 +35,11 @@ source "$SCRIPT_DIR/.env"
 # Configurable sync directory name (default: roost)
 ROOST_DIR_NAME="${ROOST_DIR_NAME:-roost}"
 
+# Git identity from the deployer's local config
+GIT_USER_NAME="${GIT_USER_NAME:-$(git config user.name 2>/dev/null || true)}"
+GIT_USER_EMAIL="${GIT_USER_EMAIL:-$(git config user.email 2>/dev/null || true)}"
+export GIT_USER_NAME GIT_USER_EMAIL
+
 # ============================================
 # Logging
 # ============================================
