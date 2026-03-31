@@ -200,7 +200,7 @@ ROOST_DIR="$HOME_DIR/$ROOST_DIR_NAME"
 
 # Resolve TUNNEL_ID from server's existing cloudflare config
 resolve_tunnel_id() {
-    remote "grep -oP '^tunnel: \\K.+' /etc/cloudflared/config.yml" || true
+    remote_sudo "grep -oP '^tunnel: \\K.+' /etc/cloudflared/config.yml" || true
 }
 
 # Cache dynamic vars (lazy-loaded on first use)
@@ -405,12 +405,13 @@ cmd_list() {
 # ============================================
 
 cmd_diff() {
+    ensure_connection
     local has_diff=false
     local has_envsubst_diff=false
     local missing_local=()
     local missing_remote=()
 
-    while IFS='|' read -r repo_path server_path transform service_action; do
+    while IFS='|' read -r -u3 repo_path server_path transform service_action; do
         server_path=$(expand_server_path "$server_path")
         local full_repo_path="$SCRIPT_DIR/$repo_path"
 
@@ -448,7 +449,7 @@ cmd_diff() {
             echo "--- $repo_path -> $server_path [$transform]"
             echo "$diff_output"
         fi
-    done <<< "$(get_manifest)"
+    done 3<<< "$(get_manifest)"
 
     if [ ${#missing_local[@]} -gt 0 ]; then
         echo ""
@@ -478,6 +479,7 @@ cmd_diff() {
 # ============================================
 
 cmd_push() {
+    ensure_connection
     # Phase 1: Compute diffs and collect changes
     local -a changed_repos=()
     local -a changed_servers=()
@@ -488,7 +490,7 @@ cmd_push() {
     local need_daemon_reload=false
     local -A services_to_restart=()
 
-    while IFS='|' read -r repo_path server_path transform service_action; do
+    while IFS='|' read -r -u3 repo_path server_path transform service_action; do
         server_path=$(expand_server_path "$server_path")
         local full_repo_path="$SCRIPT_DIR/$repo_path"
 
@@ -519,7 +521,7 @@ cmd_push() {
             changed_contents+=("$local_content")
             diff_outputs+=("$diff_output")
         fi
-    done <<< "$(get_manifest)"
+    done 3<<< "$(get_manifest)"
 
     if [ ${#changed_repos[@]} -eq 0 ]; then
         ok "Nothing to push (all files in sync)"
@@ -650,10 +652,11 @@ cmd_push() {
 # ============================================
 
 cmd_pull() {
+    ensure_connection
     local -a pulled=()
     local -a envsubst_diffs=()
 
-    while IFS='|' read -r repo_path server_path transform service_action; do
+    while IFS='|' read -r -u3 repo_path server_path transform service_action; do
         server_path=$(expand_server_path "$server_path")
         local full_repo_path="$SCRIPT_DIR/$repo_path"
 
@@ -744,7 +747,7 @@ cmd_pull() {
                 ok "$server_path -> $repo_path"
                 ;;
         esac
-    done <<< "$(get_manifest)"
+    done 3<<< "$(get_manifest)"
 
     echo ""
     if [ ${#pulled[@]} -gt 0 ]; then
