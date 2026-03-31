@@ -726,6 +726,14 @@ if [ "${SKIP_PLUGINS:-}" != "true" ]; then
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin marketplace add moiri-gamboni/praxis" || warn "Failed to add praxis marketplace"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install praxis@praxis-marketplace" || warn "Failed to install praxis plugin"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install ralph-loop@claude-plugins-official" || warn "Failed to install ralph plugin"
+    remote "sudo -u $USERNAME $CLAUDE_CMD plugin install serena@claude-plugins-official" || warn "Failed to install serena plugin"
+    remote "sudo -u $USERNAME $CLAUDE_CMD plugin marketplace add mksglu/context-mode" || warn "Failed to add context-mode marketplace"
+    remote "sudo -u $USERNAME $CLAUDE_CMD plugin install context-mode@context-mode" || warn "Failed to install context-mode plugin"
+    remote "sudo -u $USERNAME $CLAUDE_CMD plugin install claude-code-setup@claude-plugins-official" || warn "Failed to install claude-code-setup plugin"
+    remote "sudo -u $USERNAME $CLAUDE_CMD plugin install claude-md-management@claude-plugins-official" || warn "Failed to install claude-md-management plugin"
+    remote "sudo -u $USERNAME $CLAUDE_CMD plugin install playground@claude-plugins-official" || warn "Failed to install playground plugin"
+    remote "sudo -u $USERNAME $CLAUDE_CMD plugin install plugin-dev@claude-plugins-official" || warn "Failed to install plugin-dev plugin"
+    remote "sudo -u $USERNAME $CLAUDE_CMD mcp add --transport http exa https://mcp.exa.ai/mcp" || warn "Failed to add exa MCP server"
     ok "Claude Code plugins installed"
 fi
 
