@@ -164,6 +164,55 @@ The base infrastructure configs are generic and stay in the repo. Server-specifi
 | App cron jobs | `/etc/cron.d/${ROOST_DIR_NAME}-apps` | Separate file from the base cron; filenames must not contain dots |
 | App health checks | `~/roost/claude/hooks/health-check-apps.sh` | Sourced by `health-check.sh` if present; uses same `check()` and `check_service()` helpers |
 
+## Shell Helpers
+
+Agent management functions (defined in `files/shell/bashrc.sh`, available on the server):
+
+| Command | Usage |
+|---|---|
+| `agent [path] [claude-args...]` | Launch interactive Claude in a tmux window (path defaults to cwd) |
+| `agent -c` | Continue last session in cwd |
+| `agents` | Interactive tmux window picker |
+| `agent_stop <index>` | Graceful stop (Ctrl-D, triggers SessionEnd hooks including auto-commit) |
+| `agent_kill <index>` | Force stop (double Ctrl-C) |
+
+Using `/rename` inside a session updates the tmux window name automatically.
+
+## sync.sh Usage
+
+Works from both the laptop (over Tailscale SSH) and the server (local mode, auto-detected by hostname).
+
+```bash
+./sync.sh diff                          # Show all differences
+./sync.sh diff files/hooks/notify.sh    # Diff a specific file
+./sync.sh push                          # Push all changed files to server
+./sync.sh push files/ram-monitor.timer  # Push a specific file
+./sync.sh pull                          # Pull server changes to repo
+./sync.sh list                          # List all managed files
+```
+
+Push shows a diff preview and asks for confirmation (skip with `--yes`/`-y`). Pull cannot reverse `envsubst` files (shows diff instead).
+
+## roost-apply Usage
+
+```bash
+roost-apply                  # Auto-detect changes, reload affected services
+roost-apply --all            # Reload everything
+roost-apply --caddy          # Reload Caddy only
+roost-apply --cloudflare     # Assemble fragments and restart cloudflared
+roost-apply --systemd        # Daemon-reload + restart changed systemd units
+```
+
+## Recovery
+
+| Layer | Tool | Granularity |
+|---|---|---|
+| Code changes | Git auto-commits (Stop hook) | Per agent turn |
+| Full filesystem | btrfs snapshots (snapper) | Every 30 min |
+| Disaster recovery | Hetzner backups | Daily |
+
+Snapper retention: 24 hourly, 7 daily, 4 weekly. Rollback: `snapper list`, then `snapper rollback <number>`, then reboot.
+
 ## Shell Conventions
 
 - All scripts use `set -euo pipefail` (except `hetzner-watch.sh` which omits `-e` so polling loops survive failed checks; `_hook-env.sh` uses `set -uo pipefail` without `-e` for resilient hook execution)
