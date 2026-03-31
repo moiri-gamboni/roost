@@ -1,52 +1,594 @@
 #!/bin/bash
-# Detect config changes and reload affected services.
-# Run with no args to auto-detect changes, or use flags to target specific services.
+# Deploy config files and reload affected services.
 #
-# Usage: roost-apply [--all] [--cloudflare] [--caddy] [--ntfy] [--systemd] [--cron]
+# Subcommand mode (manifest-based file deployment):
+#   roost-apply [diff|push|list] [file-filter...]
+#
+# Flag mode (direct service reload):
+#   roost-apply [--all] [--cloudflare] [--caddy] [--ntfy] [--systemd] [--cron]
+#
+# Options:
+#   -y, --yes    Skip confirmation prompts (push only)
 set -euo pipefail
 source "$(dirname "$0")/_hook-env.sh"
 
-CHECKSUM_DIR="$HOME/.cache/roost-apply"
-CHECKSUM_FILE="$CHECKSUM_DIR/checksums"
-mkdir -p "$CHECKSUM_DIR"
+# --- Paths ---
+_HOOKS_DIR="$(cd "$(dirname "$0")" && pwd)"
+_ROOST_DIR="$(cd "$_HOOKS_DIR/../.." && pwd)"
+REPO_DIR="$_ROOST_DIR/code/server"
 
-# --- Config file → service mapping ---
-# Format: destination_path:service_action
-# Service actions:
-#   reload-or-restart:<unit>   - systemctl reload-or-restart
-#   restart:<unit>             - systemctl restart
-#   daemon-reload              - just needs daemon-reload (no restart)
-#   daemon-reload+restart:<unit> - daemon-reload then restart
-#   none                       - no service action needed (e.g. cron auto-reloads)
-declare -A CONFIG_MAP=(
-    ["/etc/caddy/Caddyfile"]="reload-or-restart:caddy"
-    ["/etc/cloudflared/config.yml"]="restart:cloudflared"
-    ["/etc/ntfy/server.yml"]="restart:ntfy"
-    ["/etc/systemd/system/caddy.service.d/tailscale.conf"]="daemon-reload"
-    ["/etc/systemd/system/syncthing@.service.d/tailscale.conf"]="daemon-reload"
-    ["/etc/systemd/system/glances.service"]="daemon-reload+restart:glances"
-    ["/etc/systemd/system/ram-monitor.service"]="daemon-reload"
-    ["/etc/systemd/system/ram-monitor.timer"]="daemon-reload+restart:ram-monitor.timer"
-)
+# --- Output helpers ---
+info() { echo "  [*] $1"; }
+ok()   { echo "  [+] $1"; }
+skip() { echo "  [-] $1 (skipped)"; }
+warn() { echo "  [!] $1"; }
 
-# Cron file path depends on ROOST_DIR_NAME
-CRON_FILE="/etc/cron.d/${ROOST_DIR_NAME:-roost}"
-CONFIG_MAP["$CRON_FILE"]="none"
+# ============================================
+# Environment
+# ============================================
 
-# --- Group configs by service flag ---
-declare -A FLAG_MAP=(
-    ["/etc/caddy/Caddyfile"]="caddy"
-    ["/etc/cloudflared/config.yml"]="cloudflare"
-    ["/etc/ntfy/server.yml"]="ntfy"
-    ["/etc/systemd/system/caddy.service.d/tailscale.conf"]="systemd"
-    ["/etc/systemd/system/syncthing@.service.d/tailscale.conf"]="systemd"
-    ["/etc/systemd/system/glances.service"]="systemd"
-    ["/etc/systemd/system/ram-monitor.service"]="systemd"
-    ["/etc/systemd/system/ram-monitor.timer"]="systemd"
-)
-FLAG_MAP["$CRON_FILE"]="cron"
+source_env() {
+    local sync_env="$_ROOST_DIR/.sync-env"
+    if [ -f "$sync_env" ]; then
+        source "$sync_env"
+    else
+        echo "Error: $sync_env not found. Run deploy.sh first." >&2
+        exit 1
+    fi
+    ROOST_DIR_NAME="${ROOST_DIR_NAME:-roost}"
+    TUNNEL_NAME="${CLOUDFLARE_TUNNEL_NAME:-$ROOST_DIR_NAME}"
+    HOME_DIR="/home/$USERNAME"
+    ROOST_DIR="$HOME_DIR/$ROOST_DIR_NAME"
+}
 
-# --- Parse arguments ---
+# --- Dynamic variables (lazy-cached) ---
+_RESOLVED_TAILSCALE_IP=""
+_RESOLVED_TUNNEL_ID=""
+
+tailscale_ip() {
+    if [ -z "$_RESOLVED_TAILSCALE_IP" ]; then
+        _RESOLVED_TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || true)
+        if [ -z "$_RESOLVED_TAILSCALE_IP" ]; then
+            warn "Could not resolve Tailscale IP"
+        fi
+    fi
+    echo "$_RESOLVED_TAILSCALE_IP"
+}
+
+tunnel_id() {
+    if [ -z "$_RESOLVED_TUNNEL_ID" ]; then
+        _RESOLVED_TUNNEL_ID=$(sudo grep -oP '^tunnel: \K.+' /etc/cloudflared/config.yml 2>/dev/null || true)
+        if [ -z "$_RESOLVED_TUNNEL_ID" ]; then
+            warn "Could not resolve TUNNEL_ID from /etc/cloudflared/config.yml"
+        fi
+    fi
+    echo "$_RESOLVED_TUNNEL_ID"
+}
+
+# ============================================
+# File Manifest
+# ============================================
+
+# Each entry: repo_path|server_path|transform|service_action
+# Transforms: plain, plain+x, envsubst:<VARS>, sed-roost
+# Service actions (comma-separated):
+#   reload-or-restart:<unit>  restart:<unit>  daemon-reload
+#   daemon-reload,restart:<unit>  run:<command>  (empty = none)
+
+define_manifest() {
+    # Category A: User files under ~/roost/ (no root needed)
+    cat <<'MANIFEST_A'
+files/settings.json|$ROOST_DIR/claude/settings.json|sed-roost|
+files/hooks/_hook-env.sh|$ROOST_DIR/claude/hooks/_hook-env.sh|plain+x|
+files/hooks/session-lock.sh|$ROOST_DIR/claude/hooks/session-lock.sh|plain+x|
+files/hooks/session-unlock.sh|$ROOST_DIR/claude/hooks/session-unlock.sh|plain+x|
+files/hooks/reflect.sh|$ROOST_DIR/claude/hooks/reflect.sh|plain+x|
+files/hooks/notify.sh|$ROOST_DIR/claude/hooks/notify.sh|plain+x|
+files/hooks/health-check.sh|$ROOST_DIR/claude/hooks/health-check.sh|plain+x|
+files/hooks/scheduled-task.sh|$ROOST_DIR/claude/hooks/scheduled-task.sh|plain+x|
+files/hooks/run-scheduled-task.sh|$ROOST_DIR/claude/hooks/run-scheduled-task.sh|plain+x|
+files/hooks/auto-update.sh|$ROOST_DIR/claude/hooks/auto-update.sh|plain+x|
+files/hooks/ram-monitor.sh|$ROOST_DIR/claude/hooks/ram-monitor.sh|plain+x|
+files/hooks/cloudflare-assemble.sh|$ROOST_DIR/claude/hooks/cloudflare-assemble.sh|plain+x|
+files/hooks/dangerous-command-blocker.py|$ROOST_DIR/claude/hooks/dangerous-command-blocker.py|plain+x|
+files/hooks/reflect.md|$ROOST_DIR/claude/hooks/reflect.md|sed-roost|
+files/hooks/roost-apply.sh|$ROOST_DIR/claude/hooks/roost-apply.sh|plain+x|
+files/shell/bashrc.sh|$HOME_DIR/.bashrc.d/roost.sh|plain|
+files/private/code-CLAUDE.md|$ROOST_DIR/code/CLAUDE.md|plain|
+files/private/global-CLAUDE.md|$ROOST_DIR/claude/CLAUDE.md|plain|
+files/skills/html2markdown/SKILL.md|$ROOST_DIR/claude/skills/html2markdown/SKILL.md|plain|
+files/skills/havelock-api/SKILL.md|$ROOST_DIR/claude/skills/havelock-api/SKILL.md|plain|
+MANIFEST_A
+
+    # Category B: System files (root needed, may require service restarts)
+    cat <<'MANIFEST_B'
+files/Caddyfile|/etc/caddy/Caddyfile|envsubst:TAILSCALE_IP|reload-or-restart:caddy
+files/cloudflare-config.yml|/etc/cloudflared/config.yml|envsubst:TUNNEL_ID,TUNNEL_NAME|restart:cloudflared
+files/cloudflare-config.yml|$HOME_DIR/.cloudflared/config.yml|envsubst:TUNNEL_ID,TUNNEL_NAME|
+files/ntfy-server.yml|/etc/ntfy/server.yml|plain|restart:ntfy
+files/caddy-tailscale.conf|/etc/systemd/system/caddy.service.d/tailscale.conf|plain|daemon-reload
+files/glances.service|/etc/systemd/system/glances.service|envsubst:USERNAME|daemon-reload,restart:glances
+files/ram-monitor.service|/etc/systemd/system/ram-monitor.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
+files/ram-monitor.timer|/etc/systemd/system/ram-monitor.timer|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload,restart:ram-monitor.timer
+files/cron-roost|/etc/cron.d/$ROOST_DIR_NAME|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|
+files/tmux.conf|$HOME_DIR/.tmux.conf|plain|run:tmux source-file ~/.tmux.conf
+MANIFEST_B
+}
+
+# Expand variables in server path.
+# $ROOST_DIR_NAME must be expanded before $ROOST_DIR to avoid partial matching.
+expand_path() {
+    local path="$1"
+    path="${path//\$ROOST_DIR_NAME/$ROOST_DIR_NAME}"
+    path="${path//\$HOME_DIR/$HOME_DIR}"
+    path="${path//\$ROOST_DIR/$ROOST_DIR}"
+    path="${path//\$USERNAME/$USERNAME}"
+    echo "$path"
+}
+
+# Check if a file needs root to write
+needs_root() {
+    case "$1" in
+        /etc/*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# ============================================
+# Transforms
+# ============================================
+
+# Render a repo file with its transform applied
+render_file() {
+    local repo_path="$1"
+    local transform="$2"
+    local full_path="$REPO_DIR/$repo_path"
+
+    if [ ! -f "$full_path" ]; then
+        return 1
+    fi
+
+    case "$transform" in
+        plain|plain+x)
+            cat "$full_path"
+            ;;
+        sed-roost)
+            if [ "$ROOST_DIR_NAME" != "roost" ]; then
+                sed "s|~/roost/|~/$ROOST_DIR_NAME/|g" "$full_path"
+            else
+                cat "$full_path"
+            fi
+            ;;
+        envsubst:*)
+            local vars_csv="${transform#envsubst:}"
+            local var_list=""
+            IFS=',' read -ra var_names <<< "$vars_csv"
+            for v in "${var_names[@]}"; do
+                var_list+=" \$$v"
+            done
+
+            # Export required variables for envsubst
+            export TUNNEL_ID
+            TUNNEL_ID=$(tunnel_id)
+            export TAILSCALE_IP
+            TAILSCALE_IP=$(tailscale_ip)
+            export TUNNEL_NAME
+            export USERNAME
+            export HOME_DIR
+            export ROOST_DIR_NAME
+
+            # Guard: abort if any required variable is empty
+            for v in "${var_names[@]}"; do
+                if [ -z "${!v:-}" ]; then
+                    echo "Error: $v is empty, refusing to render $full_path" >&2
+                    return 1
+                fi
+            done
+
+            envsubst "$var_list" < "$full_path"
+            ;;
+        *)
+            echo "Error: Unknown transform '$transform'" >&2
+            return 1
+            ;;
+    esac
+}
+
+# ============================================
+# Manifest Filtering
+# ============================================
+
+get_manifest() {
+    local line
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        local repo_path="${line%%|*}"
+
+        if [ ${#FILE_FILTERS[@]} -gt 0 ]; then
+            local match=false
+            for filter in "${FILE_FILTERS[@]}"; do
+                if [[ "$repo_path" == *"$filter"* ]] || [[ "$filter" == *"$repo_path"* ]]; then
+                    match=true
+                    break
+                fi
+            done
+            [ "$match" = false ] && continue
+        fi
+
+        echo "$line"
+    done <<< "$(define_manifest)"
+}
+
+# Read deployed file content, using sudo for root-owned paths
+read_deployed() {
+    local server_path="$1"
+    if needs_root "$server_path"; then
+        sudo cat "$server_path" 2>/dev/null || true
+    else
+        cat "$server_path" 2>/dev/null || true
+    fi
+}
+
+# Check if deployed file exists, using sudo for root-owned paths
+deployed_exists() {
+    local server_path="$1"
+    if needs_root "$server_path"; then
+        sudo test -f "$server_path"
+    else
+        test -f "$server_path"
+    fi
+}
+
+# ============================================
+# Subcommand: list
+# ============================================
+
+cmd_list() {
+    source_env
+    echo ""
+    echo "  Managed files:"
+    echo ""
+
+    printf "  %-45s  %-50s  %s\n" "REPO PATH" "DEPLOYED PATH" "TRANSFORM"
+    printf "  %-45s  %-50s  %s\n" "---------" "-------------" "---------"
+
+    while IFS='|' read -r repo_path server_path transform service_action; do
+        server_path=$(expand_path "$server_path")
+        printf "  %-45s  %-50s  %s\n" "$repo_path" "$server_path" "$transform"
+    done <<< "$(get_manifest)"
+    echo ""
+}
+
+# ============================================
+# Subcommand: diff
+# ============================================
+
+cmd_diff() {
+    source_env
+    local has_diff=false
+    local missing_local=()
+    local missing_dest=()
+
+    while IFS='|' read -r -u3 repo_path server_path transform service_action; do
+        server_path=$(expand_path "$server_path")
+        local full_repo_path="$REPO_DIR/$repo_path"
+
+        if [ ! -f "$full_repo_path" ]; then
+            missing_local+=("$repo_path")
+            continue
+        fi
+
+        local local_content
+        local_content=$(render_file "$repo_path" "$transform") || continue
+
+        if ! deployed_exists "$server_path"; then
+            missing_dest+=("$repo_path -> $server_path")
+            continue
+        fi
+
+        local dest_content
+        dest_content=$(read_deployed "$server_path")
+
+        local diff_output
+        diff_output=$(diff -u \
+            --label "deployed:$server_path" \
+            --label "repo:$repo_path (rendered)" \
+            <(echo "$dest_content") \
+            <(echo "$local_content") \
+        ) || true
+
+        if [ -n "$diff_output" ]; then
+            has_diff=true
+            echo ""
+            echo "--- $repo_path -> $server_path [$transform]"
+            echo "$diff_output"
+        fi
+    done 3<<< "$(get_manifest)"
+
+    if [ ${#missing_local[@]} -gt 0 ]; then
+        echo ""
+        warn "Local files not found (not yet created?):"
+        for f in "${missing_local[@]}"; do
+            echo "    $f"
+        done
+    fi
+
+    if [ ${#missing_dest[@]} -gt 0 ]; then
+        echo ""
+        warn "Deployed files not found (not yet deployed?):"
+        for f in "${missing_dest[@]}"; do
+            echo "    $f"
+        done
+    fi
+
+    if [ "$has_diff" = false ] && [ ${#missing_local[@]} -eq 0 ] && [ ${#missing_dest[@]} -eq 0 ]; then
+        echo ""
+        ok "All files in sync"
+    fi
+    echo ""
+}
+
+# ============================================
+# Subcommand: push
+# ============================================
+
+cmd_push() {
+    source_env
+    logger -t "$_HOOK_TAG" "Push started"
+
+    # Phase 1: Compute diffs and collect changes
+    local -a changed_repos=()
+    local -a changed_servers=()
+    local -a changed_transforms=()
+    local -a changed_services=()
+    local -a changed_contents=()
+    local -a diff_outputs=()
+
+    while IFS='|' read -r -u3 repo_path server_path transform service_action; do
+        server_path=$(expand_path "$server_path")
+        local full_repo_path="$REPO_DIR/$repo_path"
+
+        if [ ! -f "$full_repo_path" ]; then
+            skip "$repo_path (local file missing)"
+            continue
+        fi
+
+        local local_content
+        local_content=$(render_file "$repo_path" "$transform") || continue
+
+        local dest_content
+        dest_content=$(read_deployed "$server_path")
+
+        local diff_output
+        diff_output=$(diff -u \
+            --label "deployed:$server_path" \
+            --label "repo:$repo_path (rendered)" \
+            <(echo "$dest_content") \
+            <(echo "$local_content") \
+        ) || true
+
+        if [ -n "$diff_output" ]; then
+            changed_repos+=("$repo_path")
+            changed_servers+=("$server_path")
+            changed_transforms+=("$transform")
+            changed_services+=("$service_action")
+            changed_contents+=("$local_content")
+            diff_outputs+=("$diff_output")
+        fi
+    done 3<<< "$(get_manifest)"
+
+    if [ ${#changed_repos[@]} -eq 0 ]; then
+        ok "Nothing to push (all files in sync)"
+        return 0
+    fi
+
+    # Phase 2: Show preview
+    echo ""
+    echo "  Changes to push:"
+    echo ""
+    for i in "${!changed_repos[@]}"; do
+        echo "--- ${changed_repos[$i]} -> ${changed_servers[$i]} [${changed_transforms[$i]}]"
+        echo "${diff_outputs[$i]}"
+        echo ""
+    done
+
+    # Phase 3: Confirm
+    if [ "$AUTO_CONFIRM" = false ]; then
+        echo "  ${#changed_repos[@]} file(s) will be updated."
+        read -rp "  Push? [y/N] " confirm
+        case "$confirm" in
+            [yY]|[yY][eE][sS]) ;;
+            *)
+                echo "  Aborted."
+                return 0
+                ;;
+        esac
+    fi
+
+    # Phase 4: Detect and remove chattr +i flags
+    local immutable_files=()
+    for i in "${!changed_servers[@]}"; do
+        local sp="${changed_servers[$i]}"
+        local flags
+        if needs_root "$sp"; then
+            flags=$(sudo lsattr "$sp" 2>/dev/null || true)
+        else
+            flags=$(lsattr "$sp" 2>/dev/null || true)
+        fi
+        local attrs="${flags%% *}"
+        if [[ "$attrs" == *"i"* ]]; then
+            immutable_files+=("$sp")
+        fi
+    done
+
+    if [ ${#immutable_files[@]} -gt 0 ]; then
+        info "Removing immutable flags on ${#immutable_files[@]} file(s)..."
+        for f in "${immutable_files[@]}"; do
+            sudo chattr -i "$f"
+        done
+    fi
+
+    # Phase 5: Write files
+    local need_daemon_reload=false
+    local -A services_to_restart=()
+    local -a run_commands=()
+
+    echo ""
+    for i in "${!changed_repos[@]}"; do
+        local sp="${changed_servers[$i]}"
+        local transform="${changed_transforms[$i]}"
+        local content="${changed_contents[$i]}"
+        local service="${changed_services[$i]}"
+
+        # Ensure parent directory exists and write file
+        local parent_dir
+        parent_dir=$(dirname "$sp")
+        if needs_root "$sp"; then
+            sudo mkdir -p "$parent_dir"
+            echo "$content" > /tmp/_roost_apply_tmp
+            sudo mv /tmp/_roost_apply_tmp "$sp"
+        else
+            mkdir -p "$parent_dir"
+            echo "$content" > "$sp"
+        fi
+
+        # Set executable if needed
+        if [[ "$transform" == *"+x"* ]]; then
+            if needs_root "$sp"; then
+                sudo chmod +x "$sp"
+            else
+                chmod +x "$sp"
+            fi
+        fi
+
+        # Track service actions
+        IFS=',' read -ra actions <<< "$service"
+        for action in "${actions[@]}"; do
+            action=$(echo "$action" | xargs)
+            [ -z "$action" ] && continue
+            case "$action" in
+                daemon-reload)
+                    need_daemon_reload=true
+                    ;;
+                run:*)
+                    run_commands+=("${action#run:}")
+                    ;;
+                *)
+                    services_to_restart["$action"]=1
+                    ;;
+            esac
+        done
+
+        ok "${changed_repos[$i]} -> $sp"
+    done
+
+    # Phase 6: Re-apply chattr +i flags
+    if [ ${#immutable_files[@]} -gt 0 ]; then
+        info "Re-applying immutable flags..."
+        for f in "${immutable_files[@]}"; do
+            sudo chattr +i "$f"
+        done
+    fi
+
+    # Phase 7: daemon-reload, restart services, run commands
+    if [ "$need_daemon_reload" = true ]; then
+        info "Running systemctl daemon-reload..."
+        sudo systemctl daemon-reload
+        ok "daemon-reload"
+    fi
+
+    local restart_failed=()
+    for action in "${!services_to_restart[@]}"; do
+        local verb="${action%%:*}"
+        local unit="${action#*:}"
+        info "Running systemctl $verb $unit..."
+        if sudo systemctl "$verb" "$unit"; then
+            ok "$verb $unit"
+        else
+            restart_failed+=("$unit")
+            warn "Failed: systemctl $verb $unit"
+        fi
+    done
+
+    for cmd in "${run_commands[@]}"; do
+        info "Running: $cmd"
+        eval "$cmd" || true
+    done
+
+    echo ""
+    ok "Push complete (${#changed_repos[@]} file(s) updated)"
+    logger -t "$_HOOK_TAG" "Push complete: ${#changed_repos[@]} file(s) updated"
+
+    # Notify on failures
+    if [ ${#restart_failed[@]} -gt 0 ]; then
+        ntfy_send -t "roost-apply: restart failures" -p "high" \
+            "Failed to restart: ${restart_failed[*]}"
+    fi
+}
+
+# ============================================
+# Flag mode: direct service reload
+# ============================================
+
+cmd_flag_reload() {
+    logger -t "$_HOOK_TAG" "Flag reload started"
+
+    if $FLAG_ALL || $FLAG_CLOUDFLARE; then
+        if [ -x "$_HOOKS_DIR/cloudflare-assemble.sh" ]; then
+            info "Running cloudflare assembly..."
+            "$_HOOKS_DIR/cloudflare-assemble.sh"
+            ok "Cloudflare config assembled"
+        fi
+        info "Restarting cloudflared..."
+        sudo systemctl restart cloudflared
+        ok "cloudflared restarted"
+    fi
+
+    local need_daemon_reload=false
+    if $FLAG_ALL || $FLAG_SYSTEMD; then
+        need_daemon_reload=true
+    fi
+
+    if $need_daemon_reload; then
+        info "Running systemctl daemon-reload..."
+        sudo systemctl daemon-reload
+        ok "daemon-reload"
+    fi
+
+    if $FLAG_ALL || $FLAG_CADDY; then
+        info "Reloading Caddy..."
+        sudo systemctl reload-or-restart caddy
+        ok "Caddy reloaded"
+    fi
+
+    if $FLAG_ALL || $FLAG_NTFY; then
+        info "Restarting ntfy..."
+        sudo systemctl restart ntfy
+        ok "ntfy restarted"
+    fi
+
+    if $FLAG_ALL || $FLAG_SYSTEMD; then
+        for unit in glances ram-monitor.timer; do
+            info "Restarting $unit..."
+            sudo systemctl restart "$unit"
+            ok "$unit restarted"
+        done
+    fi
+
+    if $FLAG_ALL || $FLAG_CRON; then
+        ok "Cron (auto-reloads, no action needed)"
+    fi
+
+    logger -t "$_HOOK_TAG" "Flag reload complete"
+}
+
+# ============================================
+# Argument Parsing
+# ============================================
+
+AUTO_CONFIRM=false
+SUBCOMMAND=""
+FILE_FILTERS=()
 FLAG_ALL=false
 FLAG_CLOUDFLARE=false
 FLAG_CADDY=false
@@ -55,199 +597,75 @@ FLAG_SYSTEMD=false
 FLAG_CRON=false
 HAS_FLAGS=false
 
-while [[ $# -gt 0 ]]; do
-    case "$1" in
+for arg in "$@"; do
+    case "$arg" in
+        -h|--help)
+            cat <<'USAGE'
+Usage: roost-apply [diff|push|list] [file-filter...]
+       roost-apply [--all] [--cloudflare] [--caddy] [--ntfy] [--systemd] [--cron]
+
+Subcommands (manifest-based file deployment):
+  diff     Show differences between repo and deployed files (default)
+  push     Deploy changed files (shows preview, confirms)
+  list     List all managed files
+
+Flags (direct service reload):
+  --all        Reload all services
+  --cloudflare Assemble fragments and restart cloudflared
+  --caddy      Reload-or-restart Caddy
+  --ntfy       Restart ntfy
+  --systemd    Daemon-reload and restart systemd units
+  --cron       No-op (cron auto-reloads)
+
+Options:
+  -y, --yes    Skip confirmation prompts (push only)
+USAGE
+            exit 0
+            ;;
+        -y|--yes) AUTO_CONFIRM=true ;;
         --all)        FLAG_ALL=true; HAS_FLAGS=true ;;
         --cloudflare) FLAG_CLOUDFLARE=true; HAS_FLAGS=true ;;
         --caddy)      FLAG_CADDY=true; HAS_FLAGS=true ;;
         --ntfy)       FLAG_NTFY=true; HAS_FLAGS=true ;;
         --systemd)    FLAG_SYSTEMD=true; HAS_FLAGS=true ;;
         --cron)       FLAG_CRON=true; HAS_FLAGS=true ;;
-        -h|--help)
-            echo "Usage: roost-apply [--all] [--cloudflare] [--caddy] [--ntfy] [--systemd] [--cron]"
-            echo ""
-            echo "No args: auto-detect changed files via checksum comparison"
-            echo "--all:        reload everything (also saves baseline checksums)"
-            echo "--cloudflare: assemble fragments and restart cloudflared"
-            echo "--caddy:      reload-or-restart caddy"
-            echo "--ntfy:       restart ntfy"
-            echo "--systemd:    daemon-reload and restart affected systemd units"
-            echo "--cron:       just update checksum (cron auto-reloads)"
-            exit 0
+        diff|push|list)
+            if [ -z "$SUBCOMMAND" ]; then
+                SUBCOMMAND="$arg"
+            else
+                FILE_FILTERS+=("$arg")
+            fi
             ;;
-        *) echo "Unknown flag: $1" >&2; exit 1 ;;
+        -*)
+            echo "Unknown flag: $arg" >&2
+            exit 1
+            ;;
+        *) FILE_FILTERS+=("$arg") ;;
     esac
-    shift
 done
 
-# --- Helper: check if a file's flag is selected ---
-flag_selected() {
-    local path="$1"
-    $FLAG_ALL && return 0
-    local flag="${FLAG_MAP[$path]:-}"
-    case "$flag" in
-        caddy)      $FLAG_CADDY ;;
-        cloudflare) $FLAG_CLOUDFLARE ;;
-        ntfy)       $FLAG_NTFY ;;
-        systemd)    $FLAG_SYSTEMD ;;
-        cron)       $FLAG_CRON ;;
-        *)          return 1 ;;
-    esac
-}
+# Validate: subcommands and flags are mutually exclusive
+if [ -n "$SUBCOMMAND" ] && [ "$HAS_FLAGS" = true ]; then
+    echo "Error: subcommands (diff/push/list) and flags (--caddy etc.) are mutually exclusive" >&2
+    exit 1
+fi
 
-# --- Helper: compute checksum for a file ---
-file_checksum() {
-    if [ -f "$1" ]; then
-        md5sum "$1" | awk '{print $1}'
-    else
-        echo "MISSING"
-    fi
-}
+# ============================================
+# Dispatch
+# ============================================
 
-# --- Helper: get saved checksum ---
-saved_checksum() {
-    local path="$1"
-    if [ -f "$CHECKSUM_FILE" ]; then
-        grep -F "$path" "$CHECKSUM_FILE" 2>/dev/null | awk '{print $1}'
-    fi
-}
-
-# --- Detect changes and collect actions ---
-NEED_DAEMON_RELOAD=false
-declare -A RESTARTS=()
-CHANGED=()
-UNCHANGED=()
-
-if $HAS_FLAGS; then
-    logger -t "$_HOOK_TAG" "Apply started (explicit flags)"
+if [ "$HAS_FLAGS" = true ]; then
+    cmd_flag_reload
 else
-    logger -t "$_HOOK_TAG" "Apply started (auto-detect)"
-fi
-
-for path in "${!CONFIG_MAP[@]}"; do
-    action="${CONFIG_MAP[$path]}"
-
-    if $HAS_FLAGS; then
-        # Flag mode: only process selected services
-        flag_selected "$path" || continue
-    else
-        # Auto-detect mode: compare checksums
-        current=$(file_checksum "$path")
-        saved=$(saved_checksum "$path")
-        if [ "$current" = "$saved" ]; then
-            UNCHANGED+=("$path")
-            continue
-        fi
+    # Subcommand mode requires the repo
+    if [ ! -d "$REPO_DIR/files" ]; then
+        echo "Error: Repo not found at $REPO_DIR/" >&2
+        echo "Expected the server repo at \$ROOST_DIR/code/server/" >&2
+        exit 1
     fi
-
-    CHANGED+=("$path")
-    logger -t "$_HOOK_TAG" "Changed: $path"
-
-    case "$action" in
-        reload-or-restart:*)
-            unit="${action#reload-or-restart:}"
-            RESTARTS["reload-or-restart:$unit"]=1
-            ;;
-        restart:*)
-            unit="${action#restart:}"
-            RESTARTS["restart:$unit"]=1
-            ;;
-        daemon-reload)
-            NEED_DAEMON_RELOAD=true
-            ;;
-        daemon-reload+restart:*)
-            NEED_DAEMON_RELOAD=true
-            unit="${action#daemon-reload+restart:}"
-            RESTARTS["restart:$unit"]=1
-            ;;
-        none) ;;
+    case "${SUBCOMMAND:-diff}" in
+        diff) cmd_diff ;;
+        push) cmd_push ;;
+        list) cmd_list ;;
     esac
-done
-
-# First run with no saved checksums: log it
-if ! $HAS_FLAGS && [ ! -f "$CHECKSUM_FILE" ]; then
-    logger -t "$_HOOK_TAG" "First run: all files treated as changed"
 fi
-
-# --- Run cloudflare assembly if requested or on first run ---
-FIRST_RUN=false
-! $HAS_FLAGS && [ ! -f "$CHECKSUM_FILE" ] && FIRST_RUN=true
-
-if $FLAG_ALL || $FLAG_CLOUDFLARE || $FIRST_RUN; then
-    HOOK_DIR="$(dirname "$0")"
-    if [ -x "$HOOK_DIR/cloudflare-assemble.sh" ]; then
-        logger -t "$_HOOK_TAG" "Running cloudflare assembly"
-        "$HOOK_DIR/cloudflare-assemble.sh"
-    fi
-fi
-
-# --- Apply: daemon-reload (once) ---
-if $NEED_DAEMON_RELOAD; then
-    logger -t "$_HOOK_TAG" "Running daemon-reload"
-    sudo systemctl daemon-reload
-fi
-
-# --- Apply: service restarts ---
-RESTARTED=()
-RESTART_FAILED=()
-
-for key in "${!RESTARTS[@]}"; do
-    cmd="${key%%:*}"
-    unit="${key#*:}"
-    logger -t "$_HOOK_TAG" "Running: systemctl $cmd $unit"
-    if sudo systemctl "$cmd" "$unit" 2>&1 | logger -t "$_HOOK_TAG"; then
-        RESTARTED+=("$unit")
-    else
-        RESTART_FAILED+=("$unit")
-        logger -t "$_HOOK_TAG" -p user.err "Failed: systemctl $cmd $unit"
-    fi
-done
-
-# --- Update checksums ---
-# Rebuild the entire checksum file from current state
-{
-    for path in "${!CONFIG_MAP[@]}"; do
-        checksum=$(file_checksum "$path")
-        echo "$checksum  $path"
-    done
-} | sort -k2 > "$CHECKSUM_FILE"
-
-# --- Summary ---
-echo ""
-if [ ${#CHANGED[@]} -eq 0 ] && ! $HAS_FLAGS; then
-    echo "No changes detected."
-    logger -t "$_HOOK_TAG" "No changes detected"
-else
-    if [ ${#CHANGED[@]} -gt 0 ]; then
-        echo "Changed files:"
-        for f in "${CHANGED[@]}"; do
-            echo "  $f"
-        done
-    fi
-
-    if $NEED_DAEMON_RELOAD; then
-        echo "Ran: systemctl daemon-reload"
-    fi
-
-    if [ ${#RESTARTED[@]} -gt 0 ]; then
-        echo "Restarted:"
-        for u in "${RESTARTED[@]}"; do
-            echo "  $u"
-        done
-    fi
-
-    if [ ${#RESTART_FAILED[@]} -gt 0 ]; then
-        echo "FAILED to restart:"
-        for u in "${RESTART_FAILED[@]}"; do
-            echo "  $u"
-        done
-    fi
-fi
-
-# Notify on failures
-if [ ${#RESTART_FAILED[@]} -gt 0 ]; then
-    ntfy_send -t "roost-apply: restart failures" -p "high" \
-        "Failed to restart: ${RESTART_FAILED[*]}"
-fi
-
-logger -t "$_HOOK_TAG" "Apply finished: ${#CHANGED[@]} changed, ${#RESTARTED[@]} restarted, ${#RESTART_FAILED[@]} failed"
