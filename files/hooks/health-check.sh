@@ -1,5 +1,5 @@
 #!/bin/bash
-# Health check: services, disk, swap, memory, Tailscale, Syncthing, Cloudflare.
+# Health check: services, disk, swap, memory, Tailscale, Cloudflare.
 source "$(dirname "$0")/_hook-env.sh"
 
 FAILURES=""
@@ -32,7 +32,6 @@ check "Ollama" "http://localhost:11434/api/tags"
 
 check_service "caddy"
 check_service "ntfy"
-check_service "syncthing@$(whoami)"
 
 if tailscale status > /dev/null 2>&1; then
     logger -t "$_HOOK_TAG" "OK: Tailscale"

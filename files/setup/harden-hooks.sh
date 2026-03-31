@@ -1,5 +1,5 @@
 #!/bin/bash
-# Opt-in: make hook scripts and config immutable so Syncthing cannot modify them.
+# Opt-in: make hook scripts and config immutable to protect against unauthorized modification.
 # Run after deploying hooks. Re-run after updating hooks (auto-update.sh
 # or deploy.sh will need to call `chattr -i` first).
 #

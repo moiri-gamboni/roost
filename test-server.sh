@@ -403,31 +403,6 @@ else
     fail "tmux auto-attach missing from .bashrc"
 fi
 
-# ── Syncthing ─────────────────────────────────────────────────
-echo ""
-echo "--- Syncthing ---"
-
-if run systemctl is-active "syncthing@$USERNAME" >/dev/null 2>&1; then
-    pass "Syncthing service active"
-else
-    fail "Syncthing service"
-fi
-
-if run test -f "$HOME_DIR/roost/.stignore"; then
-    pass ".stignore deployed"
-else
-    fail ".stignore missing"
-fi
-
-# Check Syncthing listen address is bound to Tailscale IP
-if [ -n "$TS_IP" ]; then
-    if run ss -tlnp 2>/dev/null | grep -q "${TS_IP}:22000"; then
-        pass "Syncthing sync on ${TS_IP}:22000"
-    else
-        fail "Syncthing not on Tailscale IP:22000"
-    fi
-fi
-
 # ── Glances ───────────────────────────────────────────────────
 echo ""
 echo "--- Glances ---"
@@ -502,7 +477,7 @@ echo "--- Hook Scripts ---"
 
 HOOK_DIR="$HOME_DIR/roost/claude/hooks"
 for hook in _hook-env.sh session-lock.sh session-unlock.sh reflect.sh auto-commit.sh notify.sh \
-            health-check.sh scheduled-task.sh run-scheduled-task.sh auto-update.sh conflict-check.sh \
+            health-check.sh scheduled-task.sh run-scheduled-task.sh auto-update.sh \
             ram-monitor.sh reflect.md; do
     if run test -f "$HOOK_DIR/$hook"; then
         pass "$hook exists"
@@ -514,7 +489,7 @@ done
 # Check executability of shell scripts
 for hook in session-lock.sh session-unlock.sh reflect.sh auto-commit.sh notify.sh \
             health-check.sh scheduled-task.sh run-scheduled-task.sh auto-update.sh \
-            conflict-check.sh ram-monitor.sh; do
+            ram-monitor.sh; do
     if run test -x "$HOOK_DIR/$hook"; then
         pass "$hook is executable"
     else

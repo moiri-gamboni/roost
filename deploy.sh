@@ -770,122 +770,6 @@ remote_script "setup/ntfy.sh"
 ok "ntfy running on 0.0.0.0:2586 (firewall limits access to localhost + Tailscale)"
 
 # ============================================
-# Syncthing (File Sync)
-# ============================================
-
-section "Syncthing"
-remote_script "setup/syncthing.sh" "$TAILSCALE_IP"
-ok "Syncthing running"
-
-# --- Pair server and laptop Syncthing instances ---
-SERVER_DEVICE_ID=$(remote "cat /home/$USERNAME/.syncthing-device-id" || true)
-if [ -n "$SERVER_DEVICE_ID" ] && command -v syncthing &>/dev/null; then
-    info "Pairing Syncthing: server <-> laptop..."
-
-    # Get laptop's device ID and API key
-    LAPTOP_ST_CONFIG="${SYNCTHING_CONFIG_DIR:-$HOME/.local/state/syncthing}/config.xml"
-    if [ ! -f "$LAPTOP_ST_CONFIG" ]; then
-        # Try common alternative locations
-        for loc in "$HOME/.config/syncthing/config.xml" "$HOME/Library/Application Support/Syncthing/config.xml"; do
-            [ -f "$loc" ] && LAPTOP_ST_CONFIG="$loc" && break
-        done
-    fi
-
-    if [ -f "$LAPTOP_ST_CONFIG" ]; then
-        LAPTOP_API_KEY=$(grep -oP '<apikey>\K[^<]+' "$LAPTOP_ST_CONFIG" || true)
-        LAPTOP_DEVICE_ID=$(grep -oP '<device id="\K[^"]+' "$LAPTOP_ST_CONFIG" | head -1 || true)
-        # The first <device> in config.xml is always the local device
-        # But more reliably, use the API
-        if [ -n "$LAPTOP_API_KEY" ]; then
-            LAPTOP_DEVICE_ID=$(curl -sf -H "X-API-Key: $LAPTOP_API_KEY" \
-                "http://localhost:8384/rest/system/status" \
-                | jq -r '.myID // empty' || true)
-        fi
-
-        if [ -n "$LAPTOP_API_KEY" ] && [ -n "$LAPTOP_DEVICE_ID" ]; then
-            SERVER_API_KEY=$(remote "cat /home/$USERNAME/.syncthing-api-key" || true)
-
-            # Add server device to laptop (idempotent)
-            LAPTOP_HAS_SERVER=$(curl -sf -H "X-API-Key: $LAPTOP_API_KEY" \
-                "http://localhost:8384/rest/config/devices" \
-                | jq -r ".[].deviceID" | grep -c "$SERVER_DEVICE_ID" || true)
-            if [ "${LAPTOP_HAS_SERVER:-0}" -eq 0 ]; then
-                curl -sf -X POST -H "X-API-Key: $LAPTOP_API_KEY" \
-                    -H "Content-Type: application/json" \
-                    -d "{\"deviceID\": \"$SERVER_DEVICE_ID\", \"name\": \"$SERVER_NAME\", \"addresses\": [\"tcp://$TAILSCALE_IP:22000\"]}" \
-                    "http://localhost:8384/rest/config/devices" &>/dev/null && \
-                    ok "Laptop: added server device" || \
-                    info "Could not add server to laptop Syncthing"
-            else
-                skip "Laptop: server device already added"
-            fi
-
-            # Add laptop device to server (idempotent)
-            if [ -n "$SERVER_API_KEY" ]; then
-                SERVER_HAS_LAPTOP=$(remote "curl -sf -H 'X-API-Key: $SERVER_API_KEY' \
-                    'http://localhost:8384/rest/config/devices'" \
-                    | jq -r '.[].deviceID' | grep -c "$LAPTOP_DEVICE_ID" || true)
-                if [ "${SERVER_HAS_LAPTOP:-0}" -eq 0 ]; then
-                    remote "curl -sf -X POST -H 'X-API-Key: $SERVER_API_KEY' \
-                        -H 'Content-Type: application/json' \
-                        -d '{\"deviceID\": \"$LAPTOP_DEVICE_ID\", \"name\": \"laptop\", \"addresses\": [\"dynamic\"]}' \
-                        'http://localhost:8384/rest/config/devices'" &>/dev/null && \
-                        ok "Server: added laptop device" || \
-                        info "Could not add laptop to server Syncthing"
-                else
-                    skip "Server: laptop device already added"
-                fi
-
-                # Share folder with laptop on server side
-                remote "curl -sf -X PATCH -H 'X-API-Key: $SERVER_API_KEY' \
-                    -H 'Content-Type: application/json' \
-                    -d '{\"devices\": [{\"deviceID\": \"$SERVER_DEVICE_ID\"}, {\"deviceID\": \"$LAPTOP_DEVICE_ID\"}]}' \
-                    'http://localhost:8384/rest/config/folders/$ROOST_DIR_NAME'" &>/dev/null && \
-                    ok "Server: $ROOST_DIR_NAME folder shared with laptop" || \
-                    info "Could not share $ROOST_DIR_NAME folder with laptop"
-            fi
-
-            # Share folder on laptop (create or update)
-            LAPTOP_ROOST_DIR="${ROOST_DIR:-$HOME/$ROOST_DIR_NAME}"
-            LAPTOP_HAS_ROOST=$(curl -sf -H "X-API-Key: $LAPTOP_API_KEY" \
-                "http://localhost:8384/rest/config/folders" \
-                | jq -r '.[].id' | grep -c "^${ROOST_DIR_NAME}\$" || true)
-            if [ "${LAPTOP_HAS_ROOST:-0}" -eq 0 ]; then
-                mkdir -p "$LAPTOP_ROOST_DIR"
-                curl -sf -X POST -H "X-API-Key: $LAPTOP_API_KEY" \
-                    -H "Content-Type: application/json" \
-                    -d "{\"id\": \"$ROOST_DIR_NAME\", \"label\": \"$ROOST_DIR_NAME\", \"path\": \"$LAPTOP_ROOST_DIR\", \"type\": \"sendreceive\", \"rescanIntervalS\": 60, \"fsWatcherEnabled\": true, \"devices\": [{\"deviceID\": \"$LAPTOP_DEVICE_ID\"}, {\"deviceID\": \"$SERVER_DEVICE_ID\"}]}" \
-                    "http://localhost:8384/rest/config/folders" &>/dev/null && \
-                    ok "Laptop: $ROOST_DIR_NAME folder shared" || \
-                    info "Could not create $ROOST_DIR_NAME folder on laptop"
-            else
-                # Folder exists; ensure server device is included
-                curl -sf -X PATCH -H "X-API-Key: $LAPTOP_API_KEY" \
-                    -H "Content-Type: application/json" \
-                    -d "{\"devices\": [{\"deviceID\": \"$LAPTOP_DEVICE_ID\"}, {\"deviceID\": \"$SERVER_DEVICE_ID\"}]}" \
-                    "http://localhost:8384/rest/config/folders/$ROOST_DIR_NAME" &>/dev/null && \
-                    skip "Laptop: $ROOST_DIR_NAME folder already shared" || \
-                    info "Could not update $ROOST_DIR_NAME folder on laptop"
-            fi
-
-            ok "Syncthing paired: server <-> laptop"
-        else
-            info "Could not read laptop Syncthing API key or device ID."
-            info "Pair manually: server device ID is $SERVER_DEVICE_ID"
-        fi
-    else
-        info "Syncthing not configured on laptop ($LAPTOP_ST_CONFIG not found)."
-        info "Install Syncthing, then re-run deploy.sh to pair automatically."
-        info "Server device ID: $SERVER_DEVICE_ID"
-    fi
-elif [ -n "$SERVER_DEVICE_ID" ]; then
-    info "Syncthing not installed on laptop. Install it and re-run to pair."
-    info "Server device ID: $SERVER_DEVICE_ID"
-fi
-# Clean up temp files
-remote "rm -f /home/$USERNAME/.syncthing-api-key /home/$USERNAME/.syncthing-device-id" || true
-
-# ============================================
 # Cloudflare Tunnel
 # ============================================
 
@@ -1049,8 +933,6 @@ fi
 echo "  SSH:           ssh $USERNAME@$TS_HOST"
 echo "  Glances:       http://$TS_HOST:61208"
 echo "  ntfy test:     curl -H 'Authorization: Bearer \$(cat ~/services/.ntfy-token)' -d 'hello' http://localhost:2586/claude-$USERNAME"
-echo "  Syncthing UI:  ssh -L 8384:localhost:8384 $USERNAME@$TS_HOST"
-echo "                 then open http://localhost:8384"
 echo ""
 echo "  Remaining manual steps:"
 echo ""

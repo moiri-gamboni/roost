@@ -42,7 +42,7 @@ cp "$REMOTE_DIR/files/hooks/_hook-env.sh" "$CLAUDE_DIR/hooks/_hook-env.sh"
 
 for hook in session-lock session-unlock reflect notify \
             health-check scheduled-task run-scheduled-task auto-update \
-            conflict-check ram-monitor cloudflare-assemble roost-apply; do
+            ram-monitor cloudflare-assemble roost-apply; do
     cp "$REMOTE_DIR/files/hooks/${hook}.sh" "$CLAUDE_DIR/hooks/${hook}.sh"
     chmod +x "$CLAUDE_DIR/hooks/${hook}.sh"
 done
@@ -62,5 +62,5 @@ fi
 
 ok "All hook scripts installed"
 
-info "To make hooks immutable (protects against Syncthing tampering):"
+info "To make hooks immutable (protects against unauthorized modification):"
 info "  sudo bash $REMOTE_DIR/files/setup/harden-hooks.sh"
