@@ -1,0 +1,10 @@
+[Unit]
+Description=Pull btrfs snapshots from roost server
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/roost-backup
+Environment=ROOST_SERVER=${SERVER_NAME}
+Environment=ROOST_USER=${USERNAME}
