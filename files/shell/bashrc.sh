@@ -24,17 +24,27 @@ alias roost-apply="$_ROOST_DIR/claude/hooks/roost-apply.sh"
 
 # --- Agent management helpers ---
 
-# Launch an interactive Claude session in a detached tmux window.
+# Ensure a tmux session exists, starting one if needed.
+# Returns 0 if already inside tmux, 1 if a new session was started (caller
+# should use tmux send-keys instead of direct commands).
+_ensure_tmux() {
+    if [[ -n "${TMUX:-}" ]]; then
+        return 0
+    fi
+    if tmux has-session -t main 2>/dev/null; then
+        return 1
+    fi
+    tmux new-session -d -s main
+    return 1
+}
+
+# Launch an interactive Claude session in a tmux window.
 # Usage: agent [path] [claude-args...]
 #   agent                           # cwd, interactive
 #   agent ~/roost/code/myapp        # that dir
 #   agent ~/roost/code/myapp -c     # continue last session
 #   agent -c                        # continue in cwd
 agent() {
-    if ! tmux info &>/dev/null; then
-        echo "Error: not in a tmux session. Run 'tmux' first." >&2
-        return 1
-    fi
     local dir="$PWD"
     local -a claude_args=()
 
@@ -65,52 +75,36 @@ agent() {
     for arg in "${claude_args[@]}"; do
         cmd_parts+=("$(printf '%q' "$arg")")
     done
+
+    _ensure_tmux
     tmux new-window -n "$name" -d "${cmd_parts[*]}"
     echo "Started agent in window '$name'"
 }
 
-# List agent tmux windows with human-readable activity times.
-# Skips window 1 (the base shell).
+# Interactive agent window picker, or attach to tmux if outside it.
 agents() {
-    local now
-    now=$(date +%s)
-    tmux list-windows -F '#{window_index} #{window_name} #{window_activity}' 2>/dev/null | \
-        awk -v now="$now" '
-        $1 != 1 {
-            diff = now - $3
-            if (diff < 60)        age = diff "s ago"
-            else if (diff < 3600) age = int(diff/60) "m ago"
-            else if (diff < 86400) age = int(diff/3600) "h ago"
-            else                  age = int(diff/86400) "d ago"
-            printf "  %-20s %s\n", $2, age
-        }'
-}
-
-# Switch to an agent's tmux window.
-# Usage: agent_attach <name>
-agent_attach() {
-    if [[ $# -eq 0 ]]; then
-        echo "Usage: agent_attach <window-name>" >&2
-        return 1
+    if [[ -n "${TMUX:-}" ]]; then
+        tmux choose-window
+    else
+        tmux attach -t main \; choose-window
     fi
-    tmux select-window -t "$1"
 }
 
 # Gracefully stop an agent by sending Ctrl-D (triggers SessionEnd hooks).
-# Usage: agent_stop <name>
+# Usage: agent_stop <index>
 agent_stop() {
     if [[ $# -eq 0 ]]; then
-        echo "Usage: agent_stop <window-name>" >&2
+        echo "Usage: agent_stop <window-index>" >&2
         return 1
     fi
     tmux send-keys -t "$1" C-d
 }
 
 # Force-kill an agent with double Ctrl-C (triggers exit after 800ms).
-# Usage: agent_kill <name>
+# Usage: agent_kill <index>
 agent_kill() {
     if [[ $# -eq 0 ]]; then
-        echo "Usage: agent_kill <window-name>" >&2
+        echo "Usage: agent_kill <window-index>" >&2
         return 1
     fi
     tmux send-keys -t "$1" C-c
