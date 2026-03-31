@@ -40,7 +40,7 @@ chattr -i "$CLAUDE_DIR/hooks/"*.sh "$CLAUDE_DIR/hooks/"*.md "$CLAUDE_DIR/hooks/"
 # Install shared hook library
 cp "$REMOTE_DIR/files/hooks/_hook-env.sh" "$CLAUDE_DIR/hooks/_hook-env.sh"
 
-for hook in session-lock session-unlock reflect notify auto-commit \
+for hook in session-lock session-unlock reflect notify \
             health-check scheduled-task run-scheduled-task auto-update \
             conflict-check ram-monitor cloudflare-assemble roost-apply; do
     cp "$REMOTE_DIR/files/hooks/${hook}.sh" "$CLAUDE_DIR/hooks/${hook}.sh"

@@ -35,16 +35,7 @@
         ]
       }
     ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/roost/claude/hooks/auto-commit.sh"
-          }
-        ]
-      }
-    ],
+    "Stop": [],
     "PreToolUse": [
       {
         "matcher": "Bash",
