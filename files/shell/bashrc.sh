@@ -77,8 +77,13 @@ agent() {
     done
 
     _ensure_tmux
+    local need_attach=$?
     tmux new-window -n "$name" -d "${cmd_parts[*]}"
-    echo "Started agent in window '$name'"
+    if [[ $need_attach -eq 1 ]]; then
+        tmux attach -t main
+    else
+        echo "Started agent in window '$name'"
+    fi
 }
 
 # Interactive agent window picker, or attach to tmux if outside it.
