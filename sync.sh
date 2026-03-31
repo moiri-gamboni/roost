@@ -233,7 +233,6 @@ files/hooks/session-lock.sh|$ROOST_DIR/claude/hooks/session-lock.sh|plain+x|
 files/hooks/session-unlock.sh|$ROOST_DIR/claude/hooks/session-unlock.sh|plain+x|
 files/hooks/reflect.sh|$ROOST_DIR/claude/hooks/reflect.sh|plain+x|
 files/hooks/notify.sh|$ROOST_DIR/claude/hooks/notify.sh|plain+x|
-files/hooks/auto-commit.sh|$ROOST_DIR/claude/hooks/auto-commit.sh|plain+x|
 files/hooks/health-check.sh|$ROOST_DIR/claude/hooks/health-check.sh|plain+x|
 files/hooks/scheduled-task.sh|$ROOST_DIR/claude/hooks/scheduled-task.sh|plain+x|
 files/hooks/run-scheduled-task.sh|$ROOST_DIR/claude/hooks/run-scheduled-task.sh|plain+x|
@@ -328,6 +327,14 @@ render_local() {
             export USERNAME
             export HOME_DIR
             export ROOST_DIR_NAME
+
+            # Guard: abort if any required variable is empty
+            for v in "${var_names[@]}"; do
+                if [ -z "${!v}" ]; then
+                    echo "Error: $v is empty, refusing to render $full_path" >&2
+                    return 1
+                fi
+            done
 
             envsubst "$var_list" < "$full_path"
             ;;
