@@ -126,7 +126,7 @@ resolve_tailscale_ip() {
         .Peer | to_entries[]
         | select(.value.HostName == $name)
         | .value.TailscaleIPs[0] // empty
-    ' 2>/dev/null | head -1)
+    ' | head -1)
 
     if [ -z "$ip" ]; then
         echo "Error: Server '$SERVER_NAME' not found in Tailscale peers."
@@ -143,7 +143,7 @@ ensure_connection() {
     [ "$_CONNECTED" = true ] && return 0
     _CONNECTED=true
     if [ "$LOCAL_MODE" = true ]; then
-        TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || true)
+        TAILSCALE_IP=$(tailscale ip -4 || true)
         info "Server: $SERVER_NAME (local)" >&2
     else
         TAILSCALE_IP=$(resolve_tailscale_ip)
@@ -200,7 +200,7 @@ ROOST_DIR="$HOME_DIR/$ROOST_DIR_NAME"
 
 # Resolve TUNNEL_ID from server's existing cloudflare config
 resolve_tunnel_id() {
-    remote "grep -oP '^tunnel: \\K.+' /etc/cloudflared/config.yml 2>/dev/null || true"
+    remote "grep -oP '^tunnel: \\K.+' /etc/cloudflared/config.yml" || true
 }
 
 # Cache dynamic vars (lazy-loaded on first use)
@@ -349,9 +349,9 @@ render_local() {
 fetch_server_content() {
     local server_path="$1"
     if needs_root "$server_path"; then
-        remote_sudo "cat '$server_path'" 2>/dev/null || true
+        remote_sudo "cat '$server_path'" || true
     else
-        remote "cat '$server_path'" 2>/dev/null || true
+        remote "cat '$server_path'" || true
     fi
 }
 
@@ -556,9 +556,9 @@ cmd_push() {
         # Check if file has immutable flag
         local flags
         if needs_root "$sp"; then
-            flags=$(remote_sudo "lsattr '$sp' 2>/dev/null" || true)
+            flags=$(remote_sudo "lsattr '$sp'" 2>/dev/null || true)
         else
-            flags=$(remote "lsattr '$sp' 2>/dev/null" || true)
+            flags=$(remote "lsattr '$sp'" 2>/dev/null || true)
         fi
         # lsattr output: "----i-e------- path" -- check the attribute portion for 'i'
         local attrs="${flags%% *}"
