@@ -1,10 +1,8 @@
 # Roost shell configuration
-# Sourced from ~/.bashrc; derives paths from this file's location.
+# Sourced from ~/.bashrc via ~/.bashrc.d/roost.sh
 
-# Derive the roost directory from this script's location (~/roost/shell/bashrc.sh -> ~/roost)
-_ROOST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-_ROOST_DIR_NAME="$(basename "$_ROOST_DIR")"
-export ROOST_DIR_NAME="$_ROOST_DIR_NAME"
+export ROOST_DIR_NAME="${ROOST_DIR_NAME:-roost}"
+_ROOST_DIR="$HOME/$ROOST_DIR_NAME"
 
 # Claude Code config lives under ~/roost/claude/
 export CLAUDE_CONFIG_DIR="$_ROOST_DIR/claude"
