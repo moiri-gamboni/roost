@@ -9,7 +9,7 @@ After running the deploy script you will have:
 - Hardened Ubuntu 24.04 with btrfs snapshots and automatic security updates
 - Private networking via Tailscale (SSH gated by Hetzner cloud firewall, no public HTTP/HTTPS ports)
 - Public web apps via Cloudflare Tunnel (zero open HTTP/HTTPS ports)
-- Claude Code with agent teams, session persistence, auto-commit hooks, and push notifications
+- Claude Code with agent teams, session persistence, and push notifications
 - Semantic search over notes and code (Ollama + grepai)
 - Session search and lineage tracking (claude-code-tools)
 - Push notifications to your phone (ntfy)
@@ -230,23 +230,20 @@ systemctl status ram-monitor.timer
 The following functions are available for managing Claude Code agents in tmux:
 
 ```bash
-# Start an interactive Claude session in a new tmux window
+# Start an interactive Claude session in a tmux window
 agent [path] [claude-args...]    # path defaults to cwd, window named after dir
 agent                            # interactive claude in cwd
 agent ~/roost/code/myapp         # opens in that dir
 agent ~/roost/code/myapp -c      # continue last session in that dir
 
-# List agent windows with activity times
+# Interactive tmux window picker
 agents
 
-# Switch to an agent's tmux window
-agent_attach <name>
-
-# Gracefully stop (Ctrl-D, triggers SessionEnd hooks including auto-commit)
-agent_stop <name>
+# Gracefully stop (Ctrl-D, triggers SessionEnd hooks)
+agent_stop <index>
 
 # Force stop (double Ctrl-C)
-agent_kill <name>
+agent_kill <index>
 ```
 
 Using `/rename` inside a session updates the tmux window name automatically.
@@ -431,7 +428,6 @@ The repo is the canonical source for base infrastructure configs. Server-specifi
 
 | Layer | Tool | Granularity | Speed |
 |-------|------|-------------|-------|
-| Code changes | Git auto-commits (Stop hook) | Per agent turn | Instant |
 | Full filesystem | btrfs snapshots (snapper) | Every 30 min | Seconds |
 | Disaster recovery | Hetzner backups | Daily | Minutes (reboot) |
 

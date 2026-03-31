@@ -122,7 +122,6 @@ Hooks are defined in `files/settings.json` and deployed to `~/roost/claude/hooks
 | SessionStart | `session-lock.sh` | Writes a lock file with hostname/tmux/PID metadata for multi-machine coordination |
 | SessionEnd | `session-unlock.sh` | Removes the lock file; auto-names unnamed sessions via `claude -p --model sonnet` (background) |
 | PreCompact | `reflect.sh` | Injects a prompt reminding the agent to save learnings before context compaction |
-| Stop | `auto-commit.sh` | Stages tracked + new files, runs gitleaks, commits with session ID |
 | PreToolUse | `dangerous-command-blocker.py` | Blocks catastrophic commands (rm -rf /, dd), protects critical paths (.git, .env), warns on suspicious patterns |
 | Notification | `notify.sh` | Sends push notifications via local ntfy (with rate limiting and priority levels) |
 
@@ -173,7 +172,7 @@ Agent management functions (defined in `files/shell/bashrc.sh`, available on the
 | `agent [path] [claude-args...]` | Launch interactive Claude in a tmux window (path defaults to cwd) |
 | `agent -c` | Continue last session in cwd |
 | `agents` | Interactive tmux window picker |
-| `agent_stop <index>` | Graceful stop (Ctrl-D, triggers SessionEnd hooks including auto-commit) |
+| `agent_stop <index>` | Graceful stop (Ctrl-D, triggers SessionEnd hooks) |
 | `agent_kill <index>` | Force stop (double Ctrl-C) |
 
 Using `/rename` inside a session updates the tmux window name automatically.
@@ -207,7 +206,6 @@ roost-apply --systemd        # Daemon-reload + restart changed systemd units
 
 | Layer | Tool | Granularity |
 |---|---|---|
-| Code changes | Git auto-commits (Stop hook) | Per agent turn |
 | Full filesystem | btrfs snapshots (snapper) | Every 30 min |
 | Disaster recovery | Hetzner backups | Daily |
 

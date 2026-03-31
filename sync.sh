@@ -320,6 +320,7 @@ render_local() {
             done
 
             # Export required variables for envsubst
+            ensure_connection
             export TUNNEL_ID
             TUNNEL_ID=$(tunnel_id)
             export TAILSCALE_IP
