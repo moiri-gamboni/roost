@@ -14,6 +14,3 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 
 # Weekly auto-update (Sunday 3am, before weekly memory cleanup at 10am)
 0 3 * * 0 $USERNAME flock -n $HOME_DIR/.locks/auto-update $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/auto-update.sh
-
-# Syncthing conflict detection
-*/30 * * * * $USERNAME flock -n $HOME_DIR/.locks/conflict-check $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/conflict-check.sh
