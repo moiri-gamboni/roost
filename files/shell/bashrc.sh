@@ -60,7 +60,7 @@ agent() {
 
     # Deduplicate: if window name exists, append -2, -3, etc.
     local existing
-    existing=$(tmux list-windows -F '#{window_name}' 2>/dev/null || true)
+    existing=$(tmux list-windows -t main -F '#{window_name}' 2>/dev/null || true)
     if echo "$existing" | grep -Fqx "$name"; then
         local i=2
         while echo "$existing" | grep -Fqx "${base_name}-${i}"; do
@@ -76,11 +76,13 @@ agent() {
 
     _ensure_tmux
     local need_attach=$?
-    tmux new-window -n "$name" -d "${cmd_parts[*]}"
+    # Ensure a shell window exists for launching more agents
+    if [[ $need_attach -eq 1 ]] || ! echo "$existing" | grep -Fqx shell; then
+        tmux new-window -t main -n shell -d
+    fi
+    tmux new-window -t main -n "$name" "${cmd_parts[*]}"
     if [[ $need_attach -eq 1 ]]; then
         tmux attach -t main
-    else
-        echo "Started agent in window '$name'"
     fi
 }
 
