@@ -106,11 +106,16 @@ if [ "$DRY_RUN" = true ]; then
         log "[dry-run] Would full send #$newest to $BACKUP_DIR/$dest_name"
     fi
 else
-    # Remove existing destination if present (e.g. from a failed previous run)
-    if [ -d "$BACKUP_DIR/$dest_name" ]; then
-        log "Removing existing $BACKUP_DIR/$dest_name from previous attempt..."
-        sudo btrfs subvolume delete "$BACKUP_DIR/$dest_name" || die "Failed to remove stale $BACKUP_DIR/$dest_name"
-    fi
+    # Clean up stale subvolumes from failed previous runs
+    for stale in "$BACKUP_DIR/snapshot" "$BACKUP_DIR/$dest_name"; do
+        if [ -d "$stale" ]; then
+            log "Removing stale $stale from previous attempt..."
+            sudo btrfs subvolume delete "$stale" || die "Failed to remove stale $stale"
+        fi
+    done
+
+    # Clean up partial receive on unexpected exit
+    trap 'if [ -d "$BACKUP_DIR/snapshot" ]; then sudo btrfs subvolume delete "$BACKUP_DIR/snapshot" 2>/dev/null || true; fi' EXIT
 
     if [ -n "$parent" ]; then
         log "Incremental send: #$parent -> #$newest"
@@ -129,8 +134,9 @@ else
         sudo mv "$BACKUP_DIR/snapshot" "$BACKUP_DIR/$dest_name"
     fi
 
-    # Update state file
+    # Update state file and clear trap (receive succeeded)
     echo "$newest" > "$STATE_FILE"
+    trap - EXIT
     log "Backup complete: #$newest -> $BACKUP_DIR/$dest_name"
 fi
 
