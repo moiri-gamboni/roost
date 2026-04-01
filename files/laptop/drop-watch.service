@@ -1,0 +1,12 @@
+[Unit]
+Description=Watch ~/drop/ and sync to roost server
+After=network-online.target tailscaled.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/drop-watch
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
