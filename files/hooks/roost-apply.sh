@@ -279,7 +279,7 @@ cmd_diff() {
         fi
 
         local local_content
-        local_content=$(render_file "$repo_path" "$transform") || continue
+        local_content=$(render_file "$repo_path" "$transform") || { warn "Failed to render $repo_path, skipping"; continue; }
 
         if ! deployed_exists "$server_path"; then
             missing_dest+=("$repo_path -> $server_path")
@@ -354,7 +354,7 @@ cmd_push() {
         fi
 
         local local_content
-        local_content=$(render_file "$repo_path" "$transform") || continue
+        local_content=$(render_file "$repo_path" "$transform") || { warn "Failed to render $repo_path, skipping"; continue; }
 
         local dest_content
         dest_content=$(read_deployed "$server_path")
@@ -445,11 +445,10 @@ cmd_push() {
         parent_dir=$(dirname "$sp")
         if needs_root "$sp"; then
             sudo mkdir -p "$parent_dir"
-            echo "$content" > /tmp/_roost_apply_tmp
-            sudo mv /tmp/_roost_apply_tmp "$sp"
+            printf '%s\n' "$content" | sudo tee "$sp" > /dev/null
         else
             mkdir -p "$parent_dir"
-            echo "$content" > "$sp"
+            printf '%s\n' "$content" > "$sp"
         fi
 
         # Set executable if needed
@@ -464,7 +463,7 @@ cmd_push() {
         # Track service actions
         IFS=',' read -ra actions <<< "$service"
         for action in "${actions[@]}"; do
-            action=$(echo "$action" | xargs)
+            action="${action# }"; action="${action% }"
             [ -z "$action" ] && continue
             case "$action" in
                 daemon-reload)
@@ -510,9 +509,10 @@ cmd_push() {
         fi
     done
 
+    # Run commands are from the hardcoded manifest only (no user input)
     for cmd in "${run_commands[@]}"; do
         info "Running: $cmd"
-        eval "$cmd" || true
+        bash -c "$cmd" || true
     done
 
     echo ""
@@ -531,7 +531,10 @@ cmd_push() {
 # ============================================
 
 cmd_flag_reload() {
+    source_env
     logger -t "$_HOOK_TAG" "Flag reload started"
+
+    local reload_failed=()
 
     if $FLAG_ALL || $FLAG_CLOUDFLARE; then
         if [ -x "$_HOOKS_DIR/cloudflare-assemble.sh" ]; then
@@ -540,16 +543,15 @@ cmd_flag_reload() {
             ok "Cloudflare config assembled"
         fi
         info "Restarting cloudflared..."
-        sudo systemctl restart cloudflared
-        ok "cloudflared restarted"
+        if sudo systemctl restart cloudflared; then
+            ok "cloudflared restarted"
+        else
+            reload_failed+=("cloudflared")
+            warn "Failed: systemctl restart cloudflared"
+        fi
     fi
 
-    local need_daemon_reload=false
     if $FLAG_ALL || $FLAG_SYSTEMD; then
-        need_daemon_reload=true
-    fi
-
-    if $need_daemon_reload; then
         info "Running systemctl daemon-reload..."
         sudo systemctl daemon-reload
         ok "daemon-reload"
@@ -557,26 +559,43 @@ cmd_flag_reload() {
 
     if $FLAG_ALL || $FLAG_CADDY; then
         info "Reloading Caddy..."
-        sudo systemctl reload-or-restart caddy
-        ok "Caddy reloaded"
+        if sudo systemctl reload-or-restart caddy; then
+            ok "Caddy reloaded"
+        else
+            reload_failed+=("caddy")
+            warn "Failed: systemctl reload-or-restart caddy"
+        fi
     fi
 
     if $FLAG_ALL || $FLAG_NTFY; then
         info "Restarting ntfy..."
-        sudo systemctl restart ntfy
-        ok "ntfy restarted"
+        if sudo systemctl restart ntfy; then
+            ok "ntfy restarted"
+        else
+            reload_failed+=("ntfy")
+            warn "Failed: systemctl restart ntfy"
+        fi
     fi
 
     if $FLAG_ALL || $FLAG_SYSTEMD; then
         for unit in glances ram-monitor.timer; do
             info "Restarting $unit..."
-            sudo systemctl restart "$unit"
-            ok "$unit restarted"
+            if sudo systemctl restart "$unit"; then
+                ok "$unit restarted"
+            else
+                reload_failed+=("$unit")
+                warn "Failed: systemctl restart $unit"
+            fi
         done
     fi
 
     if $FLAG_ALL || $FLAG_CRON; then
         ok "Cron (auto-reloads, no action needed)"
+    fi
+
+    if [ ${#reload_failed[@]} -gt 0 ]; then
+        ntfy_send -t "roost-apply: reload failures" -p "high" \
+            "Failed to reload: ${reload_failed[*]}"
     fi
 
     logger -t "$_HOOK_TAG" "Flag reload complete"

@@ -43,6 +43,8 @@ do_sync() {
 echo "Initial sync of $DROP_DIR to $SSH_TARGET:~/drop/..."
 do_sync
 
+command -v inotifywait >/dev/null || { echo "inotifywait not found; install inotify-tools" >&2; exit 1; }
+
 echo "Watching $DROP_DIR for changes..."
 inotifywait -mrq -e create -e modify -e delete -e move "$DROP_DIR" |
 while read -r _dir _events _file; do
@@ -51,3 +53,6 @@ while read -r _dir _events _file; do
     echo "Change detected, syncing..."
     do_sync || echo "Sync failed, will retry on next change" >&2
 done
+
+# inotifywait exited unexpectedly
+exit 1
