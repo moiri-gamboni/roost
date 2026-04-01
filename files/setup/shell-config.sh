@@ -36,7 +36,8 @@ for dir in \
     "$HOME_DIR/.cloudflared" \
     "$HOME_DIR/.locks" \
     "$HOME_DIR/services" \
-    "$HOME_DIR/bin"
+    "$HOME_DIR/bin" \
+    "$HOME_DIR/drop"
 do
     mkdir -p "$dir"
 done
