@@ -13,10 +13,10 @@ After running the deploy script you will have:
 - Semantic search over notes and code (Ollama + grepai)
 - Session search and lineage tracking (claude-code-tools)
 - Push notifications to your phone (ntfy)
-- File sync between server and laptop (Syncthing)
 - System monitoring (Glances) with automated health alerts
 - RAM monitoring with per-process alerts (3GB threshold)
-- Syncthing conflict file detection and notification
+- Off-site btrfs backups to laptop (daily incremental snapshots)
+- Drop folder for quick laptop-to-server file transfer
 - Scheduled Claude Code tasks via cron (morning summary, weekly memory cleanup)
 - Shell helpers for managing Claude Code agents (`agent`, `agents`, `agent_attach`, `agent_stop`, `agent_kill`)
 
@@ -77,9 +77,9 @@ Or paste the contents of your `.pub` file into the Hetzner Console
 ```
 .env.example            Configuration template (copy to .env and fill in)
 deploy.sh               Provisions and configures the server (run from your laptop)
-sync.sh                 Lightweight file sync between repo and server (see "Keeping Files in Sync")
 test-server.sh          Post-deploy verification (runs ~50 checks over SSH)
 files/                  Config files, templates, and hook scripts deployed to the server
+files/laptop/           Scripts and systemd units for the laptop (backup, drop folder)
 extras/                 Optional standalone utilities
 ```
 
@@ -104,7 +104,7 @@ Edit `.env` and fill in the required values:
 Optional settings:
 
 - `SERVER_LOCATION` -- comma-separated list of locations (e.g. `"nbg1,fsn1"`). Only listed locations are tried, in order. When empty, all locations are tried in an order optimized for Western Europe.
-- `ROOST_DIR_NAME` -- name of the synced directory under `~/` (default `roost`). Must match on server and laptop.
+- `ROOST_DIR_NAME` -- name of the managed directory under `~/` (default `roost`).
 - `CLOUDFLARE_ACCOUNT_ID` -- speeds up tunnel creation by skipping account lookup. Required only if you have multiple Cloudflare accounts.
 - `CLOUDFLARE_TUNNEL_NAME` -- defaults to `$ROOST_DIR_NAME`.
 
@@ -159,7 +159,7 @@ btrfs filesystem show /
 tailscale status
 
 # Native services
-systemctl status caddy ntfy syncthing@<username> cloudflared
+systemctl status caddy ntfy cloudflared
 
 # Ollama
 curl http://localhost:11434/api/tags
@@ -261,32 +261,13 @@ Two Claude Code tasks run automatically via cron:
 Both run as headless `claude -p` sessions in a `cron` tmux session. If Claude
 Code OAuth has expired, the health check (every 5 minutes) will alert via ntfy.
 
-#### Syncthing (automatic pairing):
-
-The deploy script automatically pairs the server and laptop Syncthing instances
-if Syncthing is installed and running on your laptop. It shares `~/$ROOST_DIR_NAME/`
-(default `~/roost/`) in both directions and deploys a `.stignore` file on the server.
-
-**Prerequisites** (install before running deploy.sh):
-- Syncthing on your laptop (https://syncthing.net/downloads/)
-- Syncthing service running (the deploy script reads its API)
-
-If Syncthing is not found on the laptop, the script prints the server's device
-ID so you can pair manually later. Re-running `deploy.sh` will retry pairing.
-
-To access the Syncthing web UI (for monitoring or advanced config):
-```bash
-ssh -L 8384:localhost:8384 <username>@<tailscale-ip>
-# then open http://localhost:8384
-```
-
 #### Laptop setup:
 
 1. Install and connect Tailscale
-2. Install Syncthing (pairing is handled by `deploy.sh`)
-3. Set `CLAUDE_CONFIG_DIR=$HOME/roost/claude` in your shell profile (replace `roost` with your `ROOST_DIR_NAME` if you changed it; it must match the server)
+2. Set `CLAUDE_CONFIG_DIR=$HOME/roost/claude` in your shell profile (replace `roost` with your `ROOST_DIR_NAME` if you changed it; it must match the server)
+3. (Optional) Install laptop systemd units from `files/laptop/` (see below)
 4. (Optional) Create a sleep hook that sends `/exit` to Claude tmux sessions
-   before suspend, so sessions sync cleanly:
+   before suspend, so sessions end cleanly:
    ```ini
    # /etc/systemd/system/claude-sleep.service
    [Unit]
@@ -302,6 +283,28 @@ ssh -L 8384:localhost:8384 <username>@<tailscale-ip>
    WantedBy=sleep.target
    ```
    Then enable: `sudo systemctl enable claude-sleep`
+
+#### Laptop tools (`files/laptop/`):
+
+**Off-site btrfs backup** (`btrfs-backup.sh`): Pull-based incremental backup. The laptop SSHes to the server, runs `btrfs send`, and pipes to local `btrfs receive`. First run does a full send; subsequent runs are incremental from the last known snapshot. Keeps 7 most recent snapshots on the laptop, prunes older ones. Alerts via ntfy on failure.
+
+Prerequisites: btrfs partition mounted at `/backup/roost/`, Tailscale connected.
+
+```bash
+# Install the systemd timer (daily with 1h random delay)
+sudo cp files/laptop/roost-backup.service files/laptop/roost-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now roost-backup.timer
+```
+
+**Drop folder** (`drop-watch.sh`): Uses `inotifywait` to watch `~/drop/` and auto-rsyncs to the server on change.
+
+```bash
+# Install the systemd service
+sudo cp files/laptop/drop-watch.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now drop-watch
+```
 
 #### Phone setup (GrapheneOS / Android):
 
@@ -325,35 +328,37 @@ app.example.dev ──────→ Cloudflare ──→ cloudflared ──→
                         Tailscale IP ────────────────→ Server
                         ├── SSH/mosh
                         ├── ntfy (push notifications)
-                        ├── Glances (monitoring)
-                        └── Syncthing (file sync)
+                        └── Glances (monitoring)
 ```
 
 Cloudflare Tunnel handles public web apps with zero open ports.
-Tailscale handles all private access (admin, notifications, sync).
+Tailscale handles all private access (admin, notifications, monitoring).
 Sensitive services never touch the public internet.
+
+**Tailscale hardening (not yet implemented):** Use tagged auth keys (`tag:server`)
+and Tailscale ACLs to restrict server-to-laptop connections, limiting blast radius
+if the server is compromised.
 
 ### Directory Structure (on server)
 
 The directory name `roost` is configurable via `ROOST_DIR_NAME` in `.env`.
 
 ```
-~/roost/                    Syncthing-synced root
+~/roost/                    Managed root directory
 ├── claude/                 Claude Code config (CLAUDE_CONFIG_DIR)
 │   ├── settings.json       Hooks, cleanup policy
 │   ├── hooks/              Hook scripts + utilities (roost-apply, cloudflare-assemble)
 │   ├── skills/             Skills
 │   ├── locks/              Session lock files
 │   └── projects/           Session transcripts (auto-managed)
-├── shell/                  Shell configuration (bashrc.sh, sourced by ~/.bashrc)
-├── cloudflared/            Cloudflare Tunnel config
+├── cloudflared/            Cloudflare Tunnel fragments
 │   └── apps/               Per-app ingress YAML fragments
 ├── memory/                 Structured notes (grepai-indexed)
-│   ├── debugging/
-│   ├── projects/
-│   └── patterns/
 └── code/                   Project repositories
-    └── life/               Default project for scheduled tasks
+    └── CLAUDE.md           Code conventions (auto-discovered by all projects)
+
+~/.bashrc.d/
+└── roost.sh                Shell configuration (PATH, tmux, agent helpers)
 ```
 
 ### Claude Code Configuration
@@ -366,61 +371,43 @@ The deployed `settings.json` includes:
 - **Dangerous command blocker** (PreToolUse hook, vendored from [claude-code-templates](https://github.com/davila7/claude-code-templates), MIT) blocks destructive shell commands
 - **Semantic search** via grepai, initialized on `~/roost/memory/` and `~/roost/claude/skills/`
 
-#### Hardening hooks (opt-in)
+#### Hardening hooks
 
-Hook scripts live inside the Syncthing-synced `~/roost/` directory. If a
-Syncthing peer were compromised, modified hooks could propagate to the server
-and execute on the next Claude Code event. With only two personal peers
-(laptop + server), this adds no new attack surface since a compromised laptop
-already has SSH and Tailscale access. If you add a third peer that has
-Syncthing write access but not SSH/Tailscale access, you can lock down hooks:
+Hook scripts and `settings.json` are protected with the immutable attribute
+(`chattr +i`) to prevent unauthorized modification. `deploy.sh` and
+`roost-apply push` automatically strip the flag before redeploying and
+re-apply it afterward.
 
-```bash
-sudo bash ~/deploy/files/setup/harden-hooks.sh
-```
+## Updating Config After Deploy
 
-This sets the immutable attribute (`chattr +i`) on all hook scripts (`.sh`, `.py`),
-`reflect.md`, and `settings.json`. To update hooks later, `deploy.sh`
-automatically strips the flag before redeploying.
-
-## Keeping Files in Sync
-
-After the initial deploy, you can update individual files without re-running `deploy.sh`.
-
-### sync.sh
-
-Syncs files between the repo and the deployed server. Works both from the laptop (over Tailscale SSH) and from the server itself (local mode, auto-detected by hostname).
-
-```bash
-./sync.sh diff                          # Show all differences
-./sync.sh diff files/hooks/notify.sh    # Diff a specific file
-./sync.sh push                          # Push all changed files to server
-./sync.sh push files/ram-monitor.timer  # Push a specific file
-./sync.sh pull                          # Pull server changes to repo
-./sync.sh list                          # List all managed files
-```
-
-Push shows a diff preview and asks for confirmation (skip with `--yes`/`-y`). It handles `chattr +i` flags, groups `systemctl daemon-reload`, and batches service restarts.
-
-Pull copies plain files directly. For files that use `envsubst` (Caddyfile, systemd units, etc.), pull shows the diff instead, since the variable substitution cannot be reversed automatically.
+After the initial deploy, use `roost-apply` on the server to deploy changed files and reload services without re-running `deploy.sh`.
 
 ### roost-apply
 
-Runs on the server after editing config files directly. Detects which configs changed (via checksum comparison) and reloads only the affected services.
+**Subcommand mode** (manifest-based file deployment):
 
 ```bash
-roost-apply                  # Auto-detect changes, reload affected services
+roost-apply                             # Show diff of all changed files (default)
+roost-apply diff                        # Same as above
+roost-apply diff files/hooks/notify.sh  # Diff a specific file
+roost-apply push                        # Deploy all changed files and reload services
+roost-apply push files/ram-monitor.timer  # Deploy a specific file
+roost-apply push -y                     # Skip confirmation prompt
+roost-apply list                        # List all managed files in the manifest
+```
+
+Push shows a diff preview and asks for confirmation. It handles `chattr +i` flags, groups `systemctl daemon-reload`, and batches service restarts.
+
+**Flag mode** (direct service reload, for app-specific configs not in the manifest):
+
+```bash
 roost-apply --all            # Reload everything
 roost-apply --caddy          # Reload Caddy only
 roost-apply --cloudflare     # Assemble fragments and restart cloudflared
+roost-apply --ntfy           # Restart ntfy
 roost-apply --systemd        # Daemon-reload + restart changed systemd units
+roost-apply --cron           # Reinstall crontab
 ```
-
-Checksums are stored in `~/.cache/roost-apply/checksums`. On first run, all services are treated as changed and a baseline is saved.
-
-### What goes where
-
-Files under `~/roost/` (hooks, settings, shell config) are synced automatically between server and laptop via Syncthing. System files under `/etc/` (Caddyfile, systemd units, ntfy config) require `sync.sh push` or direct editing + `roost-apply`.
 
 The repo is the canonical source for base infrastructure configs. Server-specific app configs go in the dedicated locations described under "Add your first web app" and are not tracked in the repo.
 
@@ -429,6 +416,7 @@ The repo is the canonical source for base infrastructure configs. Server-specifi
 | Layer | Tool | Granularity | Speed |
 |-------|------|-------------|-------|
 | Full filesystem | btrfs snapshots (snapper) | Every 30 min | Seconds |
+| Off-site backup | btrfs send/receive to laptop (`files/laptop/btrfs-backup.sh`) | Daily | Minutes |
 | Disaster recovery | Hetzner backups | Daily | Minutes (reboot) |
 
 Snapper retention: 24 hourly, 7 daily, 4 weekly (no monthly or yearly).
@@ -504,7 +492,7 @@ Everything survives the resize.
 **Tailscale IP changed:**
 Update the Caddyfile (`sudo nano /etc/caddy/Caddyfile`), then run `roost-apply --caddy`.
 Restart Glances (`sudo systemctl restart glances`).
-Update Syncthing listen address via the REST API or re-run `deploy.sh`.
+Or re-run `deploy.sh` to update everything.
 
 **Cloudflare Tunnel not working:**
 Check `journalctl -u cloudflared`.
@@ -513,17 +501,13 @@ Make sure DNS is routed (use the Cloudflare API; see "Add your first web app" ab
 Note: there is no `cert.pem` on the server; tunnels are created via API token.
 
 **Services not starting after reboot:**
-If Tailscale needs re-authentication (key expiry), Caddy and Syncthing will wait
+If Tailscale needs re-authentication (key expiry), Caddy will wait
 60 seconds then fail. Re-authenticate Tailscale (`tailscale up`), then
-restart the failed services (`sudo systemctl restart caddy syncthing@<username>`).
+restart the failed services (`sudo systemctl restart caddy`).
 
 **Claude Code OAuth expired:**
 Scheduled tasks and headless `claude -p` will fail. The health check will
 alert via ntfy. SSH in and run `claude` interactively to re-authenticate.
-
-**Syncthing not syncing / wrong directory:**
-If you changed `ROOST_DIR_NAME`, make sure the value matches on both the server
-(`.env`) and your laptop (`CLAUDE_CONFIG_DIR` and Syncthing folder path).
 
 **deploy.sh failed partway through:**
 The script is idempotent. Fix the issue and re-run it.
