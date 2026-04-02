@@ -39,8 +39,11 @@ _resolve_gh_token() {
     if [[ -n "${owner:-}" ]] && [[ -f "$token_dir/$owner" ]]; then
         token_file="$token_dir/$owner"
     else
-        # Fall back to first available token
-        token_file=$(find "$token_dir" -maxdepth 1 -type f | sort | head -1)
+        # Fall back to first available token (skip dotfiles)
+        token_file=$(find "$token_dir" -maxdepth 1 -type f -not -name '.*' | sort | head -1)
+        if [[ -n "${owner:-}" ]] && [[ -n "$token_file" ]]; then
+            echo "Warning: no token for '$owner', falling back to $(basename "$token_file")" >&2
+        fi
     fi
 
     [ -n "$token_file" ] && cat "$token_file"
@@ -101,7 +104,7 @@ agent() {
 
     local -a cmd_parts=()
     if [[ -n "$gh_token" ]]; then
-        cmd_parts+=(GH_TOKEN="$(printf '%q' "$gh_token")")
+        cmd_parts+=(export "GH_TOKEN=$(printf '%q' "$gh_token")" '&&')
     fi
     cmd_parts+=(cd "$(printf '%q' "$dir")" '&&' claude)
     for arg in "${claude_args[@]}"; do

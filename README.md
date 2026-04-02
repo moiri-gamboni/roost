@@ -28,7 +28,7 @@ Before starting, you will need:
    (https://console.hetzner.cloud/ > your project > Security > API Tokens)
 
 2. **Cloudflare account** with a domain whose DNS is managed by Cloudflare
-   - API token with `Zone:DNS:Edit` permission (create at https://dash.cloudflare.com/profile/api-tokens)
+   - API token with `Account:Cloudflare Tunnel:Edit` and `Zone:DNS:Edit` permissions (create at https://dash.cloudflare.com/profile/api-tokens)
 
 3. **Tailscale account** (free for personal use, https://tailscale.com/)
    - Add `"tagOwners": { "tag:server": ["autogroup:admin"] }` to your ACL policy (https://login.tailscale.com/admin/acls)
@@ -42,7 +42,7 @@ Before starting, you will need:
 
 5. **Claude Code subscription**
 
-5. **On your laptop:**
+6. **On your laptop:**
    - `hcloud` CLI (https://github.com/hetznercloud/cli)
    - `jq` (https://jqlang.org/download/)
    - SSH key pair added to Hetzner (see below)

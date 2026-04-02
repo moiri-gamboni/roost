@@ -10,8 +10,15 @@ chown "$USERNAME:$USERNAME" "$HOME_DIR/.tmux.conf"
 MARKER="# === self-host-setup ==="
 BASHRC="$HOME_DIR/.bashrc"
 
-# Remove old marker block if present (always at end of file)
+# Remove old marker block + preceding blank line to prevent accumulation on re-deploy
 if grep -q "$MARKER" "$BASHRC"; then
+    marker_line=$(grep -n "$MARKER" "$BASHRC" | head -1 | cut -d: -f1)
+    if [ "$marker_line" -gt 1 ]; then
+        prev_line=$((marker_line - 1))
+        if sed -n "${prev_line}p" "$BASHRC" | grep -q '^$'; then
+            sed -i "${prev_line}d" "$BASHRC"
+        fi
+    fi
     sed -i "/$MARKER/,\$d" "$BASHRC"
 fi
 
