@@ -973,10 +973,16 @@ elif ! gh auth status &>/dev/null 2>&1; then
 else
     RULESET_BODY='{"name":"Protect main","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["refs/heads/main"],"exclude":[]}},"rules":[{"type":"deletion"},{"type":"non_fast_forward"}]}'
 
+    GH_USER=$(gh api user -q .login 2>/dev/null || true)
+    if [ -z "$GH_USER" ]; then
+        warn "Could not determine GitHub username"
+    fi
+
     CREATED=0
     EXISTED=0
     FAILED=0
     while IFS= read -r repo; do
+        [ -z "$repo" ] && continue
         EXISTING=$(gh api "repos/$repo/rulesets" 2>/dev/null | jq -r '.[] | select(.name == "Protect main") | .id' 2>/dev/null || true)
         if [ -n "$EXISTING" ]; then
             ((EXISTED++))
@@ -985,7 +991,7 @@ else
         else
             ((FAILED++))
         fi
-    done < <(gh repo list --json nameWithOwner -q '.[].nameWithOwner' --limit 200)
+    done < <(gh repo list --json nameWithOwner,owner -q ".[] | select(.owner.login == \"$GH_USER\") | .nameWithOwner" --limit 200)
 
     ok "Branch rulesets: $CREATED created, $EXISTED existed, $FAILED failed"
 fi
