@@ -476,7 +476,7 @@ echo ""
 echo "--- Hook Scripts ---"
 
 HOOK_DIR="$HOME_DIR/roost/claude/hooks"
-for hook in _hook-env.sh session-lock.sh session-unlock.sh reflect.sh auto-commit.sh notify.sh \
+for hook in _hook-env.sh session-lock.sh session-unlock.sh reflect.sh notify.sh \
             health-check.sh scheduled-task.sh run-scheduled-task.sh auto-update.sh \
             ram-monitor.sh reflect.md; do
     if run test -f "$HOOK_DIR/$hook"; then
@@ -487,7 +487,7 @@ for hook in _hook-env.sh session-lock.sh session-unlock.sh reflect.sh auto-commi
 done
 
 # Check executability of shell scripts
-for hook in session-lock.sh session-unlock.sh reflect.sh auto-commit.sh notify.sh \
+for hook in session-lock.sh session-unlock.sh reflect.sh notify.sh \
             health-check.sh scheduled-task.sh run-scheduled-task.sh auto-update.sh \
             ram-monitor.sh; do
     if run test -x "$HOOK_DIR/$hook"; then
