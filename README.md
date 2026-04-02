@@ -18,66 +18,16 @@ After running the deploy script you will have:
 - Off-site btrfs backups to laptop (daily incremental snapshots)
 - Drop folder for quick laptop-to-server file transfer
 - Scheduled Claude Code tasks via cron (morning summary, weekly memory cleanup)
-- Shell helpers for managing Claude Code agents (`agent`, `agents`, `agent_attach`, `agent_stop`, `agent_kill`)
+- Shell helpers for managing Claude Code agents (`agent`, `agents`, `agent_stop`, `agent_kill`)
 
 ## Prerequisites
 
-Before starting, you will need:
-
-1. **Hetzner Cloud account** with an API token
-   (https://console.hetzner.cloud/ > your project > Security > API Tokens)
-
-2. **Cloudflare account** with a domain whose DNS is managed by Cloudflare
-   - API token with `Account:Cloudflare Tunnel:Edit` and `Zone:DNS:Edit` permissions (create at https://dash.cloudflare.com/profile/api-tokens)
-
-3. **Tailscale account** (free for personal use, https://tailscale.com/)
-   - Add `"tagOwners": { "tag:server": ["autogroup:admin"] }` to your ACL policy (https://login.tailscale.com/admin/acls)
-   - Generate a **tagged** auth key with `tag:server` (https://login.tailscale.com/admin/settings/keys)
-   - Optional: generate an **API key** (https://login.tailscale.com/admin/settings/keys) to let deploy.sh set ACLs automatically. If omitted, restrict ACLs manually after deploy (see Security Hardening below).
-
-4. **GitHub fine-grained PATs** (one per GitHub owner the server will access)
-   - Create at https://github.com/settings/personal-access-tokens/new
-   - See `.env.example` for the recommended permission set
-   - Optional: if `gh` is installed and authenticated on your laptop, deploy.sh will also create branch rulesets on your personal repos
-
-5. **Claude Code subscription**
-
-6. **On your laptop:**
-   - `hcloud` CLI (https://github.com/hetznercloud/cli)
-   - `jq` (https://jqlang.org/download/)
-   - SSH key pair added to Hetzner (see below)
-   - Git
-
-### hcloud CLI setup
-
-The `hcloud` CLI needs an API token before it can talk to your Hetzner project.
-Generate one in the Hetzner Console (Security > API Tokens, read+write), then:
-
-```bash
-hcloud context create roost
-# Paste your API token when prompted
-```
-
-This saves the token locally. You only need to do this once.
-
-### SSH key setup
-
-The SSH key is used for server access. The deploy script auto-selects from
-your Hetzner SSH keys (or lets you upload a new one), so you do not need to
-set `SSH_KEY_NAME` in `.env`.
-
-Make sure you have at least one SSH key registered with Hetzner. If not:
-
-```bash
-# Generate a key (if you don't have one)
-ssh-keygen -t ed25519 -C "your@email.com"
-
-# Upload to Hetzner via CLI
-hcloud ssh-key create --name my-key --public-key-from-file ~/.ssh/id_ed25519.pub
-```
-
-Or paste the contents of your `.pub` file into the Hetzner Console
-(Security > SSH Keys > Add SSH Key).
+- **Hetzner Cloud account** with an API token (https://console.hetzner.cloud/ > Security > API Tokens)
+- **Cloudflare account** with a domain whose DNS is managed by Cloudflare, and an API token with `Account:Cloudflare Tunnel:Edit` and `Zone:DNS:Edit` permissions (https://dash.cloudflare.com/profile/api-tokens)
+- **Tailscale account** (free, https://tailscale.com/)
+- **GitHub fine-grained PATs** for the server (see `.env.example` for permission details)
+- **Claude Code subscription**
+- **On your laptop:** `hcloud` CLI, `jq`, SSH key pair, Git
 
 ## File Overview
 
@@ -94,30 +44,25 @@ extras/                 Optional standalone utilities
 
 ### Step 1: Configure
 
-Configure `hcloud` if you haven't already:
+**hcloud CLI:** Install from https://github.com/hetznercloud/cli, then configure:
 
 ```bash
 hcloud context create roost
 # Paste your Hetzner API token when prompted
 ```
 
-Edit `.env` and fill in the required values:
+**SSH key:** Make sure you have at least one SSH key registered with Hetzner. The deploy script auto-selects from your keys (or lets you upload a new one).
 
-- `USERNAME` (the non-root user to create on the server)
-- `DOMAIN` (your Cloudflare-managed domain)
-- `TAILSCALE_AUTHKEY` (tagged auth key with `tag:server`, see Prerequisites above)
-- `CLOUDFLARE_API_TOKEN` (create at https://dash.cloudflare.com/profile/api-tokens, needs `Zone:DNS:Edit`)
+```bash
+# Upload to Hetzner if you haven't already
+hcloud ssh-key create --name my-key --public-key-from-file ~/.ssh/id_ed25519.pub
+```
 
-Optional settings:
+**Tailscale:** Add `"tagOwners": { "tag:server": ["autogroup:admin"] }` to your ACL policy at https://login.tailscale.com/admin/acls, then generate a **tagged** auth key with `tag:server` at https://login.tailscale.com/admin/settings/keys. Optionally generate an **API key** to let deploy.sh set restrictive ACLs automatically.
 
-- `SERVER_LOCATION` -- comma-separated list of locations (e.g. `"nbg1,fsn1"`). Only listed locations are tried, in order. When empty, all locations are tried in an order optimized for Western Europe.
-- `ROOST_DIR_NAME` -- name of the managed directory under `~/` (default `roost`).
-- `CLOUDFLARE_ACCOUNT_ID` -- speeds up tunnel creation by skipping account lookup. Required only if you have multiple Cloudflare accounts.
-- `CLOUDFLARE_TUNNEL_NAME` -- defaults to `$ROOST_DIR_NAME`.
-- `TAILSCALE_API_KEY` -- API key for setting restrictive ACL policy during deploy. If empty, set ACLs manually after deploy.
-- `GITHUB_TOKEN_<owner>` -- fine-grained PATs for the server, one per GitHub owner (e.g. `GITHUB_TOKEN_my_username`). Replace hyphens with underscores in the variable name. deploy.sh stores these on the server, authenticates `gh`, and sets git to HTTPS. If `gh` is installed and authenticated on your laptop, deploy.sh also creates branch rulesets on your personal repos.
+**GitHub:** Create fine-grained PATs (one per GitHub owner) at https://github.com/settings/personal-access-tokens/new. See `.env.example` for the recommended permission set.
 
-SSH key is auto-selected during deploy (interactive menu of your Hetzner keys, or upload a new one).
+**`.env`:** Copy `.env.example` to `.env` and fill in. Required: `SERVER_NAME`, `USERNAME`, `DOMAIN`, `TAILSCALE_AUTHKEY`, `CLOUDFLARE_API_TOKEN`. See `.env.example` for all optional settings.
 
 ### Step 2: Deploy
 
@@ -132,63 +77,30 @@ Or skip the confirmation prompt:
 ./deploy.sh --yes
 ```
 
-The script shows a pre-flight summary (server name, user, domain, SSH key, tunnel name) and asks for confirmation before provisioning (unless `--yes` is used).
+The script shows a pre-flight summary (server name and type, user, domain, directory name, SSH key, tunnel name) and asks for confirmation before provisioning (unless `--yes` is used).
 
 This single command handles everything: creating the server, converting to
 btrfs, installing all software and services, creating the Cloudflare tunnel
 via API, and joining Tailscale via auth key. It is idempotent (safe to re-run
 after partial failures or to apply changes).
 
-No interactive pauses during deploy. After the script finishes, authenticate
-Claude Code by SSHing into the server and running `claude`.
+During deploy, you will be prompted to authenticate Claude Code (interactive
+OAuth flow). Press 's' to skip and authenticate later. After the script
+finishes, Claude Code plugins are installed if authentication succeeded.
 
 ### Step 3: Post-Setup (Manual)
 
 These steps must be completed manually after the deploy script finishes.
 
-#### On the server (via Tailscale SSH):
-
-**Verify the deploy:**
-
-Run the verification script from your laptop. It tests ~50 checks over SSH
-(connectivity, filesystem, SSH hardening, all services, hooks, directory
-structure, dev tools, cron):
+**Verify the deploy** (from your laptop):
 
 ```bash
 ./test-server.sh
 ```
 
-Or verify individual services manually:
+Tests ~50 checks over SSH: connectivity, filesystem, SSH hardening, all services, hooks, directory structure, dev tools, cron.
 
-```bash
-# btrfs
-btrfs filesystem show /
-
-# Tailscale
-tailscale status
-
-# Native services
-systemctl status caddy ntfy cloudflared
-
-# Ollama
-curl http://localhost:11434/api/tags
-
-# ntfy
-curl -H "Authorization: Bearer $(cat ~/services/.ntfy-token)" \
-  -d "test notification" http://localhost:2586/claude-<username>
-
-# Glances
-curl http://<tailscale-ip>:61208
-
-# RAM monitor
-systemctl status ram-monitor.timer
-```
-
-**Restrict Tailscale ACLs:**
-
-If you set `TAILSCALE_API_KEY` in `.env`, this was done automatically during deploy. Verify: `ssh` from server to laptop should fail; `ssh` from laptop to server should work.
-
-If you did not set `TAILSCALE_API_KEY`, restrict ACLs manually. Go to https://login.tailscale.com/admin/acls and set:
+**If you didn't set `TAILSCALE_API_KEY` in `.env`**, restrict ACLs manually at https://login.tailscale.com/admin/acls:
 
 ```jsonc
 {
@@ -202,33 +114,17 @@ If you did not set `TAILSCALE_API_KEY`, restrict ACLs manually. Go to https://lo
 
 Verify: `ssh` from server to laptop should fail; `ssh` from laptop to server should work.
 
-**Set up GitHub credentials:**
-
-If you set `GITHUB_TOKEN_*` variables in `.env`, this was done automatically during deploy. Tokens were stored to `~/.config/git/tokens/<owner>`, `gh` was authenticated, and git was configured for HTTPS.
-
-If you did not set tokens in `.env`, set up credentials manually:
-
-Create a fine-grained PAT for each GitHub owner (personal account, orgs) at https://github.com/settings/personal-access-tokens/new. Grant "Contents: Read and write" and other low-risk permissions, but exclude Administration, Workflows, Webhooks, Secrets, and Codespaces (see CLAUDE.md Security Model for rationale).
+**If you didn't set `GITHUB_TOKEN_*` in `.env`**, store tokens manually on the server:
 
 ```bash
-# On the server
-gh auth login    # paste the personal PAT
+gh auth login --with-token <<< "ghp_..."
 gh config set -h github.com git_protocol https
-
-# Store tokens for per-repo resolution
 mkdir -p ~/.config/git/tokens
 echo "ghp_..." > ~/.config/git/tokens/<github-username>
-echo "ghp_..." > ~/.config/git/tokens/<org-name>
 chmod 600 ~/.config/git/tokens/*
 ```
 
-The `agent` function reads these tokens and sets `GH_TOKEN` per session based on the repo's remote URL.
-
-**Set up branch rulesets:**
-
-If `gh` was installed and authenticated on your laptop during deploy, branch rulesets (block deletion and force push on main) were created automatically on all your personal repos.
-
-If not, create them manually from the laptop (requires admin-scoped credentials):
+**If branch rulesets weren't created during deploy**, create them from the laptop:
 
 ```bash
 for repo in owner/repo1 owner/repo2; do
@@ -239,8 +135,6 @@ for repo in owner/repo1 owner/repo2; do
 EOF
 done
 ```
-
-This must be done from the laptop (with admin-scoped credentials), not the server.
 
 **Add your first web app:**
 
@@ -316,6 +210,8 @@ agent_kill <index>
 Using `/rename` inside a session updates the tmux window name automatically.
 Sessions that aren't manually renamed get an auto-generated name on exit.
 
+The `agent` function resolves `GH_TOKEN` at launch from the repo's remote URL owner, so each session uses the correct token for that GitHub owner (personal, org, etc.). Tokens are stored in `~/.config/git/tokens/<owner>`.
+
 #### Scheduled tasks
 
 Two Claude Code tasks run automatically via cron:
@@ -326,7 +222,7 @@ Two Claude Code tasks run automatically via cron:
 | Sunday 10:00 | **Memory cleanup**: deduplicates and merges notes in `~/roost/memory/` |
 
 Both run as headless `claude -p` sessions in a `cron` tmux session. If Claude
-Code OAuth has expired, the health check (every 5 minutes) will alert via ntfy.
+Code OAuth has expired, scheduled task failures will alert via ntfy.
 
 #### Laptop setup:
 
@@ -404,11 +300,9 @@ Sensitive services never touch the public internet.
 
 ### Security Hardening
 
-**Tailscale ACLs:** The server is registered with `tag:server` (via a tagged auth key). ACLs allow laptop/phone to reach the server but block the server from initiating connections outward. This limits blast radius if a prompt injection compromises a Claude session. When `TAILSCALE_API_KEY` is set in `.env`, deploy.sh sets the restrictive ACL policy automatically via the Tailscale API.
+**Tailscale ACLs:** The server is registered with `tag:server`. ACLs block the server from initiating connections to personal devices, limiting blast radius if a prompt injection compromises a Claude session.
 
-**GitHub credential scoping:** Fine-grained PATs (one per GitHub owner) with no Administration, Workflows, Webhooks, Secrets, or Codespaces permissions. When `GITHUB_TOKEN_*` variables are set in `.env`, deploy.sh stores them on the server, authenticates `gh`, and configures git for HTTPS. Branch rulesets (block deletion and force push on main) are created automatically on personal repos when `gh` is installed and authenticated on the laptop.
-
-The `agent` function resolves `GH_TOKEN` at launch from the repo's git remote URL. Each agent session is scoped to one repo.
+**GitHub credential scoping:** Fine-grained PATs exclude Administration, Workflows, Webhooks, Secrets, and Codespaces permissions. A compromised session cannot modify branch rulesets, inject CI secrets, or exfiltrate code via webhooks. Branch rulesets prevent force push and deletion on main.
 
 ### Directory Structure (on server)
 
@@ -486,7 +380,7 @@ The repo is the canonical source for base infrastructure configs. Server-specifi
 
 | Layer | Tool | Granularity | Speed |
 |-------|------|-------------|-------|
-| Full filesystem | btrfs snapshots (snapper) | Every 30 min | Seconds |
+| Full filesystem | btrfs snapshots (snapper) | Hourly | Seconds |
 | Off-site backup | btrfs send/receive to laptop (`files/laptop/btrfs-backup.sh`) | Daily | Minutes |
 | Disaster recovery | Hetzner backups | Daily | Minutes (reboot) |
 
@@ -577,7 +471,7 @@ If Tailscale needs re-authentication (key expiry), Caddy will wait
 restart the failed services (`sudo systemctl restart caddy`).
 
 **Claude Code OAuth expired:**
-Scheduled tasks and headless `claude -p` will fail. The health check will
+Scheduled tasks and headless `claude -p` will fail. Task failures will
 alert via ntfy. SSH in and run `claude` interactively to re-authenticate.
 
 **deploy.sh failed partway through:**

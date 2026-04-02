@@ -41,7 +41,7 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
 | `USERNAME` | yes | Non-root user created on the server |
 | `DOMAIN` | yes | Domain managed in Cloudflare |
 | `ROOST_DIR_NAME` | no | Directory name under `~/` (default: `roost`) |
-| `CLOUDFLARE_API_TOKEN` | yes | Needs Account > Tunnel > Edit and Zone > DNS > Edit |
+| `CLOUDFLARE_API_TOKEN` | yes | Needs Account > Cloudflare Tunnel > Edit and Zone > DNS > Edit |
 | `CLOUDFLARE_TUNNEL_NAME` | no | Defaults to `$ROOST_DIR_NAME` |
 | `CLOUDFLARE_ACCOUNT_ID` | no | Skips account lookup if provided |
 | `TAILSCALE_AUTHKEY` | yes | Pre-authenticated key for unattended setup |
@@ -72,7 +72,7 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
   - `_setup-env.sh` -- Shared environment sourced by every setup script
   - `settings.json` -- Claude Code settings with hook definitions (SessionStart/End, PreCompact, Stop, PreToolUse, Notification)
   - `private/` -- Gitignored; clone your private `claude-mds` repo here for personal CLAUDE.md files
-    - `global-CLAUDE.md` -- Deployed to `~/.claude/CLAUDE.md`; epistemic style, learning system, memory format
+    - `global-CLAUDE.md` -- Deployed to `$CLAUDE_CONFIG_DIR/CLAUDE.md` (`~/roost/claude/CLAUDE.md`); epistemic style, learning system, memory format
     - `code-CLAUDE.md` -- Deployed to `~/roost/code/CLAUDE.md`; safety, planning, search, agent, and tool conventions
   - `Caddyfile` -- Caddy reverse proxy config template (envsubst-expanded); imports `/etc/caddy/sites-enabled/*` for app routes
   - `caddy-tailscale.conf` -- Systemd drop-in for Caddy to wait for Tailscale
@@ -91,7 +91,9 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
     - `dangerous-command-blocker.py` -- PreToolUse hook blocking destructive commands (vendored from claude-code-templates, MIT)
     - `roost-apply.sh` -- Config deployment and service reload (manifest-based + flag mode)
     - `cloudflare-assemble.sh` -- Assembles cloudflare config from base header + app fragments
-  - `setup/` -- Modular setup scripts, run via `remote_script()` in deploy.sh: `system`, `create-user`, `ssh-hardening`, `ufw`, `ipv6-disable`, `swap`, `snapper` (btrfs), `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `harden-hooks`, `unattended-upgrades`
+  - `skills/` -- Claude Code skills deployed to `$CLAUDE_CONFIG_DIR/skills/`
+    - `html2markdown/SKILL.md`, `havelock-api/SKILL.md`
+  - `setup/` -- Modular setup scripts, run via `remote_script()` in deploy.sh: `system`, `create-user`, `ssh-hardening`, `ufw`, `ipv6-disable`, `swap`, `snapper` (btrfs), `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `unattended-upgrades`. Also `harden-hooks` (manual, not called by deploy.sh)
   - `laptop/` -- Scripts and systemd units designed to run on the laptop, not the server
     - `btrfs-backup.sh` -- Pull-based incremental btrfs snapshot backup (laptop SSHes to server, `btrfs send`/`receive`)
     - `roost-backup.service` / `roost-backup.timer` -- Daily systemd timer for btrfs backup (`RandomizedDelaySec=1h`, `Persistent=true`)
@@ -135,12 +137,12 @@ Hooks are defined in `files/settings.json` and deployed to `~/roost/claude/hooks
 | PreToolUse | `dangerous-command-blocker.py` | Blocks catastrophic commands (rm -rf /, dd), protects critical paths (.git, .env), warns on suspicious patterns |
 | Notification | `notify.sh` | Sends push notifications via local ntfy (with rate limiting and priority levels) |
 
-All hook scripts source `_hook-env.sh` which provides `hook_json()` for parsing Claude Code's JSON input, `ntfy_send()` for notifications (with journald fallback), `rate_limit_ok()` to prevent notification floods, and journald logging via `logger -t "$_HOOK_TAG"` (tags: `roost/<script-name>`).
+Hook scripts source `_hook-env.sh` (except `reflect.sh` which just cats a prompt file) which provides `hook_json()` for parsing Claude Code's JSON input, `ntfy_send()` for notifications (with journald fallback), `rate_limit_ok()` to prevent notification floods, and journald logging via `logger -t "$_HOOK_TAG"` (tags: `roost/<script-name>`).
 
 Cron-triggered hooks (not Claude Code events):
 - `health-check.sh` -- Checks Ollama, Caddy, ntfy, Tailscale, cloudflared, disk, swap; alerts via ntfy. Sources `health-check-apps.sh` if present for app-specific checks.
-- `scheduled-task.sh` / `run-scheduled-task.sh` -- Runs Claude Code tasks in tmux windows
-- `auto-update.sh` -- Weekly updates with btrfs snapshot before, ntfy summary after (7-day cooldown, major version guard)
+- `scheduled-task.sh` / `run-scheduled-task.sh` -- Runs Claude Code tasks in tmux windows. Two configured: daily 8:00 morning summary (ntfy history), Sunday 10:00 memory cleanup (deduplicates `~/roost/memory/`). Both run as headless `claude -p` in a `cron` tmux session.
+- `auto-update.sh` -- Weekly updates (Sunday 3am) with btrfs snapshot before, ntfy summary after. Safeguards: 7-day release cooldown, major version guard (blocked and reported via ntfy). Updated tools: Claude Code, claude-code-tools, claude-code-transcripts, Go, fnm, Node.js LTS, uv, Ollama models, grepai, gitleaks, OS packages. Logs: `journalctl -t roost/auto-update`.
 
 Systemd timer (not cron):
 - `ram-monitor.sh` -- Alerts when any process exceeds 3GB RSS (runs every 30s via `ram-monitor.timer`, tracks notified PIDs to avoid repeats)
@@ -158,7 +160,7 @@ All infrastructure runs as native systemd services installed via official apt re
 
 Caddy has a systemd drop-in that waits for Tailscale before starting. Updates are handled by `apt upgrade` (via auto-update.sh and unattended-upgrades).
 
-The `dangerous-command-blocker` PreToolUse hook is vendored from [claude-code-templates](https://github.com/davila7/claude-code-templates) (MIT license). `harden-hooks.sh` sets `chattr +i` on hook scripts and settings to protect against unauthorized modification; `deploy.sh` and `roost-apply push` strip the flag before redeploying.
+The `dangerous-command-blocker` PreToolUse hook is vendored from [claude-code-templates](https://github.com/davila7/claude-code-templates) (MIT license). `harden-hooks.sh` sets `chattr +i` on hook scripts and settings to protect against unauthorized modification; `roost-apply push` strips the flag before redeploying.
 
 ## App-Specific Extensions
 
@@ -216,7 +218,7 @@ roost-apply --cron           # Reinstall crontab
 
 | Layer | Tool | Granularity |
 |---|---|---|
-| Full filesystem | btrfs snapshots (snapper) | Every 30 min |
+| Full filesystem | btrfs snapshots (snapper) | Hourly |
 | Off-site backup | btrfs send/receive to laptop (`files/laptop/btrfs-backup.sh`) | Daily |
 | Disaster recovery | Hetzner backups | Daily |
 
@@ -227,8 +229,6 @@ Snapper retention: 24 hourly, 7 daily, 4 weekly. Rollback: `snapper list`, then 
 **Tailscale ACLs**: The server is registered with `tag:server`. ACLs allow laptop/phone to reach the server but block the server from initiating connections to other devices. This limits blast radius if a prompt injection compromises a Claude session. When `TAILSCALE_API_KEY` is set in `.env`, `deploy.sh` sets the restrictive ACL policy automatically via the Tailscale API.
 
 **GitHub credentials**: Fine-grained PATs scoped to "Contents: Read and write" (plus other low-risk permissions) but explicitly excluding Administration, Workflows, Webhooks, Secrets, and Codespaces. This prevents a compromised session from modifying branch rulesets, injecting CI secrets, or exfiltrating code via webhooks. When `GITHUB_TOKEN_*` variables are set in `.env`, `deploy.sh` stores tokens on the server, authenticates `gh`, and configures git for HTTPS. Branch rulesets (block deletion and force push on main) are created automatically on personal repos when `gh` is installed and authenticated on the laptop.
-
-**Per-repo token resolution**: Tokens stored in `~/.config/git/tokens/<github-owner>` (one file per owner, containing the PAT). The `agent` function resolves `GH_TOKEN` at launch based on the repo's git remote URL. Each agent session is scoped to one repo. Both `git` (via `gh auth git-credential`) and `gh` CLI use `GH_TOKEN` when set.
 
 **Hook protection**: `chattr +i` on hook scripts and `settings.json` prevents modification. `harden-hooks.sh` applies the flags; `deploy.sh` and `roost-apply push` strip them before redeploying.
 
