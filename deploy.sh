@@ -790,7 +790,7 @@ while IFS='=' read -r varname value; do
         continue
     fi
     [ -z "$FIRST_TOKEN" ] && FIRST_TOKEN="$value"
-    ((TOKEN_COUNT++))
+    TOKEN_COUNT=$((TOKEN_COUNT + 1))
 done < <(env | grep '^GITHUB_TOKEN_' | sort)
 
 if [ "$TOKEN_COUNT" -gt 0 ]; then
@@ -972,7 +972,7 @@ section "GitHub Branch Rulesets"
 
 if ! command -v gh &>/dev/null; then
     skip "gh CLI not found on laptop"
-elif ! gh auth status &>/dev/null 2>&1; then
+elif ! gh auth status &>/dev/null; then
     skip "gh CLI not authenticated on laptop"
 else
     RULESET_BODY='{"name":"Protect main","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["refs/heads/main"],"exclude":[]}},"rules":[{"type":"deletion"},{"type":"non_fast_forward"}]}'
@@ -989,11 +989,11 @@ else
         [ -z "$repo" ] && continue
         EXISTING=$(gh api "repos/$repo/rulesets" 2>/dev/null | jq -r '.[] | select(.name == "Protect main") | .id' 2>/dev/null || true)
         if [ -n "$EXISTING" ]; then
-            ((EXISTED++))
+            EXISTED=$((EXISTED + 1))
         elif echo "$RULESET_BODY" | gh api "repos/$repo/rulesets" -X POST --input - >/dev/null 2>&1; then
-            ((CREATED++))
+            CREATED=$((CREATED + 1))
         else
-            ((FAILED++))
+            FAILED=$((FAILED + 1))
         fi
     done < <(gh repo list --json nameWithOwner,owner -q ".[] | select(.owner.login == \"$GH_USER\") | .nameWithOwner" --limit 200)
 
