@@ -8,16 +8,22 @@ cp "$REMOTE_DIR/files/tmux.conf" "$HOME_DIR/.tmux.conf"
 chown "$USERNAME:$USERNAME" "$HOME_DIR/.tmux.conf"
 
 MARKER="# === self-host-setup ==="
-if ! grep -q "$MARKER" "$HOME_DIR/.bashrc"; then
-    {
-        echo ""
-        echo "$MARKER"
-        cat "$REMOTE_DIR/files/bashrc-append.sh"
-    } >> "$HOME_DIR/.bashrc"
-    # Substitute default ROOST_DIR_NAME if using a custom directory name
-    if [ "$ROOST_DIR_NAME" != "roost" ]; then
-        sed -i "s|ROOST_DIR_NAME:-roost|ROOST_DIR_NAME:-$ROOST_DIR_NAME|g" "$HOME_DIR/.bashrc"
-    fi
+BASHRC="$HOME_DIR/.bashrc"
+
+# Remove old marker block if present (always at end of file)
+if grep -q "$MARKER" "$BASHRC"; then
+    sed -i "/$MARKER/,\$d" "$BASHRC"
+fi
+
+# Append current version
+{
+    echo ""
+    echo "$MARKER"
+    cat "$REMOTE_DIR/files/bashrc-append.sh"
+} >> "$BASHRC"
+
+if [ "$ROOST_DIR_NAME" != "roost" ]; then
+    sed -i "s|ROOST_DIR_NAME:-roost|ROOST_DIR_NAME:-$ROOST_DIR_NAME|g" "$BASHRC"
 fi
 echo "  [+] tmux and shell configured"
 
@@ -37,17 +43,22 @@ for dir in \
     "$HOME_DIR/.locks" \
     "$HOME_DIR/services" \
     "$HOME_DIR/bin" \
-    "$HOME_DIR/drop"
+    "$HOME_DIR/drop" \
+    "$HOME_DIR/.config/git/tokens"
 do
     mkdir -p "$dir"
 done
 chown -R "$USERNAME:$USERNAME" "$HOME_DIR"
+chmod 700 "$HOME_DIR/.config/git/tokens"
 echo "  [+] Directory structure created"
 
 # --- Deploy bashrc.sh to ~/.bashrc.d/ ---
 cp "$REMOTE_DIR/files/shell/bashrc.sh" "$HOME_DIR/.bashrc.d/roost.sh"
 chown "$USERNAME:$USERNAME" "$HOME_DIR/.bashrc.d/roost.sh"
 echo "  [+] Shell config deployed to $HOME_DIR/.bashrc.d/roost.sh"
+
+# Clean up old shell config location
+rm -rf "$ROOST_DIR/shell"
 
 # --- Git identity ---
 if [ -n "${GIT_USER_NAME:-}" ] && [ -n "${GIT_USER_EMAIL:-}" ]; then
