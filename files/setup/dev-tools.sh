@@ -60,3 +60,20 @@ else
     rm -f /tmp/gitleaks.tar.gz
     ok "gitleaks $GITLEAKS_VERSION installed"
 fi
+
+# --- gh CLI ---
+
+if command -v gh &>/dev/null; then
+    skip "gh CLI already installed"
+else
+    info "Installing gh CLI..."
+    mkdir -p -m 755 /etc/apt/keyrings
+    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        | dd of=/etc/apt/keyrings/githubcli-archive-keyring.gpg 2>/dev/null
+    chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list
+    apt-get update -qq
+    apt-get install -y -qq gh
+    ok "gh CLI installed"
+fi
