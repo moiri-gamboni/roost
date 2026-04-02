@@ -33,9 +33,14 @@ Before starting, you will need:
 3. **Tailscale account** (free for personal use, https://tailscale.com/)
    - Add `"tagOwners": { "tag:server": ["autogroup:admin"] }` to your ACL policy (https://login.tailscale.com/admin/acls)
    - Generate a **tagged** auth key with `tag:server` (https://login.tailscale.com/admin/settings/keys)
-   - After deploy, restrict ACLs so the server cannot initiate connections to your devices (see Security Hardening below)
+   - Optional: generate an **API key** (https://login.tailscale.com/admin/settings/keys) to let deploy.sh set ACLs automatically. If omitted, restrict ACLs manually after deploy (see Security Hardening below).
 
-4. **Claude Code subscription**
+4. **GitHub fine-grained PATs** (one per GitHub owner the server will access)
+   - Create at https://github.com/settings/personal-access-tokens/new
+   - See `.env.example` for the recommended permission set
+   - Optional: if `gh` is installed and authenticated on your laptop, deploy.sh will also create branch rulesets on your personal repos
+
+5. **Claude Code subscription**
 
 5. **On your laptop:**
    - `hcloud` CLI (https://github.com/hetznercloud/cli)
@@ -109,6 +114,8 @@ Optional settings:
 - `ROOST_DIR_NAME` -- name of the managed directory under `~/` (default `roost`).
 - `CLOUDFLARE_ACCOUNT_ID` -- speeds up tunnel creation by skipping account lookup. Required only if you have multiple Cloudflare accounts.
 - `CLOUDFLARE_TUNNEL_NAME` -- defaults to `$ROOST_DIR_NAME`.
+- `TAILSCALE_API_KEY` -- API key for setting restrictive ACL policy during deploy. If empty, set ACLs manually after deploy.
+- `GITHUB_TOKEN_<owner>` -- fine-grained PATs for the server, one per GitHub owner (e.g. `GITHUB_TOKEN_my_username`). Replace hyphens with underscores in the variable name. deploy.sh stores these on the server, authenticates `gh`, and sets git to HTTPS. If `gh` is installed and authenticated on your laptop, deploy.sh also creates branch rulesets on your personal repos.
 
 SSH key is auto-selected during deploy (interactive menu of your Hetzner keys, or upload a new one).
 
@@ -179,7 +186,9 @@ systemctl status ram-monitor.timer
 
 **Restrict Tailscale ACLs:**
 
-After verifying the deploy, restrict ACLs so the server cannot reach your devices. Go to https://login.tailscale.com/admin/acls and set:
+If you set `TAILSCALE_API_KEY` in `.env`, this was done automatically during deploy. Verify: `ssh` from server to laptop should fail; `ssh` from laptop to server should work.
+
+If you did not set `TAILSCALE_API_KEY`, restrict ACLs manually. Go to https://login.tailscale.com/admin/acls and set:
 
 ```jsonc
 {
@@ -194,6 +203,10 @@ After verifying the deploy, restrict ACLs so the server cannot reach your device
 Verify: `ssh` from server to laptop should fail; `ssh` from laptop to server should work.
 
 **Set up GitHub credentials:**
+
+If you set `GITHUB_TOKEN_*` variables in `.env`, this was done automatically during deploy. Tokens were stored to `~/.config/git/tokens/<owner>`, `gh` was authenticated, and git was configured for HTTPS.
+
+If you did not set tokens in `.env`, set up credentials manually:
 
 Create a fine-grained PAT for each GitHub owner (personal account, orgs) at https://github.com/settings/personal-access-tokens/new. Grant "Contents: Read and write" and other low-risk permissions, but exclude Administration, Workflows, Webhooks, Secrets, and Codespaces (see CLAUDE.md Security Model for rationale).
 
@@ -211,7 +224,11 @@ chmod 600 ~/.config/git/tokens/*
 
 The `agent` function reads these tokens and sets `GH_TOKEN` per session based on the repo's remote URL.
 
-**Set up branch rulesets (from laptop):**
+**Set up branch rulesets:**
+
+If `gh` was installed and authenticated on your laptop during deploy, branch rulesets (block deletion and force push on main) were created automatically on all your personal repos.
+
+If not, create them manually from the laptop (requires admin-scoped credentials):
 
 ```bash
 for repo in owner/repo1 owner/repo2; do
@@ -387,16 +404,9 @@ Sensitive services never touch the public internet.
 
 ### Security Hardening
 
-**Tailscale ACLs:** The server is registered with `tag:server` (via a tagged auth key). ACLs allow laptop/phone to reach the server but block the server from initiating connections outward. This limits blast radius if a prompt injection compromises a Claude session.
+**Tailscale ACLs:** The server is registered with `tag:server` (via a tagged auth key). ACLs allow laptop/phone to reach the server but block the server from initiating connections outward. This limits blast radius if a prompt injection compromises a Claude session. When `TAILSCALE_API_KEY` is set in `.env`, deploy.sh sets the restrictive ACL policy automatically via the Tailscale API.
 
-**GitHub credential scoping:** Fine-grained PATs (one per GitHub owner) with no Administration, Workflows, Webhooks, Secrets, or Codespaces permissions. Branch rulesets on repos prevent force push to main. Tokens stored in `~/.config/git/tokens/<owner>`:
-
-```bash
-mkdir -p ~/.config/git/tokens
-echo "ghp_..." > ~/.config/git/tokens/moiri-gamboni
-echo "ghp_..." > ~/.config/git/tokens/org-name
-chmod 600 ~/.config/git/tokens/*
-```
+**GitHub credential scoping:** Fine-grained PATs (one per GitHub owner) with no Administration, Workflows, Webhooks, Secrets, or Codespaces permissions. When `GITHUB_TOKEN_*` variables are set in `.env`, deploy.sh stores them on the server, authenticates `gh`, and configures git for HTTPS. Branch rulesets (block deletion and force push on main) are created automatically on personal repos when `gh` is installed and authenticated on the laptop.
 
 The `agent` function resolves `GH_TOKEN` at launch from the repo's git remote URL. Each agent session is scoped to one repo.
 
