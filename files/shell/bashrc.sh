@@ -33,14 +33,14 @@ _resolve_gh_token() {
     remote_url=$(git -C "$dir" remote get-url origin 2>/dev/null || true)
     if [[ -n "$remote_url" ]]; then
         # Extract owner from https://github.com/OWNER/repo or git@github.com:OWNER/repo
-        owner=$(echo "$remote_url" | sed -n 's|.*github\.com[:/]\([^/]*\)/.*|\1|p')
+        owner=$(echo "$remote_url" | sed -n 's|.*github\.com[:/]\([^/]*\)/.*|\1|p' | tr '[:upper:]' '[:lower:]')
     fi
 
     if [[ -n "${owner:-}" ]] && [[ -f "$token_dir/$owner" ]]; then
         token_file="$token_dir/$owner"
     else
         # Fall back to first available token
-        token_file=$(find "$token_dir" -maxdepth 1 -type f | head -1)
+        token_file=$(find "$token_dir" -maxdepth 1 -type f | sort | head -1)
     fi
 
     [ -n "$token_file" ] && cat "$token_file"
