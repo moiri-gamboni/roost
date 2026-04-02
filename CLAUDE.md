@@ -45,6 +45,8 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
 | `CLOUDFLARE_TUNNEL_NAME` | no | Defaults to `$ROOST_DIR_NAME` |
 | `CLOUDFLARE_ACCOUNT_ID` | no | Skips account lookup if provided |
 | `TAILSCALE_AUTHKEY` | yes | Pre-authenticated key for unattended setup |
+| `TAILSCALE_API_KEY` | no | API key for setting ACL policy during deploy; manual setup if empty |
+| `GITHUB_TOKEN_<owner>` | no | Fine-grained PATs for the server, one per GitHub owner (replace hyphens with underscores in variable name) |
 
 ## Script Roles
 
@@ -222,9 +224,9 @@ Snapper retention: 24 hourly, 7 daily, 4 weekly. Rollback: `snapper list`, then 
 
 ## Security Model
 
-**Tailscale ACLs**: The server is registered with `tag:server`. ACLs allow laptop/phone to reach the server but block the server from initiating connections to other devices. This limits blast radius if a prompt injection compromises a Claude session.
+**Tailscale ACLs**: The server is registered with `tag:server`. ACLs allow laptop/phone to reach the server but block the server from initiating connections to other devices. This limits blast radius if a prompt injection compromises a Claude session. When `TAILSCALE_API_KEY` is set in `.env`, `deploy.sh` sets the restrictive ACL policy automatically via the Tailscale API.
 
-**GitHub credentials**: Fine-grained PATs scoped to "Contents: Read and write" (plus other low-risk permissions) but explicitly excluding Administration, Workflows, Webhooks, Secrets, and Codespaces. This prevents a compromised session from modifying branch rulesets, injecting CI secrets, or exfiltrating code via webhooks. Branch rulesets on repos prevent force push to main.
+**GitHub credentials**: Fine-grained PATs scoped to "Contents: Read and write" (plus other low-risk permissions) but explicitly excluding Administration, Workflows, Webhooks, Secrets, and Codespaces. This prevents a compromised session from modifying branch rulesets, injecting CI secrets, or exfiltrating code via webhooks. When `GITHUB_TOKEN_*` variables are set in `.env`, `deploy.sh` stores tokens on the server, authenticates `gh`, and configures git for HTTPS. Branch rulesets (block deletion and force push on main) are created automatically on personal repos when `gh` is installed and authenticated on the laptop.
 
 **Per-repo token resolution**: Tokens stored in `~/.config/git/tokens/<github-owner>` (one file per owner, containing the PAT). The `agent` function resolves `GH_TOKEN` at launch based on the repo's git remote URL. Each agent session is scoped to one repo. Both `git` (via `gh auth git-credential`) and `gh` CLI use `GH_TOKEN` when set.
 
