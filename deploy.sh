@@ -960,6 +960,36 @@ CLOUDFLARE_TUNNEL_NAME="$TUNNEL_NAME"
 SYNC_EOF
 ok "Wrote $SYNC_ENV for local sync"
 
+# ============================================
+# GitHub Branch Rulesets
+# ============================================
+
+section "GitHub Branch Rulesets"
+
+if ! command -v gh &>/dev/null; then
+    skip "gh CLI not found on laptop"
+elif ! gh auth status &>/dev/null 2>&1; then
+    skip "gh CLI not authenticated on laptop"
+else
+    RULESET_BODY='{"name":"Protect main","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["refs/heads/main"],"exclude":[]}},"rules":[{"type":"deletion"},{"type":"non_fast_forward"}]}'
+
+    CREATED=0
+    EXISTED=0
+    FAILED=0
+    while IFS= read -r repo; do
+        EXISTING=$(gh api "repos/$repo/rulesets" 2>/dev/null | jq -r '.[] | select(.name == "Protect main") | .id' 2>/dev/null || true)
+        if [ -n "$EXISTING" ]; then
+            ((EXISTED++))
+        elif echo "$RULESET_BODY" | gh api "repos/$repo/rulesets" -X POST --input - >/dev/null 2>&1; then
+            ((CREATED++))
+        else
+            ((FAILED++))
+        fi
+    done < <(gh repo list --json nameWithOwner -q '.[].nameWithOwner' --limit 200)
+
+    ok "Branch rulesets: $CREATED created, $EXISTED existed, $FAILED failed"
+fi
+
 # Clean up deploy files from server
 remote "rm -rf $REMOTE_DIR"
 
