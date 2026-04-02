@@ -20,6 +20,32 @@ export PATH=$PATH:~/bin:~/.local/bin
 # Roost server management
 alias roost-apply="$_ROOST_DIR/claude/hooks/roost-apply.sh"
 
+# --- GitHub token resolution ---
+
+# Resolve a GH_TOKEN from ~/.config/git/tokens/ based on the git remote's owner.
+# Falls back to the personal token (first file found) if no match.
+_resolve_gh_token() {
+    local dir="$1"
+    local token_dir="$HOME/.config/git/tokens"
+    [ -d "$token_dir" ] || return 0
+
+    local remote_url owner token_file
+    remote_url=$(git -C "$dir" remote get-url origin 2>/dev/null || true)
+    if [[ -n "$remote_url" ]]; then
+        # Extract owner from https://github.com/OWNER/repo or git@github.com:OWNER/repo
+        owner=$(echo "$remote_url" | sed -n 's|.*github\.com[:/]\([^/]*\)/.*|\1|p')
+    fi
+
+    if [[ -n "${owner:-}" ]] && [[ -f "$token_dir/$owner" ]]; then
+        token_file="$token_dir/$owner"
+    else
+        # Fall back to first available token
+        token_file=$(find "$token_dir" -maxdepth 1 -type f | head -1)
+    fi
+
+    [ -n "$token_file" ] && cat "$token_file"
+}
+
 # --- Agent management helpers ---
 
 # Ensure a tmux session exists, starting one if needed.
@@ -69,7 +95,15 @@ agent() {
         name="${base_name}-${i}"
     fi
 
-    local -a cmd_parts=(cd "$(printf '%q' "$dir")" '&&' claude)
+    # Resolve GitHub token for this repo
+    local gh_token
+    gh_token=$(_resolve_gh_token "$dir")
+
+    local -a cmd_parts=()
+    if [[ -n "$gh_token" ]]; then
+        cmd_parts+=(GH_TOKEN="$(printf '%q' "$gh_token")")
+    fi
+    cmd_parts+=(cd "$(printf '%q' "$dir")" '&&' claude)
     for arg in "${claude_args[@]}"; do
         cmd_parts+=("$(printf '%q' "$arg")")
     done
