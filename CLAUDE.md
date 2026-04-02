@@ -175,7 +175,7 @@ Agent management functions (defined in `files/shell/bashrc.sh`, deployed to `~/.
 
 | Command | Usage |
 |---|---|
-| `agent [path] [claude-args...]` | Launch interactive Claude in a tmux window (path defaults to cwd) |
+| `agent [path] [claude-args...]` | Launch interactive Claude in a tmux window (path defaults to cwd); resolves `GH_TOKEN` from `~/.config/git/tokens/<owner>` based on the repo's git remote |
 | `agent -c` | Continue last session in cwd |
 | `agents` | Interactive tmux window picker |
 | `agent_stop <index>` | Graceful stop (Ctrl-D, triggers SessionEnd hooks) |
@@ -219,6 +219,16 @@ roost-apply --cron           # Reinstall crontab
 | Disaster recovery | Hetzner backups | Daily |
 
 Snapper retention: 24 hourly, 7 daily, 4 weekly. Rollback: `snapper list`, then `snapper rollback <number>`, then reboot.
+
+## Security Model
+
+**Tailscale ACLs**: The server is registered with `tag:server`. ACLs allow laptop/phone to reach the server but block the server from initiating connections to other devices. This limits blast radius if a prompt injection compromises a Claude session.
+
+**GitHub credentials**: Fine-grained PATs scoped to "Contents: Read and write" (plus other low-risk permissions) but explicitly excluding Administration, Workflows, Webhooks, Secrets, and Codespaces. This prevents a compromised session from modifying branch rulesets, injecting CI secrets, or exfiltrating code via webhooks. Branch rulesets on repos prevent force push to main.
+
+**Per-repo token resolution**: Tokens stored in `~/.config/git/tokens/<github-owner>` (one file per owner, containing the PAT). The `agent` function resolves `GH_TOKEN` at launch based on the repo's git remote URL. Each agent session is scoped to one repo. Both `git` (via `gh auth git-credential`) and `gh` CLI use `GH_TOKEN` when set.
+
+**Hook protection**: `chattr +i` on hook scripts and `settings.json` prevents modification. `harden-hooks.sh` applies the flags; `deploy.sh` and `roost-apply push` strip them before redeploying.
 
 ## Shell Conventions
 

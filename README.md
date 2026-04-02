@@ -31,7 +31,9 @@ Before starting, you will need:
    - API token with `Zone:DNS:Edit` permission (create at https://dash.cloudflare.com/profile/api-tokens)
 
 3. **Tailscale account** (free for personal use, https://tailscale.com/)
-   - Pre-authenticated auth key (generate at https://login.tailscale.com/admin/settings/keys)
+   - Add `"tagOwners": { "tag:server": ["autogroup:admin"] }` to your ACL policy (https://login.tailscale.com/admin/acls)
+   - Generate a **tagged** auth key with `tag:server` (https://login.tailscale.com/admin/settings/keys)
+   - After deploy, restrict ACLs so the server cannot initiate connections to your devices (see Security Hardening below)
 
 4. **Claude Code subscription**
 
@@ -98,7 +100,7 @@ Edit `.env` and fill in the required values:
 
 - `USERNAME` (the non-root user to create on the server)
 - `DOMAIN` (your Cloudflare-managed domain)
-- `TAILSCALE_AUTHKEY` (generate at https://login.tailscale.com/admin/settings/keys)
+- `TAILSCALE_AUTHKEY` (tagged auth key with `tag:server`, see Prerequisites above)
 - `CLOUDFLARE_API_TOKEN` (create at https://dash.cloudflare.com/profile/api-tokens, needs `Zone:DNS:Edit`)
 
 Optional settings:
@@ -174,6 +176,54 @@ curl http://<tailscale-ip>:61208
 # RAM monitor
 systemctl status ram-monitor.timer
 ```
+
+**Restrict Tailscale ACLs:**
+
+After verifying the deploy, restrict ACLs so the server cannot reach your devices. Go to https://login.tailscale.com/admin/acls and set:
+
+```jsonc
+{
+    "tagOwners": { "tag:server": ["autogroup:admin"] },
+    "grants": [
+        {"src": ["autogroup:member"], "dst": ["tag:server"], "ip": ["*"]},
+        {"src": ["tag:server"], "dst": ["tag:server"], "ip": ["*"]}
+    ]
+}
+```
+
+Verify: `ssh` from server to laptop should fail; `ssh` from laptop to server should work.
+
+**Set up GitHub credentials:**
+
+Create a fine-grained PAT for each GitHub owner (personal account, orgs) at https://github.com/settings/personal-access-tokens/new. Grant "Contents: Read and write" and other low-risk permissions, but exclude Administration, Workflows, Webhooks, Secrets, and Codespaces (see CLAUDE.md Security Model for rationale).
+
+```bash
+# On the server
+gh auth login    # paste the personal PAT
+gh config set -h github.com git_protocol https
+
+# Store tokens for per-repo resolution
+mkdir -p ~/.config/git/tokens
+echo "ghp_..." > ~/.config/git/tokens/<github-username>
+echo "ghp_..." > ~/.config/git/tokens/<org-name>
+chmod 600 ~/.config/git/tokens/*
+```
+
+The `agent` function reads these tokens and sets `GH_TOKEN` per session based on the repo's remote URL.
+
+**Set up branch rulesets (from laptop):**
+
+```bash
+for repo in owner/repo1 owner/repo2; do
+  gh api "repos/$repo/rulesets" -X POST --input - <<'EOF'
+{"name":"Protect main","target":"branch","enforcement":"active",
+ "conditions":{"ref_name":{"include":["refs/heads/main"],"exclude":[]}},
+ "rules":[{"type":"deletion"},{"type":"non_fast_forward"}]}
+EOF
+done
+```
+
+This must be done from the laptop (with admin-scoped credentials), not the server.
 
 **Add your first web app:**
 
@@ -335,9 +385,20 @@ Cloudflare Tunnel handles public web apps with zero open ports.
 Tailscale handles all private access (admin, notifications, monitoring).
 Sensitive services never touch the public internet.
 
-**Tailscale hardening (not yet implemented):** Use tagged auth keys (`tag:server`)
-and Tailscale ACLs to restrict server-to-laptop connections, limiting blast radius
-if the server is compromised.
+### Security Hardening
+
+**Tailscale ACLs:** The server is registered with `tag:server` (via a tagged auth key). ACLs allow laptop/phone to reach the server but block the server from initiating connections outward. This limits blast radius if a prompt injection compromises a Claude session.
+
+**GitHub credential scoping:** Fine-grained PATs (one per GitHub owner) with no Administration, Workflows, Webhooks, Secrets, or Codespaces permissions. Branch rulesets on repos prevent force push to main. Tokens stored in `~/.config/git/tokens/<owner>`:
+
+```bash
+mkdir -p ~/.config/git/tokens
+echo "ghp_..." > ~/.config/git/tokens/moiri-gamboni
+echo "ghp_..." > ~/.config/git/tokens/org-name
+chmod 600 ~/.config/git/tokens/*
+```
+
+The `agent` function resolves `GH_TOKEN` at launch from the repo's git remote URL. Each agent session is scoped to one repo.
 
 ### Directory Structure (on server)
 
