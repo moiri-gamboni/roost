@@ -671,11 +671,11 @@ if [ -n "${TAILSCALE_API_KEY:-}" ]; then
     info "Setting Tailscale ACL policy..."
     ACL_BODY='{"tagOwners":{"tag:server":["autogroup:admin"]},"grants":[{"src":["autogroup:member"],"dst":["tag:server"],"ip":["*"]},{"src":["tag:server"],"dst":["tag:server"],"ip":["*"]}]}'
 
-    ACL_RESPONSE=$(curl -sf -X POST \
+    ACL_RESPONSE=$(curl -s -X POST \
         -u "${TAILSCALE_API_KEY}:" \
         -H "Content-Type: application/json" \
         -d "$ACL_BODY" \
-        "https://api.tailscale.com/api/v2/tailnet/-/acl" 2>&1) || true
+        "https://api.tailscale.com/api/v2/tailnet/-/acl") || true
 
     if echo "$ACL_RESPONSE" | jq -e '.tagOwners' &>/dev/null; then
         ok "Tailscale ACL policy set (server isolated from personal devices)"
@@ -781,10 +781,14 @@ while IFS='=' read -r varname value; do
     [ -z "$value" ] && continue
     # GITHUB_TOKEN_moiri_gamboni -> moiri-gamboni
     owner=$(echo "${varname#GITHUB_TOKEN_}" | tr '[:upper:]' '[:lower:]' | tr '_' '-')
-    echo "$value" | remote "sudo -u $USERNAME tee /home/$USERNAME/.config/git/tokens/$owner > /dev/null"
-    remote "chmod 600 /home/$USERNAME/.config/git/tokens/$owner"
-    remote "chown $USERNAME:$USERNAME /home/$USERNAME/.config/git/tokens/$owner"
-    ok "Token stored for $owner"
+    if echo "$value" | remote "sudo -u $USERNAME tee /home/$USERNAME/.config/git/tokens/$owner > /dev/null" \
+        && remote "chmod 600 /home/$USERNAME/.config/git/tokens/$owner" \
+        && remote "chown $USERNAME:$USERNAME /home/$USERNAME/.config/git/tokens/$owner"; then
+        ok "Token stored for $owner"
+    else
+        warn "Failed to store token for $owner"
+        continue
+    fi
     [ -z "$FIRST_TOKEN" ] && FIRST_TOKEN="$value"
     ((TOKEN_COUNT++))
 done < <(env | grep '^GITHUB_TOKEN_' | sort)
@@ -975,8 +979,8 @@ else
 
     GH_USER=$(gh api user -q .login 2>/dev/null || true)
     if [ -z "$GH_USER" ]; then
-        warn "Could not determine GitHub username"
-    fi
+        warn "Could not determine GitHub username; skipping branch rulesets"
+    else
 
     CREATED=0
     EXISTED=0
@@ -994,6 +998,8 @@ else
     done < <(gh repo list --json nameWithOwner,owner -q ".[] | select(.owner.login == \"$GH_USER\") | .nameWithOwner" --limit 200)
 
     ok "Branch rulesets: $CREATED created, $EXISTED existed, $FAILED failed"
+
+    fi  # end GH_USER check
 fi
 
 # Clean up deploy files from server
