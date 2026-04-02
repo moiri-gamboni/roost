@@ -769,6 +769,37 @@ remote_script "setup/shell-config.sh"
 ok "tmux, shell, and directory structure configured"
 
 # ============================================
+# GitHub Credentials
+# ============================================
+
+section "GitHub Credentials"
+
+# Discover GITHUB_TOKEN_* variables from .env
+TOKEN_COUNT=0
+FIRST_TOKEN=""
+while IFS='=' read -r varname value; do
+    [ -z "$value" ] && continue
+    # GITHUB_TOKEN_moiri_gamboni -> moiri-gamboni
+    owner=$(echo "${varname#GITHUB_TOKEN_}" | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+    echo "$value" | remote "sudo -u $USERNAME tee /home/$USERNAME/.config/git/tokens/$owner > /dev/null"
+    remote "chmod 600 /home/$USERNAME/.config/git/tokens/$owner"
+    remote "chown $USERNAME:$USERNAME /home/$USERNAME/.config/git/tokens/$owner"
+    ok "Token stored for $owner"
+    [ -z "$FIRST_TOKEN" ] && FIRST_TOKEN="$value"
+    ((TOKEN_COUNT++))
+done < <(env | grep '^GITHUB_TOKEN_' | sort)
+
+if [ "$TOKEN_COUNT" -gt 0 ]; then
+    # Authenticate gh CLI with the first token
+    echo "$FIRST_TOKEN" | remote "sudo -u $USERNAME bash -c 'gh auth login --hostname github.com --with-token'" || warn "gh auth login failed"
+    # Set git protocol to HTTPS
+    remote "sudo -u $USERNAME bash -c 'gh config set -h github.com git_protocol https'" || warn "gh config set failed"
+    ok "$TOKEN_COUNT GitHub token(s) configured"
+else
+    skip "No GITHUB_TOKEN_* variables in .env"
+fi
+
+# ============================================
 # Claude Code Configuration + Hooks
 # ============================================
 
