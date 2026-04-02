@@ -665,6 +665,29 @@ fi
 ssh-keyscan -H "$TAILSCALE_IP" >> ~/.ssh/known_hosts || true
 [ -n "$TAILSCALE_DNS" ] && ssh-keyscan -H "$TAILSCALE_DNS" >> ~/.ssh/known_hosts || true
 
+# --- Tailscale ACL Policy ---
+
+if [ -n "${TAILSCALE_API_KEY:-}" ]; then
+    info "Setting Tailscale ACL policy..."
+    ACL_BODY='{"tagOwners":{"tag:server":["autogroup:admin"]},"grants":[{"src":["autogroup:member"],"dst":["tag:server"],"ip":["*"]},{"src":["tag:server"],"dst":["tag:server"],"ip":["*"]}]}'
+
+    ACL_RESPONSE=$(curl -sf -X POST \
+        -u "${TAILSCALE_API_KEY}:" \
+        -H "Content-Type: application/json" \
+        -d "$ACL_BODY" \
+        "https://api.tailscale.com/api/v2/tailnet/-/acl" 2>&1) || true
+
+    if echo "$ACL_RESPONSE" | jq -e '.tagOwners' &>/dev/null; then
+        ok "Tailscale ACL policy set (server isolated from personal devices)"
+    else
+        ACL_ERROR=$(echo "$ACL_RESPONSE" | jq -r '.message // empty' 2>/dev/null)
+        warn "Tailscale ACL update failed: ${ACL_ERROR:-unknown error}"
+        warn "Set ACLs manually at https://login.tailscale.com/admin/acls"
+    fi
+else
+    skip "TAILSCALE_API_KEY not set (set ACLs manually at https://login.tailscale.com/admin/acls)"
+fi
+
 # ============================================
 # Firewall (UFW)
 # ============================================
