@@ -14,6 +14,11 @@ export PATH=$PATH:/usr/local/go/bin:~/go/bin
 FNM_DIR="$HOME/.local/share/fnm"
 if [ -x "$FNM_DIR/fnm" ]; then eval "$($FNM_DIR/fnm env --use-on-cd --shell bash)"; fi
 
+# clip-forward shims (must precede system xclip/wl-paste)
+if [ -d "$HOME/.local/lib/clip-forward/shims" ]; then
+    export PATH="$HOME/.local/lib/clip-forward/shims:$PATH"
+fi
+
 # Local binaries
 export PATH=$PATH:~/bin:~/.local/bin
 
