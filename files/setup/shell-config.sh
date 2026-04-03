@@ -75,3 +75,13 @@ if [ -n "${GIT_USER_NAME:-}" ] && [ -n "${GIT_USER_EMAIL:-}" ]; then
 else
     echo "  [-] Git identity skipped (GIT_USER_NAME/GIT_USER_EMAIL not set)"
 fi
+
+# --- Git commit signing (SSH key) ---
+if [ -f "$HOME_DIR/.ssh/id_ed25519.pub" ]; then
+    as_user "git config --global gpg.format ssh"
+    as_user "git config --global user.signingkey '$HOME_DIR/.ssh/id_ed25519.pub'"
+    as_user "git config --global commit.gpgsign true"
+    echo "  [+] Git commit signing configured (SSH key)"
+else
+    echo "  [-] Git signing skipped (no SSH key found)"
+fi
