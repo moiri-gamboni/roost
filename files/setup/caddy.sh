@@ -20,7 +20,7 @@ else
 fi
 
 # --- Render Caddyfile ---
-mkdir -p /etc/caddy/sites-enabled
+mkdir -p /etc/caddy/sites-enabled /etc/caddy/apps-enabled
 export DOMAIN
 export TAILSCALE_IP
 envsubst '$DOMAIN $TAILSCALE_IP' \
