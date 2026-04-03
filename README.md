@@ -271,7 +271,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now roost-backup.timer
 ```
 
-**Drop folder** (`drop-watch.sh`): Uses `inotifywait` to watch `~/drop/` and auto-rsyncs to the server on change.
+**Drop folder** (`drop-watch.sh`): Uses `inotifywait` to watch `~/roost/drop/` and auto-rsyncs to the server on change.
 
 ```bash
 # Install the systemd service

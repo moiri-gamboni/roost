@@ -5,6 +5,7 @@ set -euo pipefail
 
 SERVER_HOST="${ROOST_SERVER:-roost}"
 SERVER_USER="${ROOST_USER:?set ROOST_USER or configure in service file}"
+ROOST_DIR_NAME="${ROOST_DIR_NAME:-roost}"
 DROP_DIR="${HOME}/drop"
 
 usage() {
@@ -36,7 +37,7 @@ RSYNC_OPTS=(-avz --delete -e ssh)
 mkdir -p "$DROP_DIR"
 
 do_sync() {
-    rsync "${RSYNC_OPTS[@]}" "$DROP_DIR/" "$SSH_TARGET:~/drop/"
+    rsync "${RSYNC_OPTS[@]}" "$DROP_DIR/" "$SSH_TARGET:~/${ROOST_DIR_NAME}/drop/"
 }
 
 # Initial sync
