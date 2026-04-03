@@ -723,7 +723,8 @@ ok "Claude Code installed"
 
 # Plugins require OAuth, which requires an interactive session.
 # Check if already authenticated; if not, prompt the user to log in.
-CLAUDE_CMD="CLAUDE_CONFIG_DIR=/home/$USERNAME/$ROOST_DIR_NAME/claude /home/$USERNAME/.local/bin/claude"
+CLAUDE_CONFIG_DIR="/home/$USERNAME/$ROOST_DIR_NAME/claude"
+CLAUDE_CMD="CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG_DIR /home/$USERNAME/.local/bin/claude"
 if remote "sudo -u $USERNAME $CLAUDE_CMD auth status" | grep -q '"loggedIn": true'; then
     skip "Claude Code already authenticated"
 else
@@ -752,6 +753,8 @@ if [ "${SKIP_PLUGINS:-}" != "true" ]; then
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install serena@claude-plugins-official" || warn "Failed to install serena plugin"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin marketplace add mksglu/context-mode" || warn "Failed to add context-mode marketplace"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install context-mode@context-mode" || warn "Failed to install context-mode plugin"
+    # Enable auto-update on all marketplaces (no CLI flag exists for this)
+    remote "jq '.[] |= . + {autoUpdate: true}' $CLAUDE_CONFIG_DIR/plugins/known_marketplaces.json > /tmp/mkt.json && mv /tmp/mkt.json $CLAUDE_CONFIG_DIR/plugins/known_marketplaces.json && chown $USERNAME:$USERNAME $CLAUDE_CONFIG_DIR/plugins/known_marketplaces.json" || warn "Failed to enable marketplace auto-update"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install claude-code-setup@claude-plugins-official" || warn "Failed to install claude-code-setup plugin"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install claude-md-management@claude-plugins-official" || warn "Failed to install claude-md-management plugin"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install playground@claude-plugins-official" || warn "Failed to install playground plugin"

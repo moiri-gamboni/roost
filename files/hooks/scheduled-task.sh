@@ -1,5 +1,4 @@
 #!/bin/bash
-export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/${ROOST_DIR_NAME:-roost}/claude}"
 
 TASK="$1"
 PROJECT="${2:-$HOME/${ROOST_DIR_NAME:-roost}/code/life}"
