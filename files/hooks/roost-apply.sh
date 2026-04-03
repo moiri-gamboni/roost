@@ -103,6 +103,7 @@ MANIFEST_A
     # Category B: System files (root needed, may require service restarts)
     cat <<'MANIFEST_B'
 files/Caddyfile|/etc/caddy/Caddyfile|envsubst:TAILSCALE_IP|reload-or-restart:caddy
+files/apps.caddy|/etc/caddy/sites-enabled/apps.caddy||reload-or-restart:caddy
 files/cloudflare-config.yml|/etc/cloudflared/config.yml|envsubst:TUNNEL_ID,TUNNEL_NAME|restart:cloudflared
 files/cloudflare-config.yml|$HOME_DIR/.cloudflared/config.yml|envsubst:TUNNEL_ID,TUNNEL_NAME|
 files/ntfy-server.yml|/etc/ntfy/server.yml|plain|restart:ntfy

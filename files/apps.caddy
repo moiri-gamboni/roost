@@ -1,0 +1,5 @@
+:8090 {
+    import /etc/caddy/apps-enabled/*
+    encode gzip
+    respond "Not found" 404
+}

@@ -169,9 +169,14 @@ The base infrastructure configs are generic and stay in the repo. Server-specifi
 | What | Where | Notes |
 |---|---|---|
 | Caddy app routes | `/etc/caddy/sites-enabled/<app>.caddy` | Imported by Caddyfile via `import /etc/caddy/sites-enabled/*` |
+| Caddy Tailscale-only apps | `/etc/caddy/apps-enabled/<app>.caddy` | Per-app `handle_path` fragments imported by `sites-enabled/apps.caddy` (see below) |
 | Cloudflare ingress | `~/roost/cloudflared/apps/<app>.yml` | Assembled by `cloudflare-assemble.sh`; each file contains ingress rule lines |
 | App cron jobs | `/etc/cron.d/${ROOST_DIR_NAME}-apps` | Separate file from the base cron; filenames must not contain dots |
 | App health checks | `~/roost/claude/hooks/health-check-apps.sh` | Sourced by `health-check.sh` if present; uses same `check()` and `check_service()` helpers |
+
+### Tailscale-Only Static Apps
+
+Internal apps share `:8090` with path-based routing. `sites-enabled/apps.caddy` imports per-app `handle_path` fragments from `/etc/caddy/apps-enabled/*.caddy`. To add an app: drop a `.caddy` file in `apps-enabled/` with a `handle_path /<name>/* { root * /path/to/files; file_server }` block, then reload Caddy. Access at `http://<tailscale-ip>:8090/<name>/`. Ensure files are world-readable for the `caddy` user.
 
 ## Shell Helpers
 
