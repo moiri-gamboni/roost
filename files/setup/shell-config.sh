@@ -50,7 +50,7 @@ for dir in \
     "$HOME_DIR/.locks" \
     "$HOME_DIR/services" \
     "$HOME_DIR/bin" \
-    "$HOME_DIR/drop" \
+    "$ROOST_DIR/drop" \
     "$HOME_DIR/.config/git/tokens"
 do
     mkdir -p "$dir"
