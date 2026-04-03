@@ -119,7 +119,7 @@ agent() {
     fi
     tmux new-window -t main -n "$name" "${cmd_parts[*]}"
     if [[ $need_attach -eq 1 ]]; then
-        tmux attach -t main
+        tmux new-session -t main -s "main-$$"
     fi
 }
 
@@ -128,7 +128,7 @@ agents() {
     if [[ -n "${TMUX:-}" ]]; then
         tmux choose-window
     else
-        tmux attach -t main \; choose-window
+        tmux new-session -t main -s "main-$$" \; choose-window
     fi
 }
 
