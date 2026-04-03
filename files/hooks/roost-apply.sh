@@ -77,8 +77,10 @@ tunnel_id() {
 
 define_manifest() {
     # Category A: User files under ~/roost/ (no root needed)
+    # Note: settings.json is NOT in the manifest. It's deployed by deploy.sh
+    # (claude-config.sh) on initial setup, then owned by the server (Claude Code
+    # modifies it at runtime for plugins, permissions, etc.).
     cat <<'MANIFEST_A'
-files/settings.json|$ROOST_DIR/claude/settings.json|sed-roost|
 files/hooks/_hook-env.sh|$ROOST_DIR/claude/hooks/_hook-env.sh|plain+x|
 files/hooks/session-lock.sh|$ROOST_DIR/claude/hooks/session-lock.sh|plain+x|
 files/hooks/session-unlock.sh|$ROOST_DIR/claude/hooks/session-unlock.sh|plain+x|
