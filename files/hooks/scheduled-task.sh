@@ -1,7 +1,7 @@
 #!/bin/bash
 
 TASK="$1"
-PROJECT="${2:-$HOME/${ROOST_DIR_NAME:-roost}/code/life}"
+PROJECT="${2:-$HOME/${ROOST_DIR_NAME}/code/life}"
 TASKFILE=$(mktemp /tmp/claude-task-XXXXXX.txt)
 printf '%s' "$TASK" > "$TASKFILE"
 tmux has-session -t cron 2>/dev/null || tmux new-session -d -s cron

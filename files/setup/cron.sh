@@ -11,11 +11,6 @@ envsubst '$USERNAME $HOME_DIR $ROOST_DIR_NAME' \
 
 chmod 644 "/etc/cron.d/$ROOST_DIR_NAME"
 
-# Clean up old names
-rm -f /etc/cron.d/self-host
-if [ "$ROOST_DIR_NAME" != "roost" ]; then
-    rm -f /etc/cron.d/roost
-fi
 echo "  [+] Cron jobs configured"
 
 # --- Initial grepai setup ---

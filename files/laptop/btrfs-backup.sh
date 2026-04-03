@@ -3,7 +3,7 @@
 # Runs on the LAPTOP via systemd timer (roost-backup.timer).
 set -euo pipefail
 
-SERVER_HOST="${ROOST_SERVER:-roost}"
+SERVER_HOST="${ROOST_SERVER:?set ROOST_SERVER or configure in service file}"
 SERVER_USER="${ROOST_USER:?set ROOST_USER or configure in service file}"
 BACKUP_DIR="${ROOST_BACKUP_DIR:-/backup/roost}"
 STATE_DIR="$HOME/.local/state/roost-backup"
@@ -39,7 +39,7 @@ Options:
   --full       Force a full (non-incremental) send
 
 Environment variables:
-  ROOST_SERVER       Server hostname (default: roost)
+  ROOST_SERVER       Server hostname (required, set via service file)
   ROOST_USER         SSH user (required, set via service file)
   ROOST_BACKUP_DIR   Local btrfs backup path (default: /backup/roost)
   ROOST_NTFY_URL     ntfy URL for failure alerts (optional)

@@ -262,7 +262,7 @@ else
     fail "cloudflared config"
 fi
 
-TUNNEL_NAME="${CLOUDFLARE_TUNNEL_NAME:-${ROOST_DIR_NAME:-roost}}"
+TUNNEL_NAME="${CLOUDFLARE_TUNNEL_NAME:-${ROOST_DIR_NAME}}"
 # Check for credentials JSON (API-based auth doesn't use cert.pem or `cloudflared tunnel list`)
 TUNNEL_ID=$(run "grep -oP '\"TunnelID\"\\s*:\\s*\"\\K[^\"]+' $HOME_DIR/.cloudflared/*.json 2>/dev/null | head -1" || true)
 if [ -n "$TUNNEL_ID" ]; then
@@ -437,8 +437,9 @@ fi
 echo ""
 echo "--- Directory Structure ---"
 
-for dir in roost roost/claude roost/claude/hooks roost/claude/skills \
-           roost/claude/locks roost/memory roost/code roost/code/life; do
+for dir in "$ROOST_DIR_NAME" "$ROOST_DIR_NAME/claude" "$ROOST_DIR_NAME/claude/hooks" \
+           "$ROOST_DIR_NAME/claude/skills" "$ROOST_DIR_NAME/claude/locks" \
+           "$ROOST_DIR_NAME/memory" "$ROOST_DIR_NAME/code" "$ROOST_DIR_NAME/code/life"; do
     if run test -d "$HOME_DIR/$dir"; then
         pass "~/$dir exists"
     else
@@ -450,7 +451,7 @@ done
 echo ""
 echo "--- Claude Code Config ---"
 
-SETTINGS="$HOME_DIR/roost/claude/settings.json"
+SETTINGS="$HOME_DIR/$ROOST_DIR_NAME/claude/settings.json"
 if run test -f "$SETTINGS"; then
     pass "settings.json exists"
 
@@ -475,7 +476,7 @@ fi
 echo ""
 echo "--- Hook Scripts ---"
 
-HOOK_DIR="$HOME_DIR/roost/claude/hooks"
+HOOK_DIR="$HOME_DIR/$ROOST_DIR_NAME/claude/hooks"
 for hook in _hook-env.sh session-lock.sh session-unlock.sh reflect.sh notify.sh \
             health-check.sh scheduled-task.sh run-scheduled-task.sh auto-update.sh \
             ram-monitor.sh reflect.md; do
@@ -525,16 +526,16 @@ else
     fail "grepai"
 fi
 
-if run test -d "$HOME_DIR/roost/memory/.grepai"; then
-    pass "grepai initialized in ~/roost/memory"
+if run test -d "$HOME_DIR/$ROOST_DIR_NAME/memory/.grepai"; then
+    pass "grepai initialized in ~/$ROOST_DIR_NAME/memory"
 else
-    fail "grepai not initialized in ~/roost/memory"
+    fail "grepai not initialized in ~/$ROOST_DIR_NAME/memory"
 fi
 
-if run test -d "$HOME_DIR/roost/claude/skills/.grepai"; then
-    pass "grepai initialized in ~/roost/claude/skills"
+if run test -d "$HOME_DIR/$ROOST_DIR_NAME/claude/skills/.grepai"; then
+    pass "grepai initialized in ~/$ROOST_DIR_NAME/claude/skills"
 else
-    fail "grepai not initialized in ~/roost/claude/skills"
+    fail "grepai not initialized in ~/$ROOST_DIR_NAME/claude/skills"
 fi
 
 if run_login "command -v aichat" >/dev/null 2>&1; then
@@ -553,15 +554,15 @@ fi
 echo ""
 echo "--- Cron Jobs ---"
 
-if run test -f /etc/cron.d/roost; then
-    pass "Cron file /etc/cron.d/roost exists"
-    if run grep -q health-check /etc/cron.d/roost 2>/dev/null; then
+if run test -f "/etc/cron.d/$ROOST_DIR_NAME"; then
+    pass "Cron file /etc/cron.d/$ROOST_DIR_NAME exists"
+    if run grep -q health-check "/etc/cron.d/$ROOST_DIR_NAME" 2>/dev/null; then
         pass "Health check cron configured"
     else
-        fail "Health check cron missing from /etc/cron.d/roost"
+        fail "Health check cron missing from /etc/cron.d/$ROOST_DIR_NAME"
     fi
 else
-    fail "Cron file /etc/cron.d/roost"
+    fail "Cron file /etc/cron.d/$ROOST_DIR_NAME"
 fi
 
 # ── Unattended Upgrades ──────────────────────────────────────

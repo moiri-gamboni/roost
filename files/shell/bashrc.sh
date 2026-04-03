@@ -1,7 +1,7 @@
 # Roost shell configuration
 # Sourced from ~/.bashrc via ~/.bashrc.d/roost.sh
 
-export ROOST_DIR_NAME="${ROOST_DIR_NAME:-roost}"
+export ROOST_DIR_NAME="${ROOST_DIR_NAME:?ROOST_DIR_NAME not set}"
 _ROOST_DIR="$HOME/$ROOST_DIR_NAME"
 
 # Claude Code config lives under ~/roost/claude/

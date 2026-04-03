@@ -23,7 +23,7 @@ hook_input() {
 hook_json() { hook_input | jq -r "$1 // empty"; }
 
 # --- CLAUDE_CONFIG_DIR (ensure it's set for cron-launched scripts) ---
-export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/${ROOST_DIR_NAME:-roost}/claude}"
+export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/${ROOST_DIR_NAME}/claude}"
 
 # --- Runtime directory (XDG_RUNTIME_DIR with fallback for cron) ---
 if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -d "$XDG_RUNTIME_DIR" ]; then
