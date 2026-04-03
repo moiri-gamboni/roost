@@ -7,6 +7,9 @@ Type=simple
 ExecStart=%h/.local/bin/drop-watch
 Restart=always
 RestartSec=60
+Environment=ROOST_SERVER=${SERVER_NAME}
+Environment=ROOST_USER=${USERNAME}
+Environment=ROOST_DIR_NAME=${ROOST_DIR_NAME}
 
 [Install]
 WantedBy=default.target

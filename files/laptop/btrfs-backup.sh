@@ -106,32 +106,34 @@ if [ "$DRY_RUN" = true ]; then
         log "[dry-run] Would full send #$newest to $BACKUP_DIR/$dest_name"
     fi
 else
+    HELPER=/usr/local/bin/roost-backup-helper
+
     # Clean up stale subvolumes from failed previous runs
-    for stale in "$BACKUP_DIR/snapshot" "$BACKUP_DIR/$dest_name"; do
-        if [ -d "$stale" ]; then
-            log "Removing stale $stale from previous attempt..."
-            sudo btrfs subvolume delete "$stale" || die "Failed to remove stale $stale"
+    for stale in "snapshot" "$dest_name"; do
+        if [ -d "$BACKUP_DIR/$stale" ]; then
+            log "Removing stale $BACKUP_DIR/$stale from previous attempt..."
+            sudo "$HELPER" delete "$stale" || die "Failed to remove stale $stale"
         fi
     done
 
     # Clean up partial receive on unexpected exit
-    trap 'if [ -d "$BACKUP_DIR/snapshot" ]; then sudo btrfs subvolume delete "$BACKUP_DIR/snapshot" 2>/dev/null || true; fi' EXIT
+    trap 'if [ -d "$BACKUP_DIR/snapshot" ]; then sudo "$HELPER" delete snapshot 2>/dev/null || true; fi' EXIT
 
     if [ -n "$parent" ]; then
         log "Incremental send: #$parent -> #$newest"
         ssh "$SSH_TARGET" "sudo btrfs send -p /.snapshots/${parent}/snapshot /.snapshots/${newest}/snapshot" \
-            | sudo btrfs receive "$BACKUP_DIR/" \
+            | sudo "$HELPER" receive \
             || die "Incremental btrfs send/receive failed (#$parent -> #$newest)"
     else
         log "Full send: #$newest"
         ssh "$SSH_TARGET" "sudo btrfs send /.snapshots/${newest}/snapshot" \
-            | sudo btrfs receive "$BACKUP_DIR/" \
+            | sudo "$HELPER" receive \
             || die "Full btrfs send/receive failed (#$newest)"
     fi
 
     # btrfs receive creates a subvolume named "snapshot"; rename to include the number
     if [ -d "$BACKUP_DIR/snapshot" ]; then
-        sudo mv "$BACKUP_DIR/snapshot" "$BACKUP_DIR/$dest_name"
+        sudo "$HELPER" rename snapshot "$dest_name"
     fi
 
     # Update state file and clear trap (receive succeeded)
@@ -153,7 +155,7 @@ if [ "$DRY_RUN" = false ]; then
         for ((i = 0; i < prune_count; i++)); do
             old="${existing[$i]}"
             log "Deleting $BACKUP_DIR/snapshot-$old"
-            sudo btrfs subvolume delete "$BACKUP_DIR/snapshot-$old" \
+            sudo "$HELPER" delete "snapshot-$old" \
                 || warn "Failed to delete snapshot-$old"
         done
     fi
