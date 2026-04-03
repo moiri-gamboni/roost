@@ -1,11 +1,18 @@
 # Roost shell configuration
-# Sourced from ~/.bashrc via ~/.bashrc.d/roost.sh
+# Sourced from ~/.bashrc and ~/.profile via ~/.bashrc.d/$ROOST_DIR_NAME.sh
+
+# Guard against double-sourcing (interactive login shells source both .profile and .bashrc)
+[[ -n "${_ROOST_ENV_LOADED:-}" ]] && return
+export _ROOST_ENV_LOADED=1
 
 export ROOST_DIR_NAME="${ROOST_DIR_NAME:?ROOST_DIR_NAME not set}"
 _ROOST_DIR="$HOME/$ROOST_DIR_NAME"
 
 # Claude Code config lives under ~/roost/claude/
 export CLAUDE_CONFIG_DIR="$_ROOST_DIR/claude"
+
+# Ensure true-color support is advertised over SSH (not forwarded by default)
+[[ -z "${COLORTERM:-}" ]] && export COLORTERM=truecolor
 
 # Go
 export PATH=$PATH:/usr/local/go/bin:~/go/bin
@@ -22,8 +29,7 @@ fi
 # Local binaries
 export PATH=$PATH:~/bin:~/.local/bin
 
-# Roost server management
-alias roost-apply="$_ROOST_DIR/claude/hooks/roost-apply.sh"
+# Roost server management (symlink created by setup/shell-config.sh)
 
 # --- GitHub token resolution ---
 

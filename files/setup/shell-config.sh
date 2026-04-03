@@ -29,6 +29,23 @@ fi
     envsubst '$ROOST_DIR_NAME' < "$REMOTE_DIR/files/bashrc-append.sh"
 } >> "$BASHRC"
 
+# Append to ~/.profile so non-interactive shells also get PATH/env setup
+PROFILE="$HOME_DIR/.profile"
+if grep -q "$MARKER" "$PROFILE" 2>/dev/null; then
+    marker_line=$(grep -n "$MARKER" "$PROFILE" | head -1 | cut -d: -f1)
+    if [ "$marker_line" -gt 1 ]; then
+        prev_line=$((marker_line - 1))
+        if sed -n "${prev_line}p" "$PROFILE" | grep -q '^$'; then
+            sed -i "${prev_line}d" "$PROFILE"
+        fi
+    fi
+    sed -i "/$MARKER/,\$d" "$PROFILE"
+fi
+{
+    echo ""
+    echo "$MARKER"
+    envsubst '$ROOST_DIR_NAME' < "$REMOTE_DIR/files/profile-append.sh"
+} >> "$PROFILE"
 echo "  [+] tmux and shell configured"
 
 # --- Directory structure ---
@@ -60,6 +77,10 @@ echo "  [+] Directory structure created"
 cp "$REMOTE_DIR/files/shell/bashrc.sh" "$HOME_DIR/.bashrc.d/$ROOST_DIR_NAME.sh"
 chown "$USERNAME:$USERNAME" "$HOME_DIR/.bashrc.d/$ROOST_DIR_NAME.sh"
 echo "  [+] Shell config deployed to $HOME_DIR/.bashrc.d/$ROOST_DIR_NAME.sh"
+
+# Symlink roost-apply into ~/bin so it works in non-interactive shells (e.g. Claude Code Bash tool)
+ln -sf "$ROOST_DIR/claude/hooks/roost-apply.sh" "$HOME_DIR/bin/roost-apply"
+chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-apply"
 
 # --- Git identity ---
 if [ -n "${GIT_USER_NAME:-}" ] && [ -n "${GIT_USER_EMAIL:-}" ]; then
