@@ -916,6 +916,14 @@ remote_script "setup/agent-tools.sh"
 ok "Agent tools ready"
 
 # ============================================
+# Clipboard Forwarding (SSH image paste)
+# ============================================
+
+section "Clipboard Forwarding"
+remote_script "setup/clip-forward.sh"
+ok "clip-forward shims installed"
+
+# ============================================
 # Glances (System Monitoring)
 # ============================================
 

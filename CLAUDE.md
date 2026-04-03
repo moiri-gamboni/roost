@@ -93,12 +93,14 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
     - `cloudflare-assemble.sh` -- Assembles cloudflare config from base header + app fragments
   - `skills/` -- Claude Code skills deployed to `$CLAUDE_CONFIG_DIR/skills/`
     - `html2markdown/SKILL.md`, `havelock-api/SKILL.md`
-  - `setup/` -- Modular setup scripts, run via `remote_script()` in deploy.sh: `system`, `create-user`, `ssh-hardening`, `ufw`, `ipv6-disable`, `swap`, `snapper` (btrfs), `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `unattended-upgrades`. Also `harden-hooks` (manual, not called by deploy.sh)
+  - `sshd/` -- sshd drop-in configs (`50-clip-forward.conf`: `StreamLocalBindUnlink yes`)
+  - `setup/` -- Modular setup scripts, run via `remote_script()` in deploy.sh: `system`, `create-user`, `ssh-hardening`, `ufw`, `ipv6-disable`, `swap`, `snapper` (btrfs), `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `clip-forward`, `unattended-upgrades`. Also `harden-hooks` (manual, not called by deploy.sh)
   - `laptop/` -- Scripts and systemd units designed to run on the laptop, not the server
     - `btrfs-backup.sh` -- Pull-based incremental btrfs snapshot backup (laptop SSHes to server, `btrfs send`/`receive`)
     - `roost-backup.service` / `roost-backup.timer` -- Daily systemd timer for btrfs backup (`RandomizedDelaySec=1h`, `Persistent=true`)
     - `drop-watch.sh` -- inotifywait-based folder watcher; auto-rsyncs `~/drop/` to server on change
     - `drop-watch.service` -- Systemd unit for the drop folder watcher
+    - `clip-forward.service` -- Clipboard forwarding daemon (image paste over SSH)
 - **`extras/`** -- Standalone utilities not part of the main setup flow
   - `hetzner-watch.sh` -- Polls Hetzner API for server type availability, sends ntfy alerts
 - **`test-server.sh`** -- Server verification script; tests services over SSH, logs to `logs/`

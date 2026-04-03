@@ -115,6 +115,7 @@ files/ram-monitor.service|/etc/systemd/system/ram-monitor.service|envsubst:USERN
 files/ram-monitor.timer|/etc/systemd/system/ram-monitor.timer|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload,restart:ram-monitor.timer
 files/cron-roost|/etc/cron.d/$ROOST_DIR_NAME|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|
 files/tmux.conf|$HOME_DIR/.tmux.conf|plain|run:tmux source-file ~/.tmux.conf
+files/sshd/50-clip-forward.conf|/etc/ssh/sshd_config.d/50-clip-forward.conf|plain|restart:ssh
 MANIFEST_B
 }
 

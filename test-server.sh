@@ -550,6 +550,28 @@ else
     fail "claude-code-transcripts"
 fi
 
+# ── Clipboard Forwarding ─────────────────────────────────────
+echo ""
+echo "--- Clipboard Forwarding ---"
+
+if run test -f /etc/ssh/sshd_config.d/50-clip-forward.conf; then
+    pass "sshd clip-forward drop-in exists"
+else
+    fail "sshd clip-forward drop-in missing"
+fi
+
+if run test -d "$HOME_DIR/.local/lib/clip-forward/shims" && run test -x "$HOME_DIR/.local/lib/clip-forward/shims/xclip"; then
+    pass "clip-forward shims installed"
+else
+    fail "clip-forward shims missing"
+fi
+
+if run_login "command -v clip-forward" >/dev/null 2>&1; then
+    pass "clip-forward installed"
+else
+    fail "clip-forward"
+fi
+
 # ── Cron Jobs ─────────────────────────────────────────────────
 echo ""
 echo "--- Cron Jobs ---"
