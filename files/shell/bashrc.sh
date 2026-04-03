@@ -56,13 +56,13 @@ _resolve_gh_token() {
 # should use tmux send-keys instead of direct commands).
 _ensure_tmux() {
     if [[ -n "${TMUX:-}" ]]; then
-        return 0
+        return 0  # inside tmux
     fi
     if tmux has-session -t main 2>/dev/null; then
-        return 1
+        return 1  # session exists, need attach
     fi
-    tmux new-session -d -s main
-    return 1
+    tmux new-session -d -s main -n shell
+    return 2  # new session created, need attach (shell window already exists)
 }
 
 # Launch an interactive Claude session in a tmux window.
@@ -112,14 +112,18 @@ agent() {
     done
 
     _ensure_tmux
-    local need_attach=$?
-    # Ensure a shell window exists for launching more agents
-    if [[ $need_attach -eq 1 ]] || ! echo "$existing" | grep -Fqx shell; then
+    local state=$?
+    # Ensure a shell window exists (state=2 means _ensure_tmux already created one)
+    if [[ $state -ne 2 ]] && ! echo "$existing" | grep -Fqx shell; then
         tmux new-window -t main -n shell -d
     fi
-    tmux new-window -t main -n "$name" "${cmd_parts[*]}"
-    if [[ $need_attach -eq 1 ]]; then
-        tmux new-session -t main -s "main-$$"
+    if [[ $state -eq 0 ]]; then
+        # Inside tmux: target current (grouped) session so it switches to the new window
+        tmux new-window -n "$name" "${cmd_parts[*]}"
+    else
+        # Outside tmux: create window in main, then attach via grouped session
+        tmux new-window -t main -n "$name" "${cmd_parts[*]}"
+        tmux new-session -t main -s "main-$$" \; select-window -t "$name"
     fi
 }
 
