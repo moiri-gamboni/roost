@@ -3,9 +3,9 @@
 # Runs on the LAPTOP via systemd user service (drop-watch.service).
 set -euo pipefail
 
-SERVER_HOST="${ROOST_SERVER:-roost}"
+SERVER_HOST="${ROOST_SERVER:?set ROOST_SERVER or configure in service file}"
 SERVER_USER="${ROOST_USER:?set ROOST_USER or configure in service file}"
-ROOST_DIR_NAME="${ROOST_DIR_NAME:-roost}"
+ROOST_DIR_NAME="${ROOST_DIR_NAME:?set ROOST_DIR_NAME or configure in service file}"
 DROP_DIR="${HOME}/drop"
 
 usage() {
@@ -18,7 +18,7 @@ Options:
   --help    Show this help message
 
 Environment variables:
-  ROOST_SERVER  Server hostname (default: roost)
+  ROOST_SERVER  Server hostname (required, set via service file)
   ROOST_USER    SSH user (required, set via service file)
 EOF
     exit 0

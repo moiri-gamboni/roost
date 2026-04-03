@@ -1,3 +1,3 @@
-# Source roost shell configuration
-export ROOST_DIR_NAME="${ROOST_DIR_NAME:-roost}"
-[ -f "$HOME/.bashrc.d/roost.sh" ] && source "$HOME/.bashrc.d/roost.sh"
+# Source shell configuration
+export ROOST_DIR_NAME="${ROOST_DIR_NAME}"
+[ -f "${HOME}/.bashrc.d/${ROOST_DIR_NAME}.sh" ] && source "${HOME}/.bashrc.d/${ROOST_DIR_NAME}.sh"

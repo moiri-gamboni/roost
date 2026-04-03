@@ -7,7 +7,7 @@ source "$(dirname "$0")/../_setup-env.sh"
 cp "$REMOTE_DIR/files/tmux.conf" "$HOME_DIR/.tmux.conf"
 chown "$USERNAME:$USERNAME" "$HOME_DIR/.tmux.conf"
 
-MARKER="# === self-host-setup ==="
+MARKER="# === roost-setup ==="
 BASHRC="$HOME_DIR/.bashrc"
 
 # Remove old marker block + preceding blank line to prevent accumulation on re-deploy
@@ -26,12 +26,9 @@ fi
 {
     echo ""
     echo "$MARKER"
-    cat "$REMOTE_DIR/files/bashrc-append.sh"
+    envsubst '$ROOST_DIR_NAME' < "$REMOTE_DIR/files/bashrc-append.sh"
 } >> "$BASHRC"
 
-if [ "$ROOST_DIR_NAME" != "roost" ]; then
-    sed -i "s|ROOST_DIR_NAME:-roost|ROOST_DIR_NAME:-$ROOST_DIR_NAME|g" "$BASHRC"
-fi
 echo "  [+] tmux and shell configured"
 
 # --- Directory structure ---
@@ -60,12 +57,9 @@ chmod 700 "$HOME_DIR/.config/git/tokens"
 echo "  [+] Directory structure created"
 
 # --- Deploy bashrc.sh to ~/.bashrc.d/ ---
-cp "$REMOTE_DIR/files/shell/bashrc.sh" "$HOME_DIR/.bashrc.d/roost.sh"
-chown "$USERNAME:$USERNAME" "$HOME_DIR/.bashrc.d/roost.sh"
-echo "  [+] Shell config deployed to $HOME_DIR/.bashrc.d/roost.sh"
-
-# Clean up old shell config location
-rm -rf "$ROOST_DIR/shell"
+cp "$REMOTE_DIR/files/shell/bashrc.sh" "$HOME_DIR/.bashrc.d/$ROOST_DIR_NAME.sh"
+chown "$USERNAME:$USERNAME" "$HOME_DIR/.bashrc.d/$ROOST_DIR_NAME.sh"
+echo "  [+] Shell config deployed to $HOME_DIR/.bashrc.d/$ROOST_DIR_NAME.sh"
 
 # --- Git identity ---
 if [ -n "${GIT_USER_NAME:-}" ] && [ -n "${GIT_USER_EMAIL:-}" ]; then

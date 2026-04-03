@@ -11,7 +11,7 @@ fi
 source "$REMOTE_DIR/.env"
 
 HOME_DIR="/home/$USERNAME"
-export ROOST_DIR_NAME="${ROOST_DIR_NAME:-roost}"
+export ROOST_DIR_NAME="${ROOST_DIR_NAME:?ROOST_DIR_NAME not set in .env}"
 export ROOST_DIR="$HOME_DIR/$ROOST_DIR_NAME"
 
 # User environment setup, sourced by as_user() before running commands.

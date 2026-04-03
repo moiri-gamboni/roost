@@ -32,8 +32,7 @@ done
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/.env"
 
-# Configurable sync directory name (default: roost)
-ROOST_DIR_NAME="${ROOST_DIR_NAME:-roost}"
+ROOST_DIR_NAME="${ROOST_DIR_NAME:?Set ROOST_DIR_NAME in .env}"
 
 # Git identity from the deployer's local config
 GIT_USER_NAME="${GIT_USER_NAME:-$(git config user.name 2>/dev/null || true)}"
@@ -364,31 +363,31 @@ fi
 # --- Cloud Firewall ---
 
 info "Configuring cloud firewall..."
-if hcloud firewall describe roost-fw &>/dev/null; then
-    skip "Firewall 'roost-fw' exists"
+if hcloud firewall describe "${SERVER_NAME}-fw" &>/dev/null; then
+    skip "Firewall '"${SERVER_NAME}-fw"' exists"
 else
-    hcloud firewall create --name roost-fw
+    hcloud firewall create --name "${SERVER_NAME}-fw"
 
     # Tailscale WireGuard (permanent)
-    hcloud firewall add-rule roost-fw \
+    hcloud firewall add-rule "${SERVER_NAME}-fw" \
         --direction in --protocol udp --port 41641 \
         --source-ips 0.0.0.0/0 --source-ips ::/0 \
         --description "Tailscale WireGuard"
 
-    ok "Firewall 'roost-fw' created"
+    ok "Firewall '"${SERVER_NAME}-fw"' created"
 fi
 
 # Temporary SSH rule for deploy (removed at end of script).
 # Delete first to avoid duplicates from interrupted previous runs.
 SSH_RULE_ARGS=(--direction in --protocol tcp --port 22
     --source-ips 0.0.0.0/0 --source-ips ::/0 --description "SSH")
-hcloud firewall delete-rule roost-fw "${SSH_RULE_ARGS[@]}" || true
-hcloud firewall add-rule roost-fw "${SSH_RULE_ARGS[@]}"
+hcloud firewall delete-rule "${SERVER_NAME}-fw" "${SSH_RULE_ARGS[@]}" || true
+hcloud firewall add-rule "${SERVER_NAME}-fw" "${SSH_RULE_ARGS[@]}"
 ok "Temporary SSH rule added"
 
 # Attach firewall to existing server (hcloud is silent if already attached)
 if [ "$EXISTING" = true ]; then
-    hcloud firewall apply-to-resource roost-fw --type server --server "$SERVER_NAME" || true
+    hcloud firewall apply-to-resource "${SERVER_NAME}-fw" --type server --server "$SERVER_NAME" || true
     ok "Firewall attached to $SERVER_NAME"
 fi
 
@@ -412,7 +411,7 @@ else
         --type "$SERVER_TYPE"
         --image ubuntu-24.04
         --ssh-key "$SSH_KEY_NAME"
-        --firewall roost-fw
+        --firewall "${SERVER_NAME}-fw"
         --enable-backup
     )
 
@@ -1012,7 +1011,7 @@ remote "rm -rf $REMOTE_DIR"
 ssh -O exit -o ControlPath="$SSH_CONTROL_SOCKET" "root@$SERVER_IP" || true
 
 # Remove temporary SSH rule (public SSH locked out; use Tailscale from now on)
-hcloud firewall delete-rule roost-fw "${SSH_RULE_ARGS[@]}" || true
+hcloud firewall delete-rule "${SERVER_NAME}-fw" "${SSH_RULE_ARGS[@]}" || true
 ok "Temporary SSH rule removed (public SSH locked out)"
 
 # ============================================

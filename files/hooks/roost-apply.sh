@@ -35,7 +35,7 @@ source_env() {
         echo "Error: $sync_env not found. Run deploy.sh first." >&2
         exit 1
     fi
-    ROOST_DIR_NAME="${ROOST_DIR_NAME:-roost}"
+    ROOST_DIR_NAME="${ROOST_DIR_NAME:?ROOST_DIR_NAME not set}"
     TUNNEL_NAME="${CLOUDFLARE_TUNNEL_NAME:-$ROOST_DIR_NAME}"
     HOME_DIR="/home/$USERNAME"
     ROOST_DIR="$HOME_DIR/$ROOST_DIR_NAME"
@@ -156,11 +156,7 @@ render_file() {
             cat "$full_path"
             ;;
         sed-roost)
-            if [ "$ROOST_DIR_NAME" != "roost" ]; then
-                sed "s|~/roost/|~/$ROOST_DIR_NAME/|g" "$full_path"
-            else
-                cat "$full_path"
-            fi
+            sed "s|~/roost/|~/$ROOST_DIR_NAME/|g" "$full_path"
             ;;
         envsubst:*)
             local vars_csv="${transform#envsubst:}"

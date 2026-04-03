@@ -6,7 +6,7 @@ set -euo pipefail
 source "$(dirname "$0")/_hook-env.sh"
 
 CONFIG="/etc/cloudflared/config.yml"
-APPS_DIR="$HOME/${ROOST_DIR_NAME:-roost}/cloudflared/apps"
+APPS_DIR="$HOME/${ROOST_DIR_NAME}/cloudflared/apps"
 
 if [ ! -f "$CONFIG" ]; then
     logger -t "$_HOOK_TAG" "No existing $CONFIG, nothing to assemble"

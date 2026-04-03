@@ -54,11 +54,9 @@ chmod +x "$CLAUDE_DIR/hooks/dangerous-command-blocker.py"
 
 chown -R "$USERNAME:$USERNAME" "$CLAUDE_DIR/hooks"
 
-# Substitute ~/roost/ paths in settings.json and reflect.md if using a custom directory name
-if [ "$ROOST_DIR_NAME" != "roost" ]; then
-    sed -i "s|~/roost/|~/$ROOST_DIR_NAME/|g" "$CLAUDE_DIR/settings.json"
-    sed -i "s|~/roost/|~/$ROOST_DIR_NAME/|g" "$CLAUDE_DIR/hooks/reflect.md"
-fi
+# Substitute ~/roost/ paths in settings.json and reflect.md
+sed -i "s|~/roost/|~/$ROOST_DIR_NAME/|g" "$CLAUDE_DIR/settings.json"
+sed -i "s|~/roost/|~/$ROOST_DIR_NAME/|g" "$CLAUDE_DIR/hooks/reflect.md"
 
 ok "All hook scripts installed"
 
