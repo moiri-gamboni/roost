@@ -76,12 +76,15 @@ else
     echo "  [-] Git identity skipped (GIT_USER_NAME/GIT_USER_EMAIL not set)"
 fi
 
-# --- Git commit signing (SSH key) ---
-if [ -f "$HOME_DIR/.ssh/id_ed25519.pub" ]; then
-    as_user "git config --global gpg.format ssh"
-    as_user "git config --global user.signingkey '$HOME_DIR/.ssh/id_ed25519.pub'"
-    as_user "git config --global commit.gpgsign true"
-    echo "  [+] Git commit signing configured (SSH key)"
+# --- SSH key for commit signing ---
+if [ ! -f "$HOME_DIR/.ssh/id_ed25519" ]; then
+    as_user "ssh-keygen -t ed25519 -N '' -f '$HOME_DIR/.ssh/id_ed25519' -C '$USERNAME@$SERVER_NAME'"
+    echo "  [+] SSH key generated for commit signing"
 else
-    echo "  [-] Git signing skipped (no SSH key found)"
+    echo "  [-] SSH key already exists (skipping generation)"
 fi
+
+as_user "git config --global gpg.format ssh"
+as_user "git config --global user.signingkey '$HOME_DIR/.ssh/id_ed25519.pub'"
+as_user "git config --global commit.gpgsign true"
+echo "  [+] Git commit signing configured"
