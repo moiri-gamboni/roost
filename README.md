@@ -100,6 +100,17 @@ These steps must be completed manually after the deploy script finishes.
 
 Tests ~50 checks over SSH: connectivity, filesystem, SSH hardening, all services, hooks, directory structure, dev tools, cron.
 
+**Register the server's SSH key on GitHub as a signing key:**
+
+deploy.sh generates an SSH key on the server and configures git to sign commits with it. Register the public key on GitHub so signed commits show as "Verified":
+
+1. Print the key: `ssh <username>@<server> cat ~/.ssh/id_ed25519.pub`
+2. Go to https://github.com/settings/keys > New SSH key
+3. Key type: **Signing Key** (not Authentication Key)
+4. Paste the public key
+
+If the same key was previously registered as an authentication key, delete it and re-add as signing only.
+
 **If you didn't set `TAILSCALE_API_KEY` in `.env`**, restrict ACLs manually at https://login.tailscale.com/admin/acls:
 
 ```jsonc
