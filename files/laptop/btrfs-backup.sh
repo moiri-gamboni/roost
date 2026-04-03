@@ -65,16 +65,16 @@ if [ ! -d "$BACKUP_DIR" ]; then
     die "Backup directory $BACKUP_DIR does not exist (must be a btrfs filesystem)"
 fi
 
-# List snapper snapshots on server (timeline type only)
+# List snapper snapshots on server (timeline snapshots only)
 log "Listing snapshots on $SERVER_HOST..."
-raw_list=$(ssh "$SSH_TARGET" "sudo snapper -c root list --columns number,date,type,description --machine-readable") \
+raw_list=$(ssh "$SSH_TARGET" "sudo snapper -c root --csvout --no-headers list --columns number,type,description") \
     || die "Failed to list snapshots on $SERVER_HOST"
 
 # Parse timeline snapshots, pick the newest
 newest=""
-while IFS='|' read -r num date type desc; do
-    # Skip header or non-timeline
-    [ "$type" = "timeline" ] || continue
+while IFS=',' read -r num type desc; do
+    # Timeline snapshots are type=single with description=timeline
+    [ "$desc" = "timeline" ] || continue
     newest="$num"
 done <<< "$raw_list"
 
@@ -86,7 +86,7 @@ parent=""
 if [ "$FORCE_FULL" = false ] && [ -f "$STATE_FILE" ]; then
     parent=$(cat "$STATE_FILE")
     # Verify parent still exists on server
-    if ! echo "$raw_list" | grep -q "^${parent}|"; then
+    if ! echo "$raw_list" | grep -q "^${parent},"; then
         warn "Parent snapshot #$parent no longer exists on server, falling back to full send"
         parent=""
     fi

@@ -5,6 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+User=${USERNAME}
 ExecStart=/usr/local/bin/roost-backup
 Environment=ROOST_SERVER=${SERVER_NAME}
 Environment=ROOST_USER=${USERNAME}
