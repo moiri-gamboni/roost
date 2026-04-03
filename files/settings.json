@@ -4,6 +4,8 @@
   },
   "cleanupPeriodDays": 99999,
   "autoCompactEnabled": false,
+  "autoMemoryEnabled": false,
+  "effortLevel": "high",
   "hooks": {
     "SessionStart": [
       {
