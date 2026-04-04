@@ -2,8 +2,10 @@
 # Sourced from ~/.bashrc and ~/.profile via ~/.bashrc.d/$ROOST_DIR_NAME.sh
 
 # Guard against double-sourcing (interactive login shells source both .profile and .bashrc)
-[[ -n "${_ROOST_ENV_LOADED:-}" ]] && return
-export _ROOST_ENV_LOADED=1
+# Uses function check instead of a variable — VS Code Remote injects env vars into terminals,
+# which would cause a variable-based guard to block sourcing in new terminals.
+type _roost_env_loaded &>/dev/null && return
+_roost_env_loaded() { :; }
 
 export ROOST_DIR_NAME="${ROOST_DIR_NAME:?ROOST_DIR_NAME not set}"
 _ROOST_DIR="$HOME/$ROOST_DIR_NAME"
