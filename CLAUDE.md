@@ -51,7 +51,7 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
 ## Script Roles
 
 - **`deploy.sh`** -- Full provisioning and setup, run from your laptop. Sources `.env`, logs to `logs/` (gitignored). Idempotent and safe to re-run.
-- **`roost-apply`** (server-side alias) -- Single tool for deploying config changes and reloading services. Subcommand mode (`diff`/`push`/`list`) handles manifest-based file deployment with `chattr +i` management, `systemctl daemon-reload`, and batched service restarts. Flag mode (`--caddy`/`--cloudflare`/`--ntfy`/`--systemd`/`--cron`/`--all`) reloads specific services directly. Environment from `.sync-env`.
+- **`roost-apply`** (`~/bin/` symlink to `hooks/roost-apply.sh`) -- Single tool for deploying config changes and reloading services. Subcommand mode (`diff`/`push`/`list`) handles manifest-based file deployment with `chattr +i` management, `systemctl daemon-reload`, and batched service restarts. Flag mode (`--caddy`/`--cloudflare`/`--ntfy`/`--systemd`/`--cron`/`--all`) reloads specific services directly. Environment from `.sync-env`.
 
 ## Key Design Patterns
 
@@ -83,7 +83,8 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
   - `glances.service` -- Systemd unit for Glances monitoring
   - `ram-monitor.service` / `ram-monitor.timer` -- Systemd units for per-process RAM alerting (30s interval)
   - `cron-roost` -- Crontab entries for health checks, scheduled tasks, auto-update
-  - `bashrc-append.sh` -- Stable 2-line stub appended to `~/.bashrc`; sources `~/.bashrc.d/roost.sh`
+  - `bashrc-append.sh` -- Stub appended to `~/.bashrc`; sources `~/.bashrc.d/$ROOST_DIR_NAME.sh`
+  - `profile-append.sh` -- Stub appended to `~/.profile`; sources the same file for non-interactive shells
   - `shell/bashrc.sh` -- Shell configuration (PATH, tmux, agent helpers); deployed to `~/.bashrc.d/roost.sh`
   - `hooks/` -- Shell scripts for Claude Code hooks and cron jobs
     - `_hook-env.sh` -- Shared library: JSON input parsing (`hook_json`), ntfy helpers, rate limiting, logging
