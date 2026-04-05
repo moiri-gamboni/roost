@@ -10,10 +10,10 @@
 # Options:
 #   -y, --yes    Skip confirmation prompts (push only)
 set -euo pipefail
-source "$(dirname "$0")/_hook-env.sh"
+source "$(dirname "$(readlink -f "$0")")/_hook-env.sh"
 
 # --- Paths ---
-_HOOKS_DIR="$(cd "$(dirname "$0")" && pwd)"
+_HOOKS_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 _ROOST_DIR="$(cd "$_HOOKS_DIR/../.." && pwd)"
 REPO_DIR="$_ROOST_DIR/code/server"
 
