@@ -1,4 +1,4 @@
 .env
 logs/
 repomix-output.xml
-files/private/
+files/private/  # separate git repo (claude-mds); commit changes there
