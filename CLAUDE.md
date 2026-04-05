@@ -71,7 +71,7 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
 - **`files/`** -- Config files and templates deployed to the server
   - `_setup-env.sh` -- Shared environment sourced by every setup script
   - `settings.json` -- Claude Code settings with hook definitions (SessionStart/End, PreCompact, Stop, PreToolUse, Notification)
-  - `private/` -- Gitignored; clone your private `claude-mds` repo here for personal CLAUDE.md files
+  - `private/` -- Separate git repo (`claude-mds`); commit changes there, then deploy with `roost-apply push`
     - `global-CLAUDE.md` -- Deployed to `$CLAUDE_CONFIG_DIR/CLAUDE.md` (`~/roost/claude/CLAUDE.md`); epistemic style, learning system, memory format
     - `code-CLAUDE.md` -- Deployed to `~/roost/code/CLAUDE.md`; safety, planning, search, agent, and tool conventions
   - `Caddyfile` -- Caddy reverse proxy config template (envsubst-expanded); imports `/etc/caddy/sites-enabled/*` for app routes
