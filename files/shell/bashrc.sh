@@ -85,6 +85,7 @@ _ensure_tmux() {
     fi
     tmux new-session -d -s main -n shell
     tmux set-option -w -t main:shell automatic-rename off
+    tmux select-pane -t main:shell -T shell
     return 2  # new session created, need attach (shell window already exists)
 }
 
@@ -147,6 +148,7 @@ agent() {
         if [[ $state -ne 0 ]] || tmux has-session -t main 2>/dev/null; then
             tmux new-window -t main -n shell -d
             tmux set-option -w -t main:shell automatic-rename off
+            tmux select-pane -t main:shell -T shell
         fi
     fi
     if [[ $state -eq 0 ]]; then
@@ -155,7 +157,11 @@ agent() {
     else
         # Outside tmux: create window in main, then attach via grouped session
         tmux new-window -t main -n "$name" "${cmd_parts[*]}"
-        tmux new-session -t main -s "main-$$" \; select-window -t "$name"
+        if tmux has-session -t "main-$$" 2>/dev/null; then
+            tmux attach-session -t "main-$$" \; select-window -t "$name"
+        else
+            tmux new-session -t main -s "main-$$" \; select-window -t "$name"
+        fi
     fi
 }
 
@@ -164,7 +170,11 @@ agents() {
     if [[ -n "${TMUX:-}" ]]; then
         tmux choose-window
     else
-        tmux new-session -t main -s "main-$$" \; choose-window
+        if tmux has-session -t "main-$$" 2>/dev/null; then
+            tmux attach-session -t "main-$$" \; choose-window
+        else
+            tmux new-session -t main -s "main-$$" \; choose-window
+        fi
     fi
 }
 
