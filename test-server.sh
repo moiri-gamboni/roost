@@ -544,6 +544,12 @@ else
     fail "claude-code-tools (aichat)"
 fi
 
+if run_login "command -v aichat-search" >/dev/null 2>&1; then
+    pass "aichat-search installed"
+else
+    fail "aichat-search"
+fi
+
 if run_login "command -v claude-code-transcripts" >/dev/null 2>&1; then
     pass "claude-code-transcripts installed"
 else
