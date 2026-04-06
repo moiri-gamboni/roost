@@ -347,13 +347,6 @@ The deployed `settings.json` includes:
 - **Dangerous command blocker** (PreToolUse hook, vendored from [claude-code-templates](https://github.com/davila7/claude-code-templates), MIT) blocks destructive shell commands
 - **Semantic search** via grepai, initialized on `~/roost/memory/` and `~/roost/claude/skills/`
 
-#### Hardening hooks
-
-Hook scripts and `settings.json` are protected with the immutable attribute
-(`chattr +i`) to prevent unauthorized modification. `deploy.sh` and
-`roost-apply push` automatically strip the flag before redeploying and
-re-apply it afterward.
-
 ## Updating Config After Deploy
 
 After the initial deploy, use `roost-apply` on the server to deploy changed files and reload services without re-running `deploy.sh`.
@@ -372,7 +365,7 @@ roost-apply push -y                     # Skip confirmation prompt
 roost-apply list                        # List all managed files in the manifest
 ```
 
-Push shows a diff preview and asks for confirmation. It handles `chattr +i` flags, groups `systemctl daemon-reload`, and batches service restarts.
+Push shows a diff preview and asks for confirmation. It groups `systemctl daemon-reload` and batches service restarts.
 
 **Flag mode** (direct service reload, for app-specific configs not in the manifest):
 
