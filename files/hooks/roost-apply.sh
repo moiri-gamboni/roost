@@ -405,30 +405,7 @@ cmd_push() {
         esac
     fi
 
-    # Phase 4: Detect and remove chattr +i flags
-    local immutable_files=()
-    for i in "${!changed_servers[@]}"; do
-        local sp="${changed_servers[$i]}"
-        local flags
-        if needs_root "$sp"; then
-            flags=$(sudo lsattr "$sp" 2>/dev/null || true)
-        else
-            flags=$(lsattr "$sp" 2>/dev/null || true)
-        fi
-        local attrs="${flags%% *}"
-        if [[ "$attrs" == *"i"* ]]; then
-            immutable_files+=("$sp")
-        fi
-    done
-
-    if [ ${#immutable_files[@]} -gt 0 ]; then
-        info "Removing immutable flags on ${#immutable_files[@]} file(s)..."
-        for f in "${immutable_files[@]}"; do
-            sudo chattr -i "$f"
-        done
-    fi
-
-    # Phase 5: Write files
+    # Phase 4: Write files
     local need_daemon_reload=false
     local -A services_to_restart=()
     local -a run_commands=()
@@ -481,15 +458,7 @@ cmd_push() {
         ok "${changed_repos[$i]} -> $sp"
     done
 
-    # Phase 6: Re-apply chattr +i flags
-    if [ ${#immutable_files[@]} -gt 0 ]; then
-        info "Re-applying immutable flags..."
-        for f in "${immutable_files[@]}"; do
-            sudo chattr +i "$f"
-        done
-    fi
-
-    # Phase 7: daemon-reload, restart services, run commands
+    # Phase 5: daemon-reload, restart services, run commands
     if [ "$need_daemon_reload" = true ]; then
         info "Running systemctl daemon-reload..."
         sudo systemctl daemon-reload

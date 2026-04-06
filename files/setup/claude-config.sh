@@ -34,9 +34,6 @@ fi
 
 # --- Hook scripts ---
 
-# Remove immutable flags if set (allows re-deploy after harden-hooks.sh)
-chattr -i "$CLAUDE_DIR/hooks/"*.sh "$CLAUDE_DIR/hooks/"*.md "$CLAUDE_DIR/hooks/"*.py "$CLAUDE_DIR/settings.json" 2>/dev/null || true
-
 # Install shared hook library
 cp "$REMOTE_DIR/files/hooks/_hook-env.sh" "$CLAUDE_DIR/hooks/_hook-env.sh"
 
@@ -59,6 +56,3 @@ sed -i "s|~/roost/|~/$ROOST_DIR_NAME/|g" "$CLAUDE_DIR/settings.json"
 sed -i "s|~/roost/|~/$ROOST_DIR_NAME/|g" "$CLAUDE_DIR/hooks/reflect.md"
 
 ok "All hook scripts installed"
-
-info "To make hooks immutable (protects against unauthorized modification):"
-info "  sudo bash $REMOTE_DIR/files/setup/harden-hooks.sh"

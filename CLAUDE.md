@@ -51,7 +51,7 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
 ## Script Roles
 
 - **`deploy.sh`** -- Full provisioning and setup, run from your laptop. Sources `.env`, logs to `logs/` (gitignored). Idempotent and safe to re-run.
-- **`roost-apply`** (`~/bin/` symlink to `hooks/roost-apply.sh`) -- Single tool for deploying config changes and reloading services. Subcommand mode (`diff`/`push`/`list`) handles manifest-based file deployment with `chattr +i` management, `systemctl daemon-reload`, and batched service restarts. Flag mode (`--caddy`/`--cloudflare`/`--ntfy`/`--systemd`/`--cron`/`--all`) reloads specific services directly. Environment from `.sync-env`.
+- **`roost-apply`** (`~/bin/` symlink to `hooks/roost-apply.sh`) -- Single tool for deploying config changes and reloading services. Subcommand mode (`diff`/`push`/`list`) handles manifest-based file deployment, `systemctl daemon-reload`, and batched service restarts. Flag mode (`--caddy`/`--cloudflare`/`--ntfy`/`--systemd`/`--cron`/`--all`) reloads specific services directly. Environment from `.sync-env`.
 
 ## Key Design Patterns
 
@@ -95,7 +95,7 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
   - `skills/` -- Claude Code skills deployed to `$CLAUDE_CONFIG_DIR/skills/`
     - `html2markdown/SKILL.md`, `havelock-api/SKILL.md`
   - `sshd/` -- sshd drop-in configs (`50-clip-forward.conf`: `StreamLocalBindUnlink yes`)
-  - `setup/` -- Modular setup scripts, run via `remote_script()` in deploy.sh: `system`, `create-user`, `ssh-hardening`, `ufw`, `ipv6-disable`, `swap`, `snapper` (btrfs), `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `clip-forward`, `unattended-upgrades`. Also `harden-hooks` (manual, not called by deploy.sh)
+  - `setup/` -- Modular setup scripts, run via `remote_script()` in deploy.sh: `system`, `create-user`, `ssh-hardening`, `ufw`, `ipv6-disable`, `swap`, `snapper` (btrfs), `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `clip-forward`, `unattended-upgrades`
   - `laptop/` -- Scripts and systemd units designed to run on the laptop, not the server
     - `btrfs-backup.sh` -- Pull-based incremental btrfs snapshot backup (laptop SSHes to server, `btrfs send`/`receive`)
     - `roost-backup.service` / `roost-backup.timer` -- Daily systemd timer for btrfs backup (`RandomizedDelaySec=1h`, `Persistent=true`)
@@ -163,7 +163,7 @@ All infrastructure runs as native systemd services installed via official apt re
 
 Caddy has a systemd drop-in that waits for Tailscale before starting. Updates are handled by `apt upgrade` (via auto-update.sh and unattended-upgrades).
 
-The `dangerous-command-blocker` PreToolUse hook is vendored from [claude-code-templates](https://github.com/davila7/claude-code-templates) (MIT license). `harden-hooks.sh` sets `chattr +i` on hook scripts and settings to protect against unauthorized modification; `roost-apply push` strips the flag before redeploying.
+The `dangerous-command-blocker` PreToolUse hook is vendored from [claude-code-templates](https://github.com/davila7/claude-code-templates) (MIT license).
 
 ## App-Specific Extensions
 
@@ -237,8 +237,6 @@ Snapper retention: 24 hourly, 7 daily, 4 weekly. Rollback: `snapper list`, then 
 **Tailscale ACLs**: The server is registered with `tag:server`. ACLs allow laptop/phone to reach the server but block the server from initiating connections to other devices. This limits blast radius if a prompt injection compromises a Claude session. When `TAILSCALE_API_KEY` is set in `.env`, `deploy.sh` sets the restrictive ACL policy automatically via the Tailscale API.
 
 **GitHub credentials**: Fine-grained PATs scoped to "Contents: Read and write" (plus other low-risk permissions) but explicitly excluding Administration, Workflows, Webhooks, Secrets, and Codespaces. This prevents a compromised session from modifying branch rulesets, injecting CI secrets, or exfiltrating code via webhooks. When `GITHUB_TOKEN_*` variables are set in `.env`, `deploy.sh` stores tokens on the server, authenticates `gh`, and configures git for HTTPS. Branch rulesets (block deletion and force push on main) are created automatically on personal repos when `gh` is installed and authenticated on the laptop.
-
-**Hook protection**: `chattr +i` on hook scripts and `settings.json` prevents modification. `harden-hooks.sh` applies the flags; `deploy.sh` and `roost-apply push` strip them before redeploying.
 
 ## Shell Conventions
 
