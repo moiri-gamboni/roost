@@ -109,6 +109,24 @@ for pkg in claude-code-tools claude-code-transcripts; do
     fi
 done
 
+# --- aichat-search (Rust binary, 7-day cooldown) ---
+# Uses rust-v* tags from the claude-code-tools repo (separate from PyPI releases).
+# No major_guard: binary has no --version flag, so we just re-download if the tag changed.
+AICHAT_SEARCH_JSON=$(curl -sf "https://api.github.com/repos/pchalasani/claude-code-tools/releases" \
+    | jq -r '[.[] | select(.tag_name | startswith("rust-v"))][0] // empty')
+AICHAT_SEARCH_TAG=$(echo "$AICHAT_SEARCH_JSON" | jq -r '.tag_name // empty')
+AICHAT_SEARCH_DATE=$(echo "$AICHAT_SEARCH_JSON" | jq -r '.published_at // empty')
+if [ -n "$AICHAT_SEARCH_TAG" ] && [ -n "$AICHAT_SEARCH_DATE" ]; then
+    AICHAT_SEARCH_EPOCH=$(date -d "$AICHAT_SEARCH_DATE" +%s 2>/dev/null || echo 0)
+    if [ $(($(date +%s) - AICHAT_SEARCH_EPOCH)) -ge $((7 * 86400)) ]; then
+        track "aichat-search" bash -c "curl -fsSL 'https://github.com/pchalasani/claude-code-tools/releases/download/${AICHAT_SEARCH_TAG}/aichat-search-linux-x86_64.tar.gz' -o /tmp/aichat-search.tar.gz && tar -C ~/bin -xzf /tmp/aichat-search.tar.gz aichat-search && rm -f /tmp/aichat-search.tar.gz"
+    else
+        logger -t "$_HOOK_TAG" "aichat-search: skipped (release < 7 days old)"
+    fi
+else
+    logger -t "$_HOOK_TAG" "aichat-search: skipped (no rust-v* release found)"
+fi
+
 # --- Go (7-day cooldown + major version guard) ---
 if github_release_cooldown_ok "golang/go" 7; then
     GO_LATEST=$(curl -sf 'https://go.dev/dl/?mode=json' | jq -r '.[0].version' | sed 's/^go//')
