@@ -75,6 +75,7 @@ _ensure_tmux() {
         return 1  # session exists, need attach
     fi
     tmux new-session -d -s main -n shell
+    tmux set-option -w -t main:shell automatic-rename off
     return 2  # new session created, need attach (shell window already exists)
 }
 
@@ -129,6 +130,7 @@ agent() {
     # Ensure a shell window exists (state=2 means _ensure_tmux already created one)
     if [[ $state -ne 2 ]] && ! echo "$existing" | grep -Fqx shell; then
         tmux new-window -t main -n shell -d
+        tmux set-option -w -t main:shell automatic-rename off
     fi
     if [[ $state -eq 0 ]]; then
         # Inside tmux: target current (grouped) session so it switches to the new window
