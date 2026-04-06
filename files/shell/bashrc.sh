@@ -74,6 +74,15 @@ _ensure_tmux() {
     if tmux has-session -t main 2>/dev/null; then
         return 1  # session exists, need attach
     fi
+    # Check if the main group survives via grouped sessions (main-$$)
+    local group_member
+    group_member=$(tmux list-sessions -F '#{session_name} #{session_group}' 2>/dev/null \
+        | awk '$2 == "main" {print $1; exit}')
+    if [[ -n "$group_member" ]]; then
+        # Recreate main by joining the existing group
+        tmux new-session -d -s main -t "$group_member"
+        return 1
+    fi
     tmux new-session -d -s main -n shell
     tmux set-option -w -t main:shell automatic-rename off
     return 2  # new session created, need attach (shell window already exists)
@@ -102,8 +111,13 @@ agent() {
     local name="$base_name"
 
     # Deduplicate: if window name exists, append -2, -3, etc.
+    # Inside tmux, list from current session (shares windows with the group)
     local existing
-    existing=$(tmux list-windows -t main -F '#{window_name}' 2>/dev/null || true)
+    if [[ -n "${TMUX:-}" ]]; then
+        existing=$(tmux list-windows -F '#{window_name}' 2>/dev/null || true)
+    else
+        existing=$(tmux list-windows -t main -F '#{window_name}' 2>/dev/null || true)
+    fi
     if echo "$existing" | grep -Fqx "$name"; then
         local i=2
         while echo "$existing" | grep -Fqx "${base_name}-${i}"; do
