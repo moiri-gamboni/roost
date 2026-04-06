@@ -128,9 +128,12 @@ agent() {
     _ensure_tmux
     local state=$?
     # Ensure a shell window exists (state=2 means _ensure_tmux already created one)
+    # When inside tmux (state=0), main might not exist if we're in a different session
     if [[ $state -ne 2 ]] && ! echo "$existing" | grep -Fqx shell; then
-        tmux new-window -t main -n shell -d
-        tmux set-option -w -t main:shell automatic-rename off
+        if [[ $state -ne 0 ]] || tmux has-session -t main 2>/dev/null; then
+            tmux new-window -t main -n shell -d
+            tmux set-option -w -t main:shell automatic-rename off
+        fi
     fi
     if [[ $state -eq 0 ]]; then
         # Inside tmux: target current (grouped) session so it switches to the new window
