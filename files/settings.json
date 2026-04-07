@@ -61,5 +61,18 @@
         ]
       }
     ]
+  },
+  "permissions": {
+    "defaultMode": "acceptEdits"
+  },
+  "enabledPlugins": {
+    "claude-code-setup@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true,
+    "context-mode@context-mode": true,
+    "playground@claude-plugins-official": true,
+    "plugin-dev@claude-plugins-official": true,
+    "praxis@praxis-marketplace": true,
+    "ralph-loop@claude-plugins-official": true,
+    "serena@claude-plugins-official": true
   }
 }
