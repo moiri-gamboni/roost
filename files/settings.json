@@ -65,6 +65,7 @@
   "permissions": {
     "defaultMode": "acceptEdits",
     "allow": [
+      "Read",
       "WebSearch",
       "WebFetch",
       "mcp__exa__web_search_exa",
