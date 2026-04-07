@@ -68,7 +68,7 @@
   "enabledPlugins": {
     "claude-code-setup@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true,
-    "context-mode@context-mode": true,
+    "context-mode@context-mode": false,
     "playground@claude-plugins-official": true,
     "plugin-dev@claude-plugins-official": true,
     "praxis@praxis-marketplace": true,
