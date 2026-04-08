@@ -145,7 +145,7 @@ Hook scripts source `_hook-env.sh` (except `reflect.sh` which just cats a prompt
 Cron-triggered hooks (not Claude Code events):
 - `health-check.sh` -- Checks Ollama, Caddy, ntfy, Tailscale, cloudflared, disk, swap; alerts via ntfy. Sources `health-check-apps.sh` if present for app-specific checks.
 - `scheduled-task.sh` / `run-scheduled-task.sh` -- Runs Claude Code tasks in tmux windows. Two configured: daily 8:00 morning summary (ntfy history), Sunday 10:00 memory cleanup (deduplicates `~/roost/memory/`). Both run as headless `claude -p` in a `cron` tmux session.
-- `auto-update.sh` -- Weekly updates (Sunday 3am) with btrfs snapshot before, ntfy summary after. Safeguards: 7-day release cooldown, major version guard (blocked and reported via ntfy). Updated tools: Claude Code, claude-code-tools, aichat-search, claude-code-transcripts, Go, fnm, Node.js LTS, uv, Ollama models, grepai, gitleaks, OS packages. Logs: `journalctl -t roost/auto-update`.
+- `auto-update.sh` -- Weekly updates (Sunday 3am) with btrfs snapshot before, ntfy summary after. Safeguards: 7-day release cooldown, major version guard (blocked and reported via ntfy). Updated tools: Claude Code, claude-code-tools, aichat-search, claude-code-transcripts, Go, fnm, Node.js LTS, uv, Ollama models, grepai, gitleaks, Playwright Chromium, OS packages. Logs: `journalctl -t roost/auto-update`.
 
 Systemd timer (not cron):
 - `ram-monitor.sh` -- Alerts when any process exceeds 3GB RSS (runs every 30s via `ram-monitor.timer`, tracks notified PIDs to avoid repeats)

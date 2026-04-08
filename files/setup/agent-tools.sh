@@ -43,4 +43,14 @@ info "Installing claude-code-transcripts..."
 as_user "uv tool install claude-code-transcripts" || \
     info "claude-code-transcripts: install manually with 'uv tool install claude-code-transcripts'"
 
+# html2markdown (HTML to Markdown converter)
+if as_user "command -v html2markdown" &>/dev/null; then
+    skip "html2markdown already installed"
+else
+    info "Installing html2markdown..."
+    as_user "go install github.com/JohannesKaufmann/html-to-markdown/v2/cli/html2markdown@latest" && \
+        ok "html2markdown installed" || \
+        info "html2markdown: install manually with 'go install github.com/JohannesKaufmann/html-to-markdown/v2/cli/html2markdown@latest'"
+fi
+
 ok "Agent tools section complete"
