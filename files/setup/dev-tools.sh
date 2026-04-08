@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install development tools: fnm + Node.js, Go, uv, gitleaks.
+# Install development tools: fnm + Node.js + pnpm, Go, uv, gitleaks.
 source "$(dirname "$0")/../_setup-env.sh"
 
 # --- fnm + Node.js 22 ---
@@ -17,6 +17,28 @@ else
     as_user "fnm install --lts"
     ok "Node.js $(as_user 'node -v') installed"
 fi
+
+# --- pnpm (via corepack) ---
+
+if as_user "command -v pnpm" &>/dev/null; then
+    skip "pnpm already available"
+else
+    as_user "corepack enable pnpm"
+    ok "pnpm enabled via corepack"
+fi
+
+# --- Playwright + Chromium ---
+
+# install-deps runs apt-get, needs root; source user's fnm in a subshell for npx
+info "Installing Playwright system dependencies..."
+(
+    FNM_DIR="$HOME_DIR/.local/share/fnm"
+    [ -d "$FNM_DIR" ] && eval "$("$FNM_DIR/fnm" env --shell bash 2>/dev/null)"
+    npx --yes playwright install-deps chromium
+)
+info "Installing Chromium browser..."
+as_user "npm install -g playwright && playwright install chromium"
+ok "Playwright + Chromium ready"
 
 # --- Go ---
 
