@@ -758,7 +758,7 @@ if [ "${SKIP_PLUGINS:-}" != "true" ]; then
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install claude-md-management@claude-plugins-official" || warn "Failed to install claude-md-management plugin"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install playground@claude-plugins-official" || warn "Failed to install playground plugin"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install plugin-dev@claude-plugins-official" || warn "Failed to install plugin-dev plugin"
-    remote "sudo -u $USERNAME $CLAUDE_CMD mcp add --transport http exa https://mcp.exa.ai/mcp" || warn "Failed to add exa MCP server"
+    remote "sudo -u $USERNAME $CLAUDE_CMD mcp add --transport http --scope user exa https://mcp.exa.ai/mcp" || warn "Failed to add exa MCP server"
     ok "Claude Code plugins installed"
 fi
 
