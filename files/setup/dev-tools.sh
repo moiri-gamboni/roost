@@ -27,19 +27,6 @@ else
     ok "pnpm enabled via corepack"
 fi
 
-# --- Playwright + Chromium ---
-
-# install-deps runs apt-get, needs root; source user's fnm in a subshell for npx
-info "Installing Playwright system dependencies..."
-(
-    FNM_DIR="$HOME_DIR/.local/share/fnm"
-    [ -d "$FNM_DIR" ] && eval "$("$FNM_DIR/fnm" env --shell bash 2>/dev/null)"
-    npx --yes playwright install-deps chromium
-)
-info "Installing Chromium browser..."
-as_user "npm install -g playwright && playwright install chromium"
-ok "Playwright + Chromium ready"
-
 # --- Go ---
 
 if command -v go &>/dev/null; then
@@ -57,6 +44,15 @@ fi
 # Ensure Go is in user PATH
 grep -q '/usr/local/go/bin' "$HOME_DIR/.bashrc" || \
     echo 'export PATH=$PATH:/usr/local/go/bin:~/go/bin' >> "$HOME_DIR/.bashrc"
+
+# --- rodney (headless Chrome CLI via go-rod) ---
+
+if as_user "command -v rodney" &>/dev/null; then
+    skip "rodney already installed"
+else
+    as_user "GOPATH=\$HOME/go /usr/local/go/bin/go install github.com/simonw/rodney@latest"
+    ok "rodney installed"
+fi
 
 # --- uv ---
 
