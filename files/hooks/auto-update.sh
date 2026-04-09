@@ -200,8 +200,8 @@ else
     logger -t "$_HOOK_TAG" "gitleaks: skipped (release < 7 days old)"
 fi
 
-# --- Playwright Chromium (npm global, browser binary update) ---
-track "Playwright" bash -c "npm install -g playwright && playwright install chromium"
+# --- rodney (headless Chrome CLI) ---
+track "rodney" bash -c "go install github.com/simonw/rodney@latest"
 
 # --- OS packages ---
 track "OS packages" bash -c "sudo DEBIAN_FRONTEND=noninteractive apt update -qq && sudo DEBIAN_FRONTEND=noninteractive apt -o Dpkg::Options::='--force-confold' upgrade -y"
