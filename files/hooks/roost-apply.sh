@@ -84,6 +84,7 @@ files/hooks/session-lock.sh|$ROOST_DIR/claude/hooks/session-lock.sh|plain+x|
 files/hooks/session-unlock.sh|$ROOST_DIR/claude/hooks/session-unlock.sh|plain+x|
 files/hooks/reflect.sh|$ROOST_DIR/claude/hooks/reflect.sh|plain+x|
 files/hooks/notify.sh|$ROOST_DIR/claude/hooks/notify.sh|plain+x|
+files/hooks/statusline.sh|$ROOST_DIR/claude/hooks/statusline.sh|plain+x|
 files/hooks/health-check.sh|$ROOST_DIR/claude/hooks/health-check.sh|plain+x|
 files/hooks/scheduled-task.sh|$ROOST_DIR/claude/hooks/scheduled-task.sh|plain+x|
 files/hooks/run-scheduled-task.sh|$ROOST_DIR/claude/hooks/run-scheduled-task.sh|plain+x|

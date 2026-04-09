@@ -72,6 +72,10 @@
       "mcp__exa__web_fetch_exa"
     ]
   },
+  "statusLine": {
+    "type": "command",
+    "command": "~/roost/claude/hooks/statusline.sh"
+  },
   "enabledPlugins": {
     "claude-code-setup@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true,
