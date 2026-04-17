@@ -22,6 +22,15 @@ hook_input() {
 # Usage: hook_json '.session_id'
 hook_json() { hook_input | jq -r "$1 // empty"; }
 
+# --- ROOST_DIR_NAME (derive from this script's path if unset, e.g. under systemd) ---
+# Script lives at $HOME/$ROOST_DIR_NAME/claude/hooks/_hook-env.sh
+if [ -z "${ROOST_DIR_NAME:-}" ]; then
+    _hook_env_src="$(readlink -f "${BASH_SOURCE[0]}")"
+    ROOST_DIR_NAME="$(basename "$(dirname "$(dirname "$(dirname "$_hook_env_src")")")")"
+    export ROOST_DIR_NAME
+    unset _hook_env_src
+fi
+
 # --- CLAUDE_CONFIG_DIR (ensure it's set for cron-launched scripts) ---
 export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/${ROOST_DIR_NAME}/claude}"
 
