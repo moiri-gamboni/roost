@@ -437,6 +437,9 @@ cmd_push() {
         if needs_root "$sp"; then
             sudo mkdir -p "$parent_dir"
             printf '%s\n' "$content" | sudo tee "$sp" > /dev/null
+            # sudo tee preserves existing non-root ownership; enforce root:root 0644 for /etc/*
+            sudo chown root:root "$sp"
+            sudo chmod 644 "$sp"
         else
             mkdir -p "$parent_dir"
             printf '%s\n' "$content" > "$sp"
