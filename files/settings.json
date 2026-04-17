@@ -8,6 +8,7 @@
   "autoMemoryEnabled": false,
   "effortLevel": "high",
   "showThinkingSummaries": true,
+  "skipAutoPermissionPrompt": true,
   "hooks": {
     "SessionStart": [
       {
@@ -64,7 +65,7 @@
     ]
   },
   "permissions": {
-    "defaultMode": "bypassPermissions",
+    "defaultMode": "auto",
     "allow": [
       "Read",
       "WebSearch",
