@@ -87,6 +87,7 @@
     "plugin-dev@claude-plugins-official": true,
     "praxis@praxis-marketplace": true,
     "ralph-loop@claude-plugins-official": true,
-    "serena@claude-plugins-official": true
+    "serena@claude-plugins-official": true,
+    "strip-images@claude-strip-images": true
   }
 }
