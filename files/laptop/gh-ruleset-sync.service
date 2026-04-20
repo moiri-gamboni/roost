@@ -1,0 +1,10 @@
+[Unit]
+Description=Sync "Protect main" ruleset across GitHub repos
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=${USERNAME}
+ExecStart=/usr/local/bin/gh-ruleset-sync
+Environment=ROOST_NTFY_URL=${NTFY_URL}
