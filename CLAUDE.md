@@ -63,6 +63,16 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
 
 **Firewall model**: The Hetzner cloud firewall has a temporary SSH rule that exists only during deploys. `deploy.sh` adds it at the start and removes it at the end, so public SSH is locked out between deploys. UFW on the server allows SSH on port 22 (the cloud firewall controls whether traffic reaches it). Tailscale handles private access; Cloudflare Tunnel handles public web traffic. The only permanent public port is UDP 41641 (Tailscale WireGuard).
 
+**Dual-stack networking**: IPv6 is **enabled** server-wide. Hetzner provides a /64; the server binds `::1` of the prefix on eth0. Every firewall rule you add must cover both stacks:
+- `iptables ...` → add a matching `ip6tables ...` rule (same chain, same intent).
+- `ip rule add ...` → add a matching `ip -6 rule add ...`.
+- `ip route ...` in a named table → same for `ip -6 route ...`.
+- `ufw allow ...` → UFW manages both stacks automatically when `IPV6=yes` in `/etc/default/ufw` (Ubuntu default).
+- Hetzner cloud firewall rules added via `hcloud firewall add-rule` → pass **both** `--source-ips 0.0.0.0/0 --source-ips ::/0` so v6 traffic isn't silently dropped.
+- Anything sysctl-related on `net.ipv4.conf.*` almost always needs the `net.ipv6.conf.*` counterpart (`rp_filter` is an exception — v6 doesn't have it).
+
+Services that must stay **v4-only** pin their bind explicitly: Caddy via `default_bind $TAILSCALE_IP`, ntfy via `listen-http: "0.0.0.0:2586"`. New services that bind `:` or `::` will auto-pick-up v6 on dual-stack Linux — decide intentionally.
+
 **`~/roost/` directory**: All managed state lives under `~/$ROOST_DIR_NAME/` (default `~/roost/`, configurable via `ROOST_DIR_NAME` in `.env`). `CLAUDE_CONFIG_DIR=~/$ROOST_DIR_NAME/claude` redirects Claude Code's config there.
 
 ## File Layout
@@ -105,7 +115,7 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
     - `proton.conf.example` -- Template for the user's `/etc/wireguard/proton.conf`
     - `travel-health.sh` -- Deployed as `health-check-apps.sh`; sourced by the base health check
     - `travel-cloudflare.yml.tmpl` -- CF Tunnel ingress fragment (copied to `~/roost/cloudflared/apps/travel.yml` by `roost-net travel on`)
-  - `setup/` -- Modular setup scripts, run via `remote_script()` in deploy.sh: `system`, `create-user`, `ssh-hardening`, `ufw`, `ipv6-disable`, `swap`, `snapper` (btrfs), `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `travel-vpn`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `clip-forward`, `unattended-upgrades`
+  - `setup/` -- Modular setup scripts, run via `remote_script()` in deploy.sh: `system`, `create-user`, `ssh-hardening`, `ufw`, `swap`, `snapper` (btrfs), `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `travel-vpn`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `clip-forward`, `unattended-upgrades`
   - `laptop/` -- Scripts and systemd units designed to run on the laptop, not the server
     - `btrfs-backup.sh` -- Pull-based incremental btrfs snapshot backup (laptop SSHes to server, `btrfs send`/`receive`)
     - `roost-backup.service` / `roost-backup.timer` -- Daily systemd timer for btrfs backup (`RandomizedDelaySec=1h`, `Persistent=true`)

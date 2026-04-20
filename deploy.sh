@@ -612,14 +612,6 @@ if [ "$SSH_USER" = "root" ]; then
 fi
 
 # ============================================
-# Disable IPv6
-# ============================================
-
-section "Disable IPv6"
-remote_script "setup/ipv6-disable.sh"
-ok "IPv6 configuration applied"
-
-# ============================================
 # Swap
 # ============================================
 
