@@ -44,14 +44,16 @@ load_state_env() {
     set +a
 }
 
-# Query IP's ASN via ipinfo.io. Returns 0 if Proton (AS62371 "Proton AG").
-# Lenient on lookup failure: logs a warning and returns 0 to avoid blocking
-# on transient network flakiness (e.g. ipinfo rate limit).
+# Query IP's ASN via ipinfo.io.
+# Returns: 0 = Proton (AS62371 "Proton AG"), 1 = non-Proton, 2 = lookup failed.
+# Callers decide fail-open vs fail-closed: cmd_status/cmd_test treat 2 as
+# non-fatal; cmd_vpn on must fail-closed on 2 so a single ipinfo outage
+# doesn't let a Hetzner-egress leak through the ASN gate.
 is_proton_asn() {
     local ip="$1" org
     if ! org=$(curl -sf --max-time 5 "https://ipinfo.io/${ip}/org"); then
-        logger -t "$_HOOK_TAG" -p user.warning "ipinfo lookup failed for $ip; treating as Proton"
-        return 0
+        logger -t "$_HOOK_TAG" -p user.warning "ipinfo lookup failed for $ip"
+        return 2
     fi
     if printf '%s\n' "$org" | grep -qiE 'proton|AS62371'; then
         return 0
@@ -80,14 +82,15 @@ cmd_status() {
     fi
 
     echo
-    local ip
+    local ip asn_rc
     if ip=$(sudo -u xray curl -sf --max-time 5 https://api.ipify.org); then
         echo "Egress (default): $ip"
-        if is_proton_asn "$ip"; then
-            echo "  ASN: Proton"
-        else
-            echo "  ASN: Hetzner (or non-Proton)"
-        fi
+        is_proton_asn "$ip"; asn_rc=$?
+        case "$asn_rc" in
+            0) echo "  ASN: Proton" ;;
+            1) echo "  ASN: Hetzner (or non-Proton)" ;;
+            *) echo "  ASN: unknown (ipinfo lookup failed)" ;;
+        esac
     else
         echo "Egress (default): unreachable"
     fi
@@ -96,11 +99,12 @@ cmd_status() {
         local vpn_ip
         if vpn_ip=$(sudo -u xray curl -sf --max-time 5 --interface wg-proton https://api.ipify.org); then
             echo "Egress (wg-proton): $vpn_ip"
-            if is_proton_asn "$vpn_ip"; then
-                echo "  ASN: Proton"
-            else
-                echo "  ASN: non-Proton (unexpected — investigate)"
-            fi
+            is_proton_asn "$vpn_ip"; asn_rc=$?
+            case "$asn_rc" in
+                0) echo "  ASN: Proton" ;;
+                1) echo "  ASN: non-Proton (unexpected — investigate)" ;;
+                *) echo "  ASN: unknown (ipinfo lookup failed)" ;;
+            esac
         else
             echo "Egress (wg-proton): unreachable"
         fi
@@ -178,10 +182,13 @@ cmd_vpn() {
                 sudo systemctl disable --now wg-quick@proton
                 die "Egress verification failed (no response via wg-proton)"
             fi
-            if ! is_proton_asn "$ip"; then
+            # Fail-closed on 2 (lookup failed): the ASN gate is the only
+            # backstop against a Hetzner-egress leak after wg-quick up, so a
+            # single ipinfo outage must not rubber-stamp activation.
+            is_proton_asn "$ip" || {
                 sudo systemctl disable --now wg-quick@proton
-                die "Egress $ip is not a Proton ASN"
-            fi
+                die "Egress $ip ASN check failed (rc=$?; not Proton or ipinfo unreachable)"
+            }
             sudo systemctl enable --now proton-keepalive.timer
             echo "on" | sudo tee "$STATE_DIR/vpn" >/dev/null
             ntfy_send -t "VPN ON" "Egress: $ip"
@@ -229,10 +236,11 @@ cmd_test() {
             bash -c "ip route show table 51820 | grep -q 'default.*wg-proton'"
         assert "ip -6 route table 51820 has default via wg-proton" \
             bash -c "ip -6 route show table 51820 | grep -q 'default.*wg-proton'"
-        assert "ip rule: fwmark 0x1337 lookup 51820" \
-            bash -c "ip rule show | grep -q 'fwmark 0x1337 lookup 51820'"
-        assert "ip -6 rule: fwmark 0x1337 lookup 51820" \
-            bash -c "ip -6 rule show | grep -q 'fwmark 0x1337 lookup 51820'"
+        # Mask is required (Tailscale's upper bits would otherwise cause misses).
+        assert "ip rule: fwmark 0x1337/0xffff lookup 51820" \
+            bash -c "ip rule show | grep -q 'fwmark 0x1337/0xffff lookup 51820'"
+        assert "ip -6 rule: fwmark 0x1337/0xffff lookup 51820" \
+            bash -c "ip -6 rule show | grep -q 'fwmark 0x1337/0xffff lookup 51820'"
         # Kill-switch: xray uid without --interface wg-proton must NOT reach the internet.
         assert "kill-switch blocks xray default egress" \
             bash -c "! sudo -u xray curl -sf --max-time 5 https://api.ipify.org >/dev/null"
@@ -410,9 +418,14 @@ cmd_client() {
 
 cmd_rotate_keys() {
     local keys_init="$STATE_DIR/keys-init.sh"
+    local roost_apply="$ROOST_DIR/claude/hooks/roost-apply.sh"
     sudo test -x "$keys_init" || die "$keys_init missing or not executable"
+    [ -x "$roost_apply" ] || die "$roost_apply missing; can't re-render xray config"
     sudo "$keys_init" --force
-    sudo systemctl restart xray.service
+    # Restarting xray alone reloads the SAME /etc/xray/config.json, which still
+    # carries the pre-rotation credentials. --xray re-renders from state.env
+    # and installs with 0640 root:xray before restarting.
+    "$roost_apply" --xray
     ntfy_send -t "roost-net keys rotated" -p "high" \
         "XRAY_UUID, REALITY keypair, SS-2022 password regenerated. Redistribute client configs (roost-net client {android,laptop,ssh})."
     echo "Keys rotated. Regenerate and redistribute client configs:"
