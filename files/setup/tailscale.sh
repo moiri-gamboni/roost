@@ -10,7 +10,7 @@ else
 fi
 
 # Pin iptables backend (not nftables) so travel-vpn fwmark rules have
-# predictable Tailscale mark bits to mask around (see plan §2.5, M18).
+# predictable Tailscale mark bits to mask around.
 OVERRIDE_DIR="/etc/systemd/system/tailscaled.service.d"
 mkdir -p "$OVERRIDE_DIR"
 cp "$REMOTE_DIR/files/tailscaled-iptables.conf" "$OVERRIDE_DIR/iptables-pin.conf"
