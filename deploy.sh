@@ -987,7 +987,7 @@ if ! command -v gh &>/dev/null; then
 elif ! gh auth status &>/dev/null; then
     skip "gh CLI not authenticated on laptop"
 else
-    RULESET_BODY='{"name":"Protect main","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["refs/heads/main"],"exclude":[]}},"rules":[{"type":"deletion"},{"type":"non_fast_forward"}]}'
+    RULESET_FILE="$SCRIPT_DIR/files/laptop/protect-main.ruleset.json"
 
     GH_USER=$(gh api user -q .login 2>/dev/null || true)
     if [ -z "$GH_USER" ]; then
@@ -1002,7 +1002,7 @@ else
         EXISTING=$(gh api "repos/$repo/rulesets" 2>/dev/null | jq -r '.[] | select(.name == "Protect main") | .id' 2>/dev/null || true)
         if [ -n "$EXISTING" ]; then
             EXISTED=$((EXISTED + 1))
-        elif echo "$RULESET_BODY" | gh api "repos/$repo/rulesets" -X POST --input - >/dev/null 2>&1; then
+        elif gh api "repos/$repo/rulesets" -X POST --input "$RULESET_FILE" >/dev/null 2>&1; then
             CREATED=$((CREATED + 1))
         else
             FAILED=$((FAILED + 1))
