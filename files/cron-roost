@@ -15,3 +15,6 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 
 # Weekly auto-update (Sunday 3am, before weekly memory cleanup at 10am)
 0 3 * * 0 $USERNAME flock -n $HOME_DIR/.locks/auto-update $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/auto-update.sh
+
+# Weekly Travel-VPN audit (Sunday 4am): runs `roost-net test` when vpn=on to catch fwmark/kill-switch drift.
+0 4 * * 0 $USERNAME flock -n $HOME_DIR/.locks/travel-audit sh -c '[ "$(cat /etc/roost-travel/vpn 2>/dev/null)" = "on" ] && $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/roost-net.sh test; true'
