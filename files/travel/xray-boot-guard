@@ -21,8 +21,8 @@ fi
 
 for _ in $(seq 1 30); do
     if [ -d "/sys/class/net/$WG_IFACE" ] \
-       && iptables -S OUTPUT | grep -q 'owner UID match.*REJECT' \
-       && ip6tables -S OUTPUT | grep -q 'owner UID match.*REJECT'; then
+       && iptables -S OUTPUT | grep -qE -- '--uid-owner [^ ]+.*-j REJECT' \
+       && ip6tables -S OUTPUT | grep -qE -- '--uid-owner [^ ]+.*-j REJECT'; then
         logger -t "$TAG" "wg-proton up and kill-switch present; proceeding"
         exit 0
     fi
