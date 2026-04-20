@@ -81,6 +81,8 @@ echo "  [+] Shell config deployed to $HOME_DIR/.bashrc.d/$ROOST_DIR_NAME.sh"
 # Symlink roost-apply into ~/bin so it works in non-interactive shells (e.g. Claude Code Bash tool)
 ln -sf "$ROOST_DIR/claude/hooks/roost-apply.sh" "$HOME_DIR/bin/roost-apply"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-apply"
+ln -sf "$ROOST_DIR/claude/hooks/roost-net.sh" "$HOME_DIR/bin/roost-net"
+chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-net"
 
 # --- Git identity ---
 if [ -n "${GIT_USER_NAME:-}" ] && [ -n "${GIT_USER_EMAIL:-}" ]; then
