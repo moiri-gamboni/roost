@@ -93,8 +93,10 @@ log "fetching client config ($MODE) via ssh $SSH_TARGET"
 # -n : detach stdin so subshell capture doesn't deadlock on an SSH prompt.
 # BatchMode=yes : fail fast instead of prompting for a password.
 # ConnectTimeout=10 : refuse to hang on half-open networks (e.g. flaky hotels).
+# bash -lc : ~/bin is added to PATH only via ~/.profile on Ubuntu, which isn't
+# sourced for a non-interactive non-login SSH command shell; a login shell is.
 CONFIG=$(ssh -n -o BatchMode=yes -o ConnectTimeout=10 "$SSH_TARGET" \
-            "roost-net client $MODE") \
+            "bash -lc 'roost-net client $MODE'") \
     || die "ssh roost-net client $MODE failed (is Tailscale up? is roost-net installed?)"
 
 if [ -z "$CONFIG" ]; then
