@@ -639,7 +639,10 @@ cmd_flag_reload() {
         else
             skip "proton-keepalive.timer inactive (vpn=off)"
         fi
-        if ip link show wg-proton up >/dev/null 2>&1; then
+        # is-active distinguishes active-since-cmd_vpn-on from a lingering DOWN
+        # interface: restarting the unit on the latter would flip VPN on without
+        # going through cmd_vpn's ASN gate or state-file update.
+        if sudo systemctl is-active --quiet wg-quick@proton; then
             info "Restarting wg-quick@proton to pick up drop-in..."
             if sudo systemctl restart wg-quick@proton; then
                 ok "wg-quick@proton restarted"
@@ -647,7 +650,7 @@ cmd_flag_reload() {
                 reload_failed+=("wg-quick@proton")
             fi
         else
-            skip "wg-proton interface down (vpn=off)"
+            skip "wg-quick@proton inactive (vpn=off)"
         fi
     fi
 

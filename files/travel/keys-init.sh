@@ -114,5 +114,9 @@ SS2022_PASSWORD='$ss2022_password'
 EOF
 
 install -m 0600 -o root -g root "$tmpfile" "$STATE_FILE"
-logger -t "$TAG" "Wrote $STATE_FILE (uuid=$xray_uuid grpc=$grpc_service_name)"
+# Do NOT interpolate $xray_uuid / $grpc_service_name into the logger line:
+# journald is adm-group-readable on Ubuntu and retained for weeks, which
+# would leak the VLESS auth credential and Path-B obscurity token past
+# the 0600 protection of state.env itself.
+logger -t "$TAG" "Wrote $STATE_FILE"
 echo "Wrote $STATE_FILE"

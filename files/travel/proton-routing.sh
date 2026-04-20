@@ -46,13 +46,15 @@ case "$ACTION" in
         ip route replace default dev "$WG_IFACE" table "$TABLE"
         ip -6 route replace default dev "$WG_IFACE" table "$TABLE"
 
-        # Policy: marked traffic uses Proton table; unmarked falls through to main
-        ip rule add fwmark "$FWMARK" lookup "$TABLE" priority 200
-        ip -6 rule add fwmark "$FWMARK" lookup "$TABLE" priority 200
+        # Policy: marked traffic uses Proton table; unmarked falls through to main.
+        # Mask matches iptables --set-xmark MASK so Tailscale's upper mark bits
+        # (0x40000 forwarded-traffic) don't cause exact-match fwmark misses.
+        ip rule add fwmark "$FWMARK/0xffff" lookup "$TABLE" priority 200
+        ip -6 rule add fwmark "$FWMARK/0xffff" lookup "$TABLE" priority 200
 
         # Fallback: marked packets with no usable route get REJECTed (no silent leak)
-        ip rule add fwmark "$FWMARK" unreachable priority 300
-        ip -6 rule add fwmark "$FWMARK" unreachable priority 300
+        ip rule add fwmark "$FWMARK/0xffff" unreachable priority 300
+        ip -6 rule add fwmark "$FWMARK/0xffff" unreachable priority 300
 
         # Mark Xray-originated traffic (masked xmark preserves Tailscale's 0xff0000 bits)
         iptables  -t mangle -I OUTPUT -m owner --uid-owner "$XRAY_UID" -j MARK --set-xmark "${FWMARK}/${MASK}"
@@ -88,10 +90,10 @@ case "$ACTION" in
         [ -n "$ENDPOINT_V4" ] && ip rule del to "$ENDPOINT_V4" lookup main priority 50 2>/dev/null
         [ -n "$ENDPOINT_V6" ] && ip -6 rule del to "$ENDPOINT_V6" lookup main priority 50 2>/dev/null
 
-        ip rule del fwmark "$FWMARK" lookup "$TABLE" priority 200 2>/dev/null
-        ip rule del fwmark "$FWMARK" unreachable priority 300 2>/dev/null
-        ip -6 rule del fwmark "$FWMARK" lookup "$TABLE" priority 200 2>/dev/null
-        ip -6 rule del fwmark "$FWMARK" unreachable priority 300 2>/dev/null
+        ip rule del fwmark "$FWMARK/0xffff" lookup "$TABLE" priority 200 2>/dev/null
+        ip rule del fwmark "$FWMARK/0xffff" unreachable priority 300 2>/dev/null
+        ip -6 rule del fwmark "$FWMARK/0xffff" lookup "$TABLE" priority 200 2>/dev/null
+        ip -6 rule del fwmark "$FWMARK/0xffff" unreachable priority 300 2>/dev/null
 
         ip route flush table "$TABLE" 2>/dev/null
         ip -6 route flush table "$TABLE" 2>/dev/null

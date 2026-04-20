@@ -45,11 +45,15 @@ else
     _travel_vpn_state="off"
 fi
 if [ "$_travel_vpn_state" = "on" ]; then
-    if ip link show wg-proton up > /dev/null; then
-        logger -t "$_HOOK_TAG" "OK: wg-proton interface up"
+    # `ip link show <dev> up` is a PRINT filter, not a state predicate:
+    # it exits 0 whenever the device exists. Check operstate directly.
+    # WireGuard NOARP tunnels commonly report 'unknown' even when live.
+    _travel_wg_state=$(cat /sys/class/net/wg-proton/operstate 2>/dev/null || echo missing)
+    if [ "$_travel_wg_state" = "up" ] || [ "$_travel_wg_state" = "unknown" ]; then
+        logger -t "$_HOOK_TAG" "OK: wg-proton operstate=$_travel_wg_state"
     else
-        logger -t "$_HOOK_TAG" "FAIL: wg-proton interface not up while vpn=on"
-        FAILURES="$FAILURES\n- wg-proton interface down while vpn=on"
+        logger -t "$_HOOK_TAG" "FAIL: wg-proton operstate=$_travel_wg_state while vpn=on"
+        FAILURES="$FAILURES\n- wg-proton operstate=$_travel_wg_state while vpn=on"
     fi
 
     # Kill-switch: OUTPUT REJECT for xray uid that doesn't egress via wg-proton or lo.
@@ -106,4 +110,4 @@ if [ "$_travel_travel_state" = "on" ]; then
     fi
 fi
 
-unset _travel_state_dir _travel_vpn_state _travel_travel_state
+unset _travel_state_dir _travel_vpn_state _travel_travel_state _travel_wg_state

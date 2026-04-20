@@ -142,11 +142,15 @@ install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/xray-logrotate.conf"  
 # --- Render xray config (envsubst on state.env values) ---
 install -d -m 0755 /etc/xray
 set -a; source "$STATE_DIR/state.env"; set +a
+# mktemp (mode 0600) keeps secrets out of world-readable /tmp; shell > redirect
+# honors umask (0644 as root) and briefly exposes REALITY_PRIVATE_KEY + friends.
+_xray_tmp=$(mktemp)
 envsubst '$XRAY_UUID $XRAY_PATH $GRPC_SERVICE_NAME $REALITY_PRIVATE_KEY $REALITY_SHORT_IDS $SS2022_PASSWORD' \
     < "$REMOTE_DIR/files/travel/xray-config.json.tmpl" \
-    > /tmp/xray-config.json.$$
-install -m 0640 -o root -g xray /tmp/xray-config.json.$$ /etc/xray/config.json
-rm -f /tmp/xray-config.json.$$
+    > "$_xray_tmp"
+install -m 0640 -o root -g xray "$_xray_tmp" /etc/xray/config.json
+rm -f "$_xray_tmp"
+unset _xray_tmp
 ok "Xray config rendered to /etc/xray/config.json"
 
 # --- Render travel-cloudflare fragment template (copied by 'roost-net travel on') ---
