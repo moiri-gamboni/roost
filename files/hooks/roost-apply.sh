@@ -108,6 +108,8 @@ files/hooks/ram-monitor.sh|$ROOST_DIR/claude/hooks/ram-monitor.sh|plain+x|
 files/hooks/cloudflare-assemble.sh|$ROOST_DIR/claude/hooks/cloudflare-assemble.sh|plain+x|
 files/hooks/reflect.md|$ROOST_DIR/claude/hooks/reflect.md|sed-roost|
 files/hooks/roost-apply.sh|$ROOST_DIR/claude/hooks/roost-apply.sh|plain+x|
+files/hooks/roost-net.sh|$ROOST_DIR/claude/hooks/roost-net.sh|plain+x|
+files/travel/travel-health.sh|$ROOST_DIR/claude/hooks/health-check-apps.sh|plain+x|
 files/shell/bashrc.sh|$HOME_DIR/.bashrc.d/roost.sh|plain|
 files/private/code-CLAUDE.md|$ROOST_DIR/code/CLAUDE.md|plain|
 files/private/global-CLAUDE.md|$ROOST_DIR/claude/CLAUDE.md|plain|
@@ -129,6 +131,18 @@ files/ram-monitor.timer|/etc/systemd/system/ram-monitor.timer|envsubst:USERNAME,
 files/cron-roost|/etc/cron.d/$ROOST_DIR_NAME|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|
 files/tmux.conf|$HOME_DIR/.tmux.conf|plain|run:tmux source-file ~/.tmux.conf
 files/sshd/50-clip-forward.conf|/etc/ssh/sshd_config.d/50-clip-forward.conf|plain|restart:ssh
+files/tailscaled-iptables.conf|/etc/systemd/system/tailscaled.service.d/iptables-pin.conf|plain|daemon-reload,restart:tailscaled
+files/travel/xray.service|/etc/systemd/system/xray.service|plain|daemon-reload,restart:xray
+files/travel/xray-boot-guard|/usr/local/bin/xray-boot-guard|plain+x|restart:xray
+files/travel/xray-logrotate.conf|/etc/logrotate.d/xray|plain|
+files/travel/keys-init.sh|/etc/roost-travel/keys-init.sh|plain+x|
+files/travel/proton-routing.sh|/etc/roost-travel/proton-routing.sh|plain+x|
+files/travel/proton-keepalive-check|/usr/local/bin/proton-keepalive-check|plain+x|
+files/travel/proton-keepalive.service|/etc/systemd/system/proton-keepalive.service|plain|daemon-reload
+files/travel/proton-keepalive.timer|/etc/systemd/system/proton-keepalive.timer|plain|daemon-reload
+files/travel/wg-proton.service.d/roost.conf|/etc/systemd/system/wg-quick@proton.service.d/roost.conf|plain|daemon-reload
+files/travel/proton.conf.example|/etc/roost-travel/proton.conf.example|plain|
+files/travel/travel-cloudflare.yml.tmpl|/etc/roost-travel/travel-cloudflare.yml|envsubst:DOMAIN|
 MANIFEST_B
 }
 
@@ -189,6 +203,9 @@ render_file() {
             export USERNAME
             export HOME_DIR
             export ROOST_DIR_NAME
+            export DOMAIN
+            export HETZNER_PUBLIC_IPV4
+            export HETZNER_PUBLIC_IPV6
 
             # Guard: abort if any required variable is empty
             for v in "${var_names[@]}"; do
@@ -578,6 +595,62 @@ cmd_flag_reload() {
         ok "Cron (auto-reloads, no action needed)"
     fi
 
+    if $FLAG_ALL || $FLAG_XRAY; then
+        local template="$REPO_DIR/files/travel/xray-config.json.tmpl"
+        local state="/etc/roost-travel/state.env"
+        if [ ! -f "$template" ]; then
+            warn "Missing Xray template: $template"
+        elif ! sudo test -r "$state"; then
+            warn "Missing state.env: $state (run setup/travel-vpn.sh or keys-init.sh first)"
+        else
+            info "Re-rendering /etc/xray/config.json..."
+            local tmp
+            tmp=$(mktemp)
+            set -a
+            # shellcheck disable=SC1090
+            eval "$(sudo cat "$state")"
+            set +a
+            envsubst '$XRAY_UUID $XRAY_PATH $GRPC_SERVICE_NAME $REALITY_PRIVATE_KEY $REALITY_SHORT_IDS $SS2022_PASSWORD' \
+                < "$template" > "$tmp"
+            sudo install -m 0640 -o root -g xray "$tmp" /etc/xray/config.json
+            rm -f "$tmp"
+            ok "Xray config rendered"
+            info "Restarting xray..."
+            if sudo systemctl restart xray; then
+                ok "xray restarted"
+            else
+                reload_failed+=("xray")
+                warn "Failed: systemctl restart xray"
+            fi
+        fi
+    fi
+
+    if $FLAG_ALL || $FLAG_PROTON; then
+        info "Running systemctl daemon-reload for Proton units..."
+        sudo systemctl daemon-reload
+        ok "daemon-reload"
+        if sudo systemctl is-active proton-keepalive.timer >/dev/null; then
+            info "Restarting proton-keepalive.timer..."
+            if sudo systemctl restart proton-keepalive.timer; then
+                ok "proton-keepalive.timer restarted"
+            else
+                reload_failed+=("proton-keepalive.timer")
+            fi
+        else
+            skip "proton-keepalive.timer inactive (vpn=off)"
+        fi
+        if ip link show wg-proton up >/dev/null 2>&1; then
+            info "Restarting wg-quick@proton to pick up drop-in..."
+            if sudo systemctl restart wg-quick@proton; then
+                ok "wg-quick@proton restarted"
+            else
+                reload_failed+=("wg-quick@proton")
+            fi
+        else
+            skip "wg-proton interface down (vpn=off)"
+        fi
+    fi
+
     if [ ${#reload_failed[@]} -gt 0 ]; then
         ntfy_send -t "roost-apply: reload failures" -p "high" \
             "Failed to reload: ${reload_failed[*]}"
@@ -599,6 +672,8 @@ FLAG_CADDY=false
 FLAG_NTFY=false
 FLAG_SYSTEMD=false
 FLAG_CRON=false
+FLAG_XRAY=false
+FLAG_PROTON=false
 HAS_FLAGS=false
 
 for arg in "$@"; do
@@ -606,7 +681,7 @@ for arg in "$@"; do
         -h|--help)
             cat <<'USAGE'
 Usage: roost-apply [diff|push|list] [file-filter...]
-       roost-apply [--all] [--cloudflare] [--caddy] [--ntfy] [--systemd] [--cron]
+       roost-apply [--all] [--cloudflare] [--caddy] [--ntfy] [--systemd] [--cron] [--xray] [--proton]
 
 Subcommands (manifest-based file deployment):
   diff     Show differences between repo and deployed files (default)
@@ -620,6 +695,8 @@ Flags (direct service reload):
   --ntfy       Restart ntfy
   --systemd    Daemon-reload and restart systemd units
   --cron       No-op (cron auto-reloads)
+  --xray       Re-render /etc/xray/config.json from state.env and restart xray
+  --proton     Daemon-reload, restart proton-keepalive.timer + wg-quick@proton (if up)
 
 Options:
   -y, --yes    Skip confirmation prompts (push only)
@@ -633,6 +710,8 @@ USAGE
         --ntfy)       FLAG_NTFY=true; HAS_FLAGS=true ;;
         --systemd)    FLAG_SYSTEMD=true; HAS_FLAGS=true ;;
         --cron)       FLAG_CRON=true; HAS_FLAGS=true ;;
+        --xray)       FLAG_XRAY=true; HAS_FLAGS=true ;;
+        --proton)     FLAG_PROTON=true; HAS_FLAGS=true ;;
         diff|push|list)
             if [ -z "$SUBCOMMAND" ]; then
                 SUBCOMMAND="$arg"
