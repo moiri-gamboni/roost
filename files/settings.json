@@ -43,17 +43,6 @@
       }
     ],
     "Stop": [],
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/roost/claude/hooks/dangerous-command-blocker.py"
-          }
-        ]
-      }
-    ],
     "Notification": [
       {
         "matcher": "permission_prompt|idle_prompt",

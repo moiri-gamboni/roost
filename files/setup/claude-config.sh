@@ -45,10 +45,6 @@ for hook in session-lock session-unlock reflect notify \
 done
 cp "$REMOTE_DIR/files/hooks/reflect.md" "$CLAUDE_DIR/hooks/reflect.md"
 
-# Install dangerous command blocker
-cp "$REMOTE_DIR/files/hooks/dangerous-command-blocker.py" "$CLAUDE_DIR/hooks/dangerous-command-blocker.py"
-chmod +x "$CLAUDE_DIR/hooks/dangerous-command-blocker.py"
-
 chown -R "$USERNAME:$USERNAME" "$CLAUDE_DIR/hooks"
 
 # Substitute ~/roost/ paths in settings.json and reflect.md

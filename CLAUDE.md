@@ -89,7 +89,6 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
   - `hooks/` -- Shell scripts for Claude Code hooks and cron jobs
     - `_hook-env.sh` -- Shared library: JSON input parsing (`hook_json`), ntfy helpers, rate limiting, logging
     - `reflect.md` -- Prompt injected by `reflect.sh` before context compaction
-    - `dangerous-command-blocker.py` -- PreToolUse hook blocking destructive commands (vendored from claude-code-templates, MIT)
     - `roost-apply.sh` -- Config deployment and service reload (manifest-based + flag mode)
     - `cloudflare-assemble.sh` -- Assembles cloudflare config from base header + app fragments
   - `skills/` -- Claude Code skills deployed to `$CLAUDE_CONFIG_DIR/skills/`
@@ -137,7 +136,6 @@ Hooks are defined in `files/settings.json` and deployed to `~/roost/claude/hooks
 | SessionStart | `session-lock.sh` | Writes a lock file with hostname/tmux/PID metadata for multi-machine coordination |
 | SessionEnd | `session-unlock.sh` | Removes the lock file; auto-names unnamed sessions via `claude -p --model sonnet` (background) |
 | PreCompact | `reflect.sh` | Injects a prompt reminding the agent to save learnings before context compaction |
-| PreToolUse | `dangerous-command-blocker.py` | Blocks catastrophic commands (rm -rf /, dd), protects critical paths (.git, .env), warns on suspicious patterns |
 | Notification | `notify.sh` | Sends push notifications via local ntfy (with rate limiting and priority levels) |
 
 Hook scripts source `_hook-env.sh` (except `reflect.sh` which just cats a prompt file) which provides `hook_json()` for parsing Claude Code's JSON input, `ntfy_send()` for notifications (with journald fallback), `rate_limit_ok()` to prevent notification floods, and journald logging via `logger -t "$_HOOK_TAG"` (tags: `roost/<script-name>`).
@@ -162,8 +160,6 @@ All infrastructure runs as native systemd services installed via official apt re
 - **ntfy** (`ntfy.service`) -- Push notifications on `0.0.0.0:2586` (auth required, firewall limits to localhost + Tailscale). Config at `/etc/ntfy/server.yml`.
 
 Caddy has a systemd drop-in that waits for Tailscale before starting. Updates are handled by `apt upgrade` (via auto-update.sh and unattended-upgrades).
-
-The `dangerous-command-blocker` PreToolUse hook is vendored from [claude-code-templates](https://github.com/davila7/claude-code-templates) (MIT license).
 
 ## App-Specific Extensions
 

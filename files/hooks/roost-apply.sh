@@ -106,7 +106,6 @@ files/hooks/run-scheduled-task.sh|$ROOST_DIR/claude/hooks/run-scheduled-task.sh|
 files/hooks/auto-update.sh|$ROOST_DIR/claude/hooks/auto-update.sh|plain+x|
 files/hooks/ram-monitor.sh|$ROOST_DIR/claude/hooks/ram-monitor.sh|plain+x|
 files/hooks/cloudflare-assemble.sh|$ROOST_DIR/claude/hooks/cloudflare-assemble.sh|plain+x|
-files/hooks/dangerous-command-blocker.py|$ROOST_DIR/claude/hooks/dangerous-command-blocker.py|plain+x|
 files/hooks/reflect.md|$ROOST_DIR/claude/hooks/reflect.md|sed-roost|
 files/hooks/roost-apply.sh|$ROOST_DIR/claude/hooks/roost-apply.sh|plain+x|
 files/shell/bashrc.sh|$HOME_DIR/.bashrc.d/roost.sh|plain|
