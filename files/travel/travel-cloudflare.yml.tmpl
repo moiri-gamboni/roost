@@ -1,0 +1,8 @@
+  - hostname: travel.${DOMAIN}
+    path: /probe
+    service: http_status:204
+  - hostname: travel.${DOMAIN}
+    service: http://127.0.0.1:10000
+    originRequest:
+      noTLSVerify: true
+      httpHostHeader: travel.${DOMAIN}
