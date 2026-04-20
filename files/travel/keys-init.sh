@@ -1,9 +1,7 @@
 #!/bin/bash
-# Generate REALITY keypair, short IDs, UUID, gRPC service name, WS path,
-# and SS-2022 password for the travel-vpn stack. Writes /etc/roost-travel/state.env.
-#
-# Idempotent: refuses to overwrite existing state.env unless --force is given.
-# See plans/travel-vpn-architecture.md §3.1 and §5 Phase 1.2.
+# Generate REALITY keypair, short IDs, UUID, gRPC service name, WS path, and
+# SS-2022 password. Writes /etc/roost-travel/state.env (0600 root).
+# Idempotent: refuses to overwrite existing state.env unless --force.
 set -euo pipefail
 
 STATE_DIR=/etc/roost-travel
