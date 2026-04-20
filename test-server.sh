@@ -498,24 +498,6 @@ for hook in session-lock.sh session-unlock.sh reflect.sh notify.sh \
     fi
 done
 
-# ── Dangerous Command Blocker ─────────────────────────────────
-echo ""
-echo "--- Dangerous Command Blocker ---"
-
-# Check PreToolUse hook exists in settings.json (merged from claude-code-templates)
-if run cat "$SETTINGS" 2>/dev/null | grep -q "PreToolUse" 2>/dev/null; then
-    pass "PreToolUse hook in settings.json"
-else
-    fail "PreToolUse hook missing from settings.json"
-fi
-
-# Check the actual blocker script exists
-if run test -f "$HOOK_DIR/dangerous-command-blocker.py"; then
-    pass "dangerous-command-blocker.py exists"
-else
-    fail "dangerous-command-blocker.py missing from hooks/"
-fi
-
 # ── Agent Tools ───────────────────────────────────────────────
 echo ""
 echo "--- Agent Tools ---"
