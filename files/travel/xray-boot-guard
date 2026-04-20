@@ -1,0 +1,33 @@
+#!/bin/bash
+# Prevent Xray from starting before wg-proton + kill-switch are installed when
+# /etc/roost-travel/vpn=on. Without this, boot can briefly expose the raw
+# Hetzner egress while wg-quick@proton is still running PostUp.
+#
+# Exits 0 when vpn is off or the tunnel+REJECT pair is present within 30s.
+# Exits 1 after timeout; systemd's Restart=on-failure retries in 10s.
+set -uo pipefail
+
+VPN_FLAG=/etc/roost-travel/vpn
+WG_IFACE=wg-proton
+TAG=roost/xray-boot-guard
+
+vpn_state=off
+if [ -f "$VPN_FLAG" ]; then
+    vpn_state=$(tr -d '[:space:]' < "$VPN_FLAG")
+fi
+if [ "$vpn_state" != "on" ]; then
+    exit 0
+fi
+
+for _ in $(seq 1 30); do
+    if [ -d "/sys/class/net/$WG_IFACE" ] \
+       && iptables -S OUTPUT | grep -q 'owner UID match.*REJECT' \
+       && ip6tables -S OUTPUT | grep -q 'owner UID match.*REJECT'; then
+        logger -t "$TAG" "wg-proton up and kill-switch present; proceeding"
+        exit 0
+    fi
+    sleep 1
+done
+
+logger -t "$TAG" "Timeout waiting for $WG_IFACE + kill-switch; failing so Xray retries"
+exit 1
