@@ -90,5 +90,13 @@
     "ralph-loop@claude-plugins-official": true,
     "serena@claude-plugins-official": true,
     "strip-images@claude-strip-images": true
+  },
+  "extraKnownMarketplaces": {
+    "claude-strip-images": {
+      "source": {
+        "source": "github",
+        "repo": "moiri-gamboni/claude-strip-images"
+      }
+    }
   }
 }
