@@ -271,6 +271,101 @@ else
     fail "Tunnel credentials not found in ~/.cloudflared/"
 fi
 
+# ── Travel VPN ────────────────────────────────────────────────
+echo ""
+echo "--- Travel VPN ---"
+
+if run systemctl is-active xray >/dev/null 2>&1; then
+    XRAY_VER=$(run /usr/local/bin/xray version 2>/dev/null | awk 'NR==1 {print $2}')
+    pass "xray.service active${XRAY_VER:+ ($XRAY_VER)}"
+else
+    fail "xray.service not active"
+fi
+
+if run id -u xray >/dev/null 2>&1; then
+    pass "xray system user exists"
+else
+    fail "xray system user missing"
+fi
+
+if run sudo test -f /etc/xray/config.json; then
+    pass "/etc/xray/config.json exists"
+else
+    fail "/etc/xray/config.json missing"
+fi
+
+if run sudo test -f /etc/roost-travel/state.env; then
+    pass "state.env seeded"
+else
+    fail "state.env missing (setup/travel-vpn.sh did not run?)"
+fi
+
+for f in travel vpn; do
+    if run test -f "/etc/roost-travel/$f"; then
+        state=$(run cat "/etc/roost-travel/$f" 2>/dev/null)
+        pass "/etc/roost-travel/$f = ${state:-?}"
+    else
+        fail "/etc/roost-travel/$f missing"
+    fi
+done
+
+for exe in /usr/local/bin/xray /usr/local/bin/xray-boot-guard /usr/local/bin/proton-keepalive-check /etc/roost-travel/keys-init.sh /etc/roost-travel/proton-routing.sh; do
+    if run sudo test -x "$exe"; then
+        pass "$exe executable"
+    else
+        fail "$exe missing or not executable"
+    fi
+done
+
+# Xray listening: inside-loop WS on 127.0.0.1:10000, REALITY on :443 (dual-stack), SS-2022 on :51820
+if run sudo ss -tlnp 2>/dev/null | grep -q '127.0.0.1:10000.*xray'; then
+    pass "xray listening on 127.0.0.1:10000 (path-a)"
+else
+    fail "xray not listening on 127.0.0.1:10000"
+fi
+if run sudo ss -tlnp 2>/dev/null | grep -q ':443.*xray'; then
+    pass "xray listening on :443 (path-b REALITY)"
+else
+    fail "xray not listening on :443"
+fi
+if run sudo ss -tlnp 2>/dev/null | grep -q ':51820.*xray'; then
+    pass "xray listening on :51820 TCP (path-c)"
+else
+    fail "xray not listening on :51820 TCP"
+fi
+
+# Tailscale iptables pin
+if run test -f /etc/systemd/system/tailscaled.service.d/iptables-pin.conf; then
+    if run grep -q 'TS_DEBUG_FIREWALL_MODE=iptables' /etc/systemd/system/tailscaled.service.d/iptables-pin.conf; then
+        pass "tailscaled pinned to iptables backend"
+    else
+        fail "tailscaled pin drop-in present but missing TS_DEBUG_FIREWALL_MODE"
+    fi
+else
+    fail "tailscaled iptables pin drop-in missing"
+fi
+
+# wg-quick@proton drop-in
+if run test -f /etc/systemd/system/wg-quick@proton.service.d/roost.conf; then
+    pass "wg-quick@proton drop-in present"
+else
+    fail "wg-quick@proton drop-in missing"
+fi
+
+# logrotate config
+if run test -f /etc/logrotate.d/xray; then
+    pass "xray logrotate config present"
+else
+    fail "xray logrotate config missing"
+fi
+
+# ncat (SSH ProxyCommand dependency for laptop client)
+if run command -v ncat >/dev/null 2>&1; then
+    pass "ncat installed (for laptop SOCKS5 ProxyCommand)"
+else
+    fail "ncat not installed"
+fi
+
 # ── Ollama ────────────────────────────────────────────────────
 echo ""
 echo "--- Ollama ---"
