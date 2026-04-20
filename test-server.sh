@@ -119,11 +119,19 @@ else
     fail "Swappiness" "got $SWAPPINESS"
 fi
 
-IPV6=$(run cat /proc/sys/net/ipv6/conf/all/disable_ipv6)
-if [ "$IPV6" = "1" ]; then
-    pass "IPv6 disabled"
+# IPv6 is enabled server-wide for travel-vpn dual-stack parity (kill-switch,
+# fwmark, Xray inbounds, path-B/C direct). See CLAUDE.md "Networking".
+IPV6_DISABLE=$(run cat /proc/sys/net/ipv6/conf/all/disable_ipv6)
+if [ "$IPV6_DISABLE" = "0" ]; then
+    pass "IPv6 stack enabled"
 else
-    fail "IPv6 disabled" "got $IPV6"
+    fail "IPv6 stack enabled" "disable_ipv6=$IPV6_DISABLE; travel-vpn requires dual-stack"
+fi
+
+if run ip -6 addr show scope global 2>/dev/null | grep -q 'inet6'; then
+    pass "Global IPv6 address present"
+else
+    fail "Global IPv6 address" "none found; check Hetzner /64 routing"
 fi
 
 HOSTNAME_VAL=$(run hostname)
