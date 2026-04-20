@@ -101,6 +101,9 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
     - `drop-watch.sh` -- inotifywait-based folder watcher; auto-rsyncs `~/drop/` to server on change
     - `drop-watch.service` -- Systemd unit for the drop folder watcher
     - `clip-forward.service` -- Clipboard forwarding daemon (image paste over SSH)
+    - `gh-ruleset-sync.sh` -- Periodic sync of the "Protect main" ruleset across all repos owned by the authenticated gh user; closes the gap between `./deploy.sh` runs
+    - `gh-ruleset-sync.service` / `gh-ruleset-sync.timer` -- Systemd timer (daily + 2h jitter, `Persistent=true`) driving the sync
+    - `protect-main.ruleset.json` -- Canonical ruleset body shared between `deploy.sh` initial provision and the timer (single source of truth)
 - **`extras/`** -- Standalone utilities not part of the main setup flow
   - `hetzner-watch.sh` -- Polls Hetzner API for server type availability, sends ntfy alerts
 - **`test-server.sh`** -- Server verification script; tests services over SSH, logs to `logs/`
