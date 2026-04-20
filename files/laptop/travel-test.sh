@@ -73,8 +73,22 @@ fi
 : "${SERVER_NAME:?SERVER_NAME must be set in .env}"
 : "${USERNAME:?USERNAME must be set in .env}"
 : "${DOMAIN:?DOMAIN must be set in .env}"
-: "${HETZNER_PUBLIC_IPV4:?HETZNER_PUBLIC_IPV4 must be set in .env}"
-: "${HETZNER_PUBLIC_IPV6:?HETZNER_PUBLIC_IPV6 must be set in .env}"
+
+# Derive Hetzner public IPs from hcloud if not explicitly set. deploy.sh does
+# the equivalent derivation ('Resolve SERVER_IP + public IPv6') and writes
+# them to the server's .sync-env; here we recompute locally so the laptop
+# doesn't need to duplicate the values in .env.
+if [ -z "${HETZNER_PUBLIC_IPV4:-}" ] || [ -z "${HETZNER_PUBLIC_IPV6:-}" ]; then
+    command -v hcloud >/dev/null \
+        || die "HETZNER_PUBLIC_IPV4/V6 unset and hcloud CLI unavailable for auto-derivation"
+    HETZNER_PUBLIC_IPV4="${HETZNER_PUBLIC_IPV4:-$(hcloud server ip "$SERVER_NAME")}"
+    if [ -z "${HETZNER_PUBLIC_IPV6:-}" ]; then
+        v6cidr=$(hcloud server describe -o json "$SERVER_NAME" | jq -r '.public_net.ipv6.ip // empty')
+        [ -n "$v6cidr" ] && HETZNER_PUBLIC_IPV6="${v6cidr%/*}1"
+    fi
+fi
+: "${HETZNER_PUBLIC_IPV4:?HETZNER_PUBLIC_IPV4 must be set in .env or derivable via hcloud}"
+: "${HETZNER_PUBLIC_IPV6:?HETZNER_PUBLIC_IPV6 must be set in .env or derivable via hcloud}"
 
 TRAVEL_HOST="travel.${DOMAIN}"
 TRAVEL_DIRECT="travel-direct.${DOMAIN}"
