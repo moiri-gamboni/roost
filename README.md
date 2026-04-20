@@ -321,6 +321,104 @@ sudo systemctl enable --now drop-watch
      (password in `~/services/.ntfy-phone-pass` on the server)
    - Subscribe to topic: `claude-<username>`
 
+## Travel VPN
+
+GFW-resistant remote access: Xray multi-path stack (VLESS+WS behind Cloudflare, VLESS+gRPC+REALITY direct, Shadowsocks-2022) with an optional ProtonVPN egress layer toggleable without re-deploying. sing-box on phone + laptop picks the fastest working path via urltest; a dual-stack fwmark + kill-switch confines the `xray` user (and Tailscale-exit-node forwarded traffic) to `wg-proton` whenever `vpn` is on. See `plans/travel-vpn-architecture.md` for the full design and rationale.
+
+### Use modes
+
+| Mode | Phone transport | `roost-net travel` | `roost-net vpn` | Phone egress |
+|---|---|---|---|---|
+| Home, normal | ISP direct | off | off | ISP |
+| Home, private | Tailscale exit node | off | on | Proton |
+| Travel | Xray A/B/C | on | off | Hetzner |
+| Travel, private | Xray A/B/C | on | on | Proton |
+
+### Pre-departure (2+ weeks before)
+
+```bash
+# 1. Drop your Proton WireGuard config on the server
+sudo install -m 0600 -o root -g root /path/to/proton.conf /etc/wireguard/proton.conf
+# Edit to include PostUp/PreDown (see /etc/roost-travel/proton.conf.example):
+#   PostUp  = /etc/roost-travel/proton-routing.sh up
+#   PreDown = /etc/roost-travel/proton-routing.sh down
+#   Table = off
+#   DNS =
+
+# 2. Install sing-box for Android from GitHub releases
+#    github.com/SagerNet/sing-box-for-android/releases (not F-Droid; may lag)
+
+# 3. Generate and distribute client configs (run on laptop)
+./files/laptop/travel-clients.sh android --qr   # terminal QR for phone
+./files/laptop/travel-clients.sh laptop > ~/.config/sing-box/travel.json
+./files/laptop/travel-clients.sh ssh >> ~/.ssh/config
+
+# 4. Test at home for a week
+roost-net travel on
+./files/laptop/roost-net-fw.sh open
+roost-net vpn on
+./files/laptop/travel-test.sh
+./files/laptop/travel-test.sh --simulate-gfw  # blocks UDP locally, verifies TCP paths
+
+# 5. Print Hetzner 2FA recovery codes, store in physical wallet
+# 6. Pre-install ProtonVPN Android app with Stealth as independent fallback
+# 7. Revert to dormant state before packing
+roost-net vpn off
+./files/laptop/roost-net-fw.sh close
+roost-net travel off
+```
+
+### Departure day
+
+```bash
+# Server (via Tailscale SSH)
+roost-net travel on    # deploys CF fragment, reloads cloudflared, opens UFW
+roost-net vpn on       # enables wg-quick@proton (survives reboot)
+
+# Laptop
+./files/laptop/roost-net-fw.sh open   # opens 443/tcp, 51820/tcp+udp on Hetzner FW
+./files/laptop/travel-test.sh         # final verification
+
+# Phone: activate sing-box app (system VPN indicator appears).
+# urltest auto-selects the fastest path (normally Path A).
+```
+
+### If something degrades mid-trip
+
+- **Path A slow or dead** -- urltest switches to B or C automatically; no action required.
+- **All three degraded** -- check sing-box logs on phone. Fallback: ProtonVPN Android app with Stealth (independent of Roost; browse-only, no SSH).
+- **Server unreachable entirely** -- from laptop, `./files/laptop/roost-net-fw.sh close` (stops advertising a broken endpoint); then Hetzner Cloud Console via 2FA + printed recovery codes.
+
+### After return
+
+```bash
+./files/laptop/roost-net-fw.sh close
+# Server (via Tailscale, now working again)
+roost-net vpn off
+roost-net travel off
+```
+
+### Server-side CLI (`roost-net`)
+
+| Command | Purpose |
+|---|---|
+| `roost-net status` | Toggles, service states, egress IP (raw + via-Proton) |
+| `roost-net travel on` / `off` | Enable/disable the CF fragment + UFW rules for 443/tcp + 51820/tcp+udp |
+| `roost-net vpn on` / `off` | Enable/disable `wg-quick@proton` + keepalive timer; verifies Proton ASN on activation |
+| `roost-net test` | Plan §4.2 assertions (masked fwmark, kill-switch REJECT, egress ASN) |
+| `roost-net client {android\|laptop\|ssh}` | Emit sing-box or SSH config from `/etc/roost-travel/state.env` |
+| `roost-net rotate-keys` | Regenerate `state.env` (UUID + REALITY keypair + shortIds + SS-2022 password); restart xray |
+
+### Laptop scripts (`files/laptop/`)
+
+- `roost-net-fw.sh {open,close,status}` -- toggle Hetzner cloud firewall for travel ports (dual-stack). Firewall identity is `${SERVER_NAME}-fw`.
+- `travel-clients.sh {android,laptop,ssh} [--qr]` -- SSHes to server, calls `roost-net client <mode>`; `--qr` pipes the JSON through `qrencode` for phone transfer over trusted transport.
+- `travel-test.sh [--simulate-gfw] [--tailscale-check]` -- end-to-end reachability + routing assertions, locally simulatable GFW conditions.
+
+### Reboot behavior
+
+`xray.service` is enabled at install. When `vpn=on`, `wg-quick@proton.service` is also enabled (via `systemctl enable --now`), so an `apt upgrade && reboot` in-country restores full state automatically. `xray-boot-guard` (ExecStartPre) blocks Xray startup until `wg-proton` + the kill-switch REJECT rule are both present, eliminating the boot-order leak window.
+
 ## Architecture
 
 ```
