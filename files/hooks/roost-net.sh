@@ -139,6 +139,19 @@ cmd_travel() {
     case "$action" in
         on)
             sudo test -f "$cf_fragment" || die "Source fragment $cf_fragment missing; reinstall travel-vpn setup"
+            # Rollback: if any step after CF fragment install fails, undo the partial
+            # exposure so state=off on disk matches reality (otherwise travel-health
+            # and the weekly audit skip a server that's actually publicly exposed).
+            cmd_travel_rollback() {
+                sudo ufw --force delete allow 443/tcp || true
+                sudo ufw --force delete allow 51820/tcp || true
+                sudo ufw --force delete allow 51820/udp || true
+                sudo rm -f "$cf_target"
+                sudo "$assemble" || true
+                sudo systemctl restart cloudflared || true
+                logger -t "$_HOOK_TAG" "cmd_travel on: rolled back after partial failure"
+            }
+            trap cmd_travel_rollback ERR
             [ -d "$(dirname "$cf_target")" ] || mkdir -p "$(dirname "$cf_target")"
             sudo install -m 0644 -o "$USERNAME" -g "$USERNAME" "$cf_fragment" "$cf_target"
             sudo "$assemble"
@@ -147,6 +160,7 @@ cmd_travel() {
             sudo ufw allow 51820/tcp comment 'travel-vpn-ss2022'
             sudo ufw allow 51820/udp comment 'travel-vpn-ss2022'
             echo "on" | sudo tee "$STATE_DIR/travel" >/dev/null
+            trap - ERR
             ntfy_send -t "Travel ON" "Path A exposed + UFW open. Run 'roost-net-fw open' on laptop."
             echo "Travel mode: ON"
             ;;
@@ -175,6 +189,11 @@ cmd_vpn() {
             sudo test -f /etc/wireguard/proton.conf || die "No /etc/wireguard/proton.conf"
             if ! sudo systemctl enable --now wg-quick@proton; then
                 sudo systemctl disable wg-quick@proton || true
+                # wg-quick@ is Type=oneshot with RemainAfterExit=yes: if ExecStart
+                # (wg-quick up) fails partway, ExecStop is NOT auto-invoked, so
+                # PreDown (proton-routing.sh down) may not have run. Explicit
+                # teardown prevents orphan fwmark/kill-switch rules.
+                sudo /etc/roost-travel/proton-routing.sh down || true
                 die "wg-quick@proton failed to start"
             fi
             local ip
@@ -258,6 +277,10 @@ cmd_test() {
 
     echo
     echo "Summary: $pass pass, $fail fail"
+    if [ "$fail" -ne 0 ]; then
+        ntfy_send -t "roost-net test: $fail assertion(s) failed" -p "high" \
+            "Inspect via 'roost-net test' + 'journalctl -t roost/roost-net'. Travel state: $travel_state, VPN state: $vpn_state."
+    fi
     [ "$fail" -eq 0 ]
 }
 
