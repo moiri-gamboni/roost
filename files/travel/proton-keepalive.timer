@@ -1,0 +1,11 @@
+[Unit]
+Description=Proton WireGuard keepalive (30s)
+Requires=proton-keepalive.service
+
+[Timer]
+OnBootSec=2m
+OnUnitActiveSec=30s
+Unit=proton-keepalive.service
+
+[Install]
+WantedBy=timers.target

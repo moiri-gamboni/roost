@@ -1,0 +1,32 @@
+#!/bin/bash
+# Debounced Proton WireGuard health probe. Skips restart when:
+#   * handshake is fresh (tunnel is alive at the protocol level)
+#   * we already restarted recently (avoids flap when endpoint is truly dead)
+set -uo pipefail
+
+STATE_DIR=/etc/roost-travel
+LAST_RESTART_FILE="$STATE_DIR/.proton-last-restart"
+WG_IFACE=wg-proton
+HANDSHAKE_MAX_AGE=180
+RESTART_DEBOUNCE=300
+
+NOW=$(date +%s)
+
+LAST_HS=$(wg show "$WG_IFACE" latest-handshakes | awk 'NR==1 {print $2}')
+if [ -n "${LAST_HS:-}" ] && [ "$LAST_HS" -gt 0 ] && [ "$((NOW - LAST_HS))" -lt "$HANDSHAKE_MAX_AGE" ]; then
+    exit 0
+fi
+
+if curl -sf --max-time 5 --interface "$WG_IFACE" https://api.ipify.org >/dev/null; then
+    exit 0
+fi
+
+LAST_RESTART=$(cat "$LAST_RESTART_FILE" 2>/dev/null || echo 0)
+if [ "$((NOW - LAST_RESTART))" -lt "$RESTART_DEBOUNCE" ]; then
+    logger -t roost/proton-keepalive "probe failed but last restart ${RESTART_DEBOUNCE}s debounce active; skipping"
+    exit 0
+fi
+
+logger -t roost/proton-keepalive "probe failed and debounce expired; restarting wg-quick@proton"
+echo "$NOW" > "$LAST_RESTART_FILE"
+systemctl restart wg-quick@proton
