@@ -114,16 +114,51 @@ for f in travel vpn; do
     fi
 done
 
-# --- Seed keys ---
-# keys-init.sh is deployed to $STATE_DIR by the roost-apply manifest (integration-lead).
-# It is idempotent: exits 0 when state.env already exists unless --force is passed.
+# --- Deploy keys-init.sh so we can seed state.env ---
+install -m 0755 -o root -g root "$REMOTE_DIR/files/travel/keys-init.sh" "$KEYS_INIT"
+
+# --- Seed keys (idempotent; keys-init.sh exits 0 when state.env exists) ---
 if [ -f "$STATE_DIR/state.env" ]; then
     skip "state.env already seeded"
-elif [ ! -x "$KEYS_INIT" ]; then
-    echo "Error: $KEYS_INIT missing or not executable (expected via roost-apply manifest)" >&2
-    exit 1
 else
     info "Generating travel-vpn keys..."
     "$KEYS_INIT"
     ok "state.env seeded at $STATE_DIR/state.env"
 fi
+
+# --- Deploy support scripts ---
+install -m 0755 -o root -g root "$REMOTE_DIR/files/travel/xray-boot-guard"        /usr/local/bin/xray-boot-guard
+install -m 0755 -o root -g root "$REMOTE_DIR/files/travel/proton-routing.sh"      "$STATE_DIR/proton-routing.sh"
+install -m 0755 -o root -g root "$REMOTE_DIR/files/travel/proton-keepalive-check" /usr/local/bin/proton-keepalive-check
+install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton.conf.example"    "$STATE_DIR/proton.conf.example"
+
+# --- Deploy systemd units ---
+install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/xray.service"                /etc/systemd/system/xray.service
+install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton-keepalive.service"    /etc/systemd/system/proton-keepalive.service
+install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton-keepalive.timer"      /etc/systemd/system/proton-keepalive.timer
+install -d -m 0755                                                                      /etc/systemd/system/wg-quick@proton.service.d
+install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/wg-proton.service.d/roost.conf" /etc/systemd/system/wg-quick@proton.service.d/roost.conf
+install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/xray-logrotate.conf"         /etc/logrotate.d/xray
+
+# --- Render xray config (envsubst on state.env values) ---
+install -d -m 0755 /etc/xray
+set -a; source "$STATE_DIR/state.env"; set +a
+envsubst '$XRAY_UUID $XRAY_PATH $GRPC_SERVICE_NAME $REALITY_PRIVATE_KEY $REALITY_SHORT_IDS $SS2022_PASSWORD' \
+    < "$REMOTE_DIR/files/travel/xray-config.json.tmpl" \
+    > /tmp/xray-config.json.$$
+install -m 0640 -o root -g xray /tmp/xray-config.json.$$ /etc/xray/config.json
+rm -f /tmp/xray-config.json.$$
+ok "Xray config rendered to /etc/xray/config.json"
+
+# --- Render travel-cloudflare fragment template (copied by 'roost-net travel on') ---
+envsubst '$DOMAIN' \
+    < "$REMOTE_DIR/files/travel/travel-cloudflare.yml.tmpl" \
+    > "$STATE_DIR/travel-cloudflare.yml"
+chmod 0644 "$STATE_DIR/travel-cloudflare.yml"
+ok "travel-cloudflare.yml rendered to $STATE_DIR/travel-cloudflare.yml"
+
+# --- Enable + start xray (travel=off by default; Xray runs but is not publicly reachable) ---
+systemctl daemon-reload
+systemctl enable xray
+systemctl restart xray
+ok "xray.service enabled and running"
