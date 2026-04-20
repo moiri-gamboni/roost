@@ -1,6 +1,5 @@
 #!/bin/bash
 # Install Xray-core, supporting tools, xray system user, state dir, and seed keys.
-# See plans/travel-vpn-architecture.md §3.1 and §5 Phase 1.2-1.4.
 source "$(dirname "$0")/../_setup-env.sh"
 
 XRAY_BIN=/usr/local/bin/xray

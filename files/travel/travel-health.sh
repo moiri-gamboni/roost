@@ -1,10 +1,6 @@
 #!/bin/bash
-# travel-health.sh — app-specific health checks for the travel-VPN stack.
-#
-# Sourced by ~/roost/claude/hooks/health-check-apps.sh (in turn sourced
-# by health-check.sh) so it inherits the `check()` and `check_service()`
-# helpers plus `$FAILURES`, `$_HOOK_TAG`. Idempotent and side-effect-free:
-# only reports, never mutates state.
+# Travel-VPN health checks. Deployed as health-check-apps.sh; inherits
+# check/check_service/$FAILURES/$_HOOK_TAG. Report-only, no mutations.
 
 _travel_state_dir=/etc/roost-travel
 

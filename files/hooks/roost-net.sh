@@ -1,29 +1,6 @@
 #!/bin/bash
-# roost-net — unified travel-VPN control CLI.
-#
-# Subcommands: status, travel {on|off}, vpn {on|off}, test,
-#              client {android|laptop|ssh}, rotate-keys
-#
-# Config sources (integration-lead: keep these in sync):
-#   - _hook-env.sh (same dir): ntfy_send, logger, ROOST_DIR_NAME
-#   - $HOME/$ROOST_DIR_NAME/.sync-env: USERNAME, DOMAIN, ROOST_DIR_NAME
-#     (deploy.sh heredoc writes this; HETZNER_PUBLIC_IPV4/V6 also expected
-#      once integration-lead adds them per plan §3.2, but client configs
-#      use the DNS name `travel-direct.$DOMAIN` so they aren't required here)
-#   - /etc/roost-travel/state.env (0600 root): XRAY_UUID, XRAY_PATH,
-#     GRPC_SERVICE_NAME, REALITY_PRIVATE_KEY, REALITY_PUBLIC_KEY,
-#     REALITY_SHORT_IDS (JSON array), SS2022_PASSWORD
-#     (sourced via `sudo cat` + process substitution; `set -a` exports
-#      for any child process that needs them)
-#   - /etc/roost-travel/{travel,vpn}: "on" or "off" (writable by root)
-#   - /etc/roost-travel/travel-cloudflare.yml: CF ingress fragment deployed
-#     by integration-lead's manifest
-#
-# USERNAME resolution order (documented for integration-lead):
-#   1. USERNAME env var from caller
-#   2. USERNAME from $HOME/$ROOST_DIR_NAME/.sync-env
-#   3. Fallback: `whoami` (the shell user invoking roost-net)
-# No dedicated .owner file; .sync-env is the canonical source.
+# roost-net — travel-VPN control CLI.
+# Env sources: .sync-env (DOMAIN, USERNAME), state.env (Xray keys, 0600 root).
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/_hook-env.sh"
 
@@ -239,10 +216,8 @@ cmd_test() {
         fi
     }
 
-    echo "--- fwmark masking (plan §4.2 highest-stakes) ---"
-    # Match the full MARK rule emitted by proton-routing.sh: `--uid-owner <uid>
-    # ... --set-xmark 0x1337/0xffff`. iptables canonicalizes the mask from
-    # 0x0000ffff → 0xffff in `-S` output. UID may be symbolic or numeric.
+    echo "--- fwmark masking ---"
+    # iptables -S canonicalizes the MASK from 0x0000ffff -> 0xffff.
     assert "iptables MARK for xray uid with 0xffff mask" \
         bash -c "sudo iptables -t mangle -S OUTPUT | grep -qE -- '--uid-owner [^ ]+ .*--set-xmark 0x1337/0xffff'"
     assert "ip6tables MARK for xray uid with 0xffff mask" \
@@ -464,11 +439,9 @@ Subcommands:
   status                     Show travel/vpn state, service health, egress IP+ASN
   travel {on|off}            Toggle Path A (CF Tunnel fragment + UFW 443/51820)
   vpn {on|off}               Toggle Proton egress (wg-quick@proton + keepalive)
-  test                       Run plan §4.2 assertions (fwmark, routing, kill-switch)
+  test                       Assert fwmark, routing, kill-switch
   client {android|laptop|ssh}  Emit client config to stdout
   rotate-keys                Regenerate UUID + REALITY keys + SS-2022 password
-
-See plans/travel-vpn-architecture.md for the full design.
 EOF
         ;;
     *)
