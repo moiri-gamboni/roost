@@ -752,6 +752,8 @@ if [ "${SKIP_PLUGINS:-}" != "true" ]; then
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install serena@claude-plugins-official" || warn "Failed to install serena plugin"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin marketplace add mksglu/context-mode" || warn "Failed to add context-mode marketplace"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install context-mode@context-mode" || warn "Failed to install context-mode plugin"
+    remote "sudo -u $USERNAME $CLAUDE_CMD plugin marketplace add moiri-gamboni/claude-strip-images" || warn "Failed to add claude-strip-images marketplace"
+    remote "sudo -u $USERNAME $CLAUDE_CMD plugin install strip-images@claude-strip-images" || warn "Failed to install strip-images plugin"
     # Enable auto-update on all marketplaces (no CLI flag exists for this)
     remote "jq '.[] |= . + {autoUpdate: true}' $CLAUDE_CONFIG_DIR/plugins/known_marketplaces.json > /tmp/mkt.json && mv /tmp/mkt.json $CLAUDE_CONFIG_DIR/plugins/known_marketplaces.json && chown $USERNAME:$USERNAME $CLAUDE_CONFIG_DIR/plugins/known_marketplaces.json" || warn "Failed to enable marketplace auto-update"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install claude-code-setup@claude-plugins-official" || warn "Failed to install claude-code-setup plugin"
