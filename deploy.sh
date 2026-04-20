@@ -660,6 +660,11 @@ if [ -n "$TAILSCALE_DNS" ]; then
     info "Tailscale DNS: $TAILSCALE_DNS"
 fi
 
+# Advertise as exit node so travel-vpn "home-private" mode can route
+# laptop/phone egress through Proton via this server.
+remote "$ROOT_CMD tailscale set --advertise-exit-node"
+ok "Tailscale exit-node advertised"
+
 # Cache Tailscale host keys in known_hosts for future SSH access
 ssh-keyscan -H "$TAILSCALE_IP" >> ~/.ssh/known_hosts || true
 [ -n "$TAILSCALE_DNS" ] && ssh-keyscan -H "$TAILSCALE_DNS" >> ~/.ssh/known_hosts || true
