@@ -85,7 +85,8 @@ cmd_status() {
     local ip asn_rc
     if ip=$(sudo -u xray curl -sf --max-time 5 https://api.ipify.org); then
         echo "Egress (default): $ip"
-        is_proton_asn "$ip"; asn_rc=$?
+        # `|| asn_rc=$?` captures non-zero without tripping `set -e`.
+        asn_rc=0; is_proton_asn "$ip" || asn_rc=$?
         case "$asn_rc" in
             0) echo "  ASN: Proton" ;;
             1) echo "  ASN: Hetzner (or non-Proton)" ;;
@@ -99,7 +100,7 @@ cmd_status() {
         local vpn_ip
         if vpn_ip=$(sudo -u xray curl -sf --max-time 5 --interface wg-proton https://api.ipify.org); then
             echo "Egress (wg-proton): $vpn_ip"
-            is_proton_asn "$vpn_ip"; asn_rc=$?
+            asn_rc=0; is_proton_asn "$vpn_ip" || asn_rc=$?
             case "$asn_rc" in
                 0) echo "  ASN: Proton" ;;
                 1) echo "  ASN: non-Proton (unexpected — investigate)" ;;
@@ -208,7 +209,8 @@ cmd_vpn() {
 }
 
 cmd_test() {
-    local vpn_state pass=0 fail=0
+    local travel_state vpn_state pass=0 fail=0
+    travel_state=$(read_state_file "$STATE_DIR/travel" "off")
     vpn_state=$(read_state_file "$STATE_DIR/vpn" "off")
 
     assert() {
@@ -223,14 +225,14 @@ cmd_test() {
         fi
     }
 
-    echo "--- fwmark masking ---"
-    # iptables -S canonicalizes the MASK from 0x0000ffff -> 0xffff.
-    assert "iptables MARK for xray uid with 0xffff mask" \
-        bash -c "sudo iptables -t mangle -S OUTPUT | grep -qE -- '--uid-owner [^ ]+ .*--set-xmark 0x1337/0xffff'"
-    assert "ip6tables MARK for xray uid with 0xffff mask" \
-        bash -c "sudo ip6tables -t mangle -S OUTPUT | grep -qE -- '--uid-owner [^ ]+ .*--set-xmark 0x1337/0xffff'"
-
     if [ "$vpn_state" = "on" ]; then
+        echo "--- fwmark masking + routing ---"
+        # iptables -S canonicalizes the MASK from 0x0000ffff -> 0xffff.
+        assert "iptables MARK for xray uid with 0xffff mask" \
+            bash -c "sudo iptables -t mangle -S OUTPUT | grep -qE -- '--uid-owner [^ ]+ .*--set-xmark 0x1337/0xffff'"
+        assert "ip6tables MARK for xray uid with 0xffff mask" \
+            bash -c "sudo ip6tables -t mangle -S OUTPUT | grep -qE -- '--uid-owner [^ ]+ .*--set-xmark 0x1337/0xffff'"
+
         echo "--- VPN on: routing, kill-switch, egress ---"
         assert "ip route table 51820 has default via wg-proton" \
             bash -c "ip route show table 51820 | grep -q 'default.*wg-proton'"
@@ -255,7 +257,7 @@ cmd_test() {
             fail=$((fail + 1))
         fi
     else
-        echo "--- VPN off: fwmark rules asserted, routing/kill-switch skipped ---"
+        echo "--- VPN off: fwmark/routing/kill-switch skipped (proton-routing.sh only installs when wg-quick@proton is up) ---"
     fi
 
     echo
