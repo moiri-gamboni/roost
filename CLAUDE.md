@@ -126,7 +126,7 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
     - `gh-ruleset-sync.service` / `gh-ruleset-sync.timer` -- Systemd timer (daily + 2h jitter, `Persistent=true`) driving the sync
     - `protect-main.ruleset.json` -- Canonical ruleset body shared between `deploy.sh` initial provision and the timer (single source of truth)
     - `roost-net-fw.sh` -- Open/close the Hetzner cloud firewall ports (443/tcp, 51820/tcp+udp) during travel
-    - `travel-clients.sh` -- SSHes to server, calls `roost-net client <mode>`, optionally runs `qrencode` for QR phone transfer
+    - `travel-clients.sh` -- SSHes to server, calls `roost-net client <mode>`, prints to stdout or writes to `--save PATH` or ships to a Tailscale peer via `--send-tailscale PEER`
     - `travel-test.sh` -- End-to-end sanity checks for all three paths; `--simulate-gfw` blocks UDP locally to verify TCP-only paths still work; `--tailscale-check` validates exit-node routing
 - **`extras/`** -- Standalone utilities not part of the main setup flow
   - `hetzner-watch.sh` -- Polls Hetzner API for server type availability, sends ntfy alerts
