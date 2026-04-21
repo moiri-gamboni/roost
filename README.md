@@ -420,6 +420,17 @@ roost-net travel off
 - `roost-net-fw.sh {open,close,status}` -- toggle Hetzner cloud firewall for travel ports (dual-stack). Firewall identity is `${SERVER_NAME}-fw`.
 - `travel-clients.sh {android,laptop,ssh} [--save PATH | --send-tailscale PEER]` -- SSHes to server, calls `roost-net client <mode>`. Without flags prints to stdout; `--save` writes to a 0600 file; `--send-tailscale` saves + `tailscale file cp` to a peer. No QR option -- SFA's QR scanner expects URI profiles (vless://, ss://, sing-box://import-remote-profile?url=...) and rejects raw JSON.
 - `travel-test.sh [--simulate-gfw] [--tailscale-check]` -- end-to-end reachability + routing assertions, locally simulatable GFW conditions.
+- `roost-travel.sh {on|off|status|logs|config}` + `roost-travel.service` -- systemd-managed sing-box tunnel for the laptop. See *Laptop tunnel: sing-box + roost-travel* below.
+
+### Laptop tunnel: sing-box + roost-travel
+
+`roost-travel` is a systemctl wrapper around sing-box that runs the laptop side of the tunnel. One-shot install:
+
+```bash
+./files/laptop/install-travel.sh
+```
+
+Installs the sing-box CLI, the wrapper, the systemd unit, and fetches your config. Then `roost-travel {on|off|status|logs|config}`; `on` persists across reboots (`enable --now`), `off` unpersists. `./files/laptop/travel-clients.sh ssh >> ~/.ssh/config` adds the `ssh roost-travel` alias (routes through sing-box's SOCKS5 inbound on `127.0.0.1:54321` -- only works while the tunnel is up).
 
 ### Reboot behavior
 
