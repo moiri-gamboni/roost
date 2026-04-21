@@ -284,7 +284,7 @@ render_android() {
             log: {level: "info"},
             dns: {
                 servers: [
-                    {type: "https", tag: "cf-doh", server: "1.1.1.1", detour: "direct"}
+                    {type: "https", tag: "cf-doh", server: "1.1.1.1"}
                 ],
                 rules: [
                     {domain: ["travel.\($domain)", "travel-direct.\($domain)"], action: "route", server: "cf-doh"}
@@ -302,7 +302,6 @@ render_android() {
                 }
             ],
             outbounds: [
-                {type: "direct", tag: "direct"},
                 {
                     type: "urltest",
                     tag: "urltest",
