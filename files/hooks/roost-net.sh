@@ -409,12 +409,12 @@ render_android() {
 }
 
 render_laptop() {
-    # Laptop config = Android outbounds + local SOCKS5 inbound on 127.0.0.1:1080
+    # Laptop config = Android outbounds + local SOCKS5 inbound on 127.0.0.1:54321
     # so SSH ProxyCommand can chain through sing-box.
     render_android | jq '
         .inbounds = [
             .inbounds[0],
-            {type: "socks", tag: "local-socks", listen: "127.0.0.1", listen_port: 1080, users: []}
+            {type: "socks", tag: "local-socks", listen: "127.0.0.1", listen_port: 54321, users: []}
         ]
         | .route.rules = [
             {action: "sniff"},
@@ -429,9 +429,10 @@ render_ssh() {
     cat <<EOF
 Host roost-travel
   HostName localhost
+  HostKeyAlias roost-travel
   Port 22
   User ${USERNAME}
-  ProxyCommand ncat --proxy 127.0.0.1:1080 --proxy-type socks5 %h %p
+  ProxyCommand ncat --proxy 127.0.0.1:54321 --proxy-type socks5 %h %p
 EOF
 }
 
