@@ -284,11 +284,10 @@ render_android() {
             log: {level: "info"},
             dns: {
                 servers: [
-                    {tag: "cf-doh", address: "https://1.1.1.1/dns-query", detour: "direct"},
-                    {tag: "block", address: "rcode://refused"}
+                    {type: "https", tag: "cf-doh", server: "1.1.1.1", detour: "direct"}
                 ],
                 rules: [
-                    {domain: ["travel.\($domain)", "travel-direct.\($domain)"], server: "cf-doh"}
+                    {domain: ["travel.\($domain)", "travel-direct.\($domain)"], action: "route", server: "cf-doh"}
                 ]
             },
             inbounds: [
@@ -296,8 +295,7 @@ render_android() {
                     type: "tun",
                     tag: "tun-in",
                     interface_name: "tun0",
-                    inet4_address: "172.19.0.1/30",
-                    inet6_address: "fdfe:dcba:9876::1/126",
+                    address: ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
                     auto_route: true,
                     strict_route: true,
                     stack: "system"
@@ -362,7 +360,7 @@ render_android() {
                 rules: [
                     {action: "sniff"},
                     {protocol: "dns", action: "hijack-dns"},
-                    {ip_cidr: ["0.0.0.0/0", "::/0"], outbound: "urltest"}
+                    {ip_cidr: ["0.0.0.0/0", "::/0"], action: "route", outbound: "urltest"}
                 ]
             }
         }'
@@ -379,8 +377,8 @@ render_laptop() {
         | .route.rules = [
             {action: "sniff"},
             {protocol: "dns", action: "hijack-dns"},
-            {inbound: ["local-socks"], outbound: "urltest"},
-            {ip_cidr: ["0.0.0.0/0", "::/0"], outbound: "urltest"}
+            {inbound: ["local-socks"], action: "route", outbound: "urltest"},
+            {ip_cidr: ["0.0.0.0/0", "::/0"], action: "route", outbound: "urltest"}
         ]
     '
 }
