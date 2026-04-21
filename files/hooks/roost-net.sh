@@ -85,7 +85,8 @@ cmd_status() {
     local ip asn_rc
     if ip=$(sudo -u xray curl -sf --max-time 5 https://api.ipify.org); then
         echo "Egress (default): $ip"
-        is_proton_asn "$ip"; asn_rc=$?
+        # `|| asn_rc=$?` captures non-zero without tripping `set -e`.
+        asn_rc=0; is_proton_asn "$ip" || asn_rc=$?
         case "$asn_rc" in
             0) echo "  ASN: Proton" ;;
             1) echo "  ASN: Hetzner (or non-Proton)" ;;
@@ -99,7 +100,7 @@ cmd_status() {
         local vpn_ip
         if vpn_ip=$(sudo -u xray curl -sf --max-time 5 --interface wg-proton https://api.ipify.org); then
             echo "Egress (wg-proton): $vpn_ip"
-            is_proton_asn "$vpn_ip"; asn_rc=$?
+            asn_rc=0; is_proton_asn "$vpn_ip" || asn_rc=$?
             case "$asn_rc" in
                 0) echo "  ASN: Proton" ;;
                 1) echo "  ASN: non-Proton (unexpected — investigate)" ;;
@@ -208,7 +209,8 @@ cmd_vpn() {
 }
 
 cmd_test() {
-    local vpn_state pass=0 fail=0
+    local travel_state vpn_state pass=0 fail=0
+    travel_state=$(read_state_file "$STATE_DIR/travel" "off")
     vpn_state=$(read_state_file "$STATE_DIR/vpn" "off")
 
     assert() {
@@ -223,14 +225,14 @@ cmd_test() {
         fi
     }
 
-    echo "--- fwmark masking ---"
-    # iptables -S canonicalizes the MASK from 0x0000ffff -> 0xffff.
-    assert "iptables MARK for xray uid with 0xffff mask" \
-        bash -c "sudo iptables -t mangle -S OUTPUT | grep -qE -- '--uid-owner [^ ]+ .*--set-xmark 0x1337/0xffff'"
-    assert "ip6tables MARK for xray uid with 0xffff mask" \
-        bash -c "sudo ip6tables -t mangle -S OUTPUT | grep -qE -- '--uid-owner [^ ]+ .*--set-xmark 0x1337/0xffff'"
-
     if [ "$vpn_state" = "on" ]; then
+        echo "--- fwmark masking + routing ---"
+        # iptables -S canonicalizes the MASK from 0x0000ffff -> 0xffff.
+        assert "iptables MARK for xray uid with 0xffff mask" \
+            bash -c "sudo iptables -t mangle -S OUTPUT | grep -qE -- '--uid-owner [^ ]+ .*--set-xmark 0x1337/0xffff'"
+        assert "ip6tables MARK for xray uid with 0xffff mask" \
+            bash -c "sudo ip6tables -t mangle -S OUTPUT | grep -qE -- '--uid-owner [^ ]+ .*--set-xmark 0x1337/0xffff'"
+
         echo "--- VPN on: routing, kill-switch, egress ---"
         assert "ip route table 51820 has default via wg-proton" \
             bash -c "ip route show table 51820 | grep -q 'default.*wg-proton'"
@@ -255,7 +257,7 @@ cmd_test() {
             fail=$((fail + 1))
         fi
     else
-        echo "--- VPN off: fwmark rules asserted, routing/kill-switch skipped ---"
+        echo "--- VPN off: fwmark/routing/kill-switch skipped (proton-routing.sh only installs when wg-quick@proton is up) ---"
     fi
 
     echo
@@ -282,11 +284,10 @@ render_android() {
             log: {level: "info"},
             dns: {
                 servers: [
-                    {tag: "cf-doh", address: "https://1.1.1.1/dns-query", detour: "direct"},
-                    {tag: "block", address: "rcode://refused"}
+                    {type: "https", tag: "cf-doh", server: "1.1.1.1"}
                 ],
                 rules: [
-                    {domain: ["travel.\($domain)", "travel-direct.\($domain)"], server: "cf-doh"}
+                    {domain: ["travel.\($domain)", "travel-direct.\($domain)"], action: "route", server: "cf-doh"}
                 ]
             },
             inbounds: [
@@ -294,18 +295,13 @@ render_android() {
                     type: "tun",
                     tag: "tun-in",
                     interface_name: "tun0",
-                    inet4_address: "172.19.0.1/30",
-                    inet6_address: "fdfe:dcba:9876::1/126",
+                    address: ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
                     auto_route: true,
                     strict_route: true,
-                    stack: "system",
-                    sniff: true
+                    stack: "system"
                 }
             ],
             outbounds: [
-                {type: "direct", tag: "direct"},
-                {type: "block", tag: "block"},
-                {type: "dns", tag: "dns-out"},
                 {
                     type: "urltest",
                     tag: "urltest",
@@ -361,8 +357,9 @@ render_android() {
             route: {
                 auto_detect_interface: true,
                 rules: [
-                    {protocol: "dns", outbound: "dns-out"},
-                    {ip_cidr: ["0.0.0.0/0", "::/0"], outbound: "urltest"}
+                    {action: "sniff"},
+                    {protocol: "dns", action: "hijack-dns"},
+                    {ip_cidr: ["0.0.0.0/0", "::/0"], action: "route", outbound: "urltest"}
                 ]
             }
         }'
@@ -377,9 +374,10 @@ render_laptop() {
             {type: "socks", tag: "local-socks", listen: "127.0.0.1", listen_port: 1080, users: []}
         ]
         | .route.rules = [
-            {protocol: "dns", outbound: "dns-out"},
-            {inbound: ["local-socks"], outbound: "urltest"},
-            {ip_cidr: ["0.0.0.0/0", "::/0"], outbound: "urltest"}
+            {action: "sniff"},
+            {protocol: "dns", action: "hijack-dns"},
+            {inbound: ["local-socks"], action: "route", outbound: "urltest"},
+            {ip_cidr: ["0.0.0.0/0", "::/0"], action: "route", outbound: "urltest"}
         ]
     '
 }

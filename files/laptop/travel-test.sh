@@ -318,11 +318,21 @@ section "Path C (SS-2022) IPv4"
 test_path_c_ss2022 "v4" "$HETZNER_PUBLIC_IPV4"
 
 if [ "$QUICK" -eq 0 ]; then
-    section "Path B (REALITY) IPv6"
-    test_path_b_reality "v6" "[$HETZNER_PUBLIC_IPV6]"
+    # Skip v6 sections when the laptop has no IPv6 default route (common on
+    # v4-only networks e.g. coworking/hotel Wi-Fi). The v6 assertions would
+    # otherwise all FAIL with 'Network is unreachable', masking real regressions.
+    # The server's v6 is independently validated by travel-health.sh on the server.
+    if ip -6 route show default 2>/dev/null | grep -q '^default'; then
+        section "Path B (REALITY) IPv6"
+        test_path_b_reality "v6" "[$HETZNER_PUBLIC_IPV6]"
 
-    section "Path C (SS-2022) IPv6"
-    test_path_c_ss2022 "v6" "$HETZNER_PUBLIC_IPV6"
+        section "Path C (SS-2022) IPv6"
+        test_path_c_ss2022 "v6" "$HETZNER_PUBLIC_IPV6"
+    else
+        section "IPv6 paths"
+        skip "Path B (REALITY) IPv6: laptop has no IPv6 default route"
+        skip "Path C (SS-2022) IPv6: laptop has no IPv6 default route"
+    fi
 
     section "Via-tunnel functional"
     test_via_tunnel
