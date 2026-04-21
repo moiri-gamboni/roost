@@ -349,7 +349,7 @@ sudo install -m 0600 -o root -g root /path/to/proton.conf /etc/wireguard/proton.
 #    github.com/SagerNet/sing-box-for-android/releases (not F-Droid; may lag)
 
 # 3. Generate and distribute client configs (run on laptop)
-./files/laptop/travel-clients.sh android --qr   # terminal QR for phone
+./files/laptop/travel-clients.sh android --send-tailscale pixel-7a   # send to phone over Tailscale
 ./files/laptop/travel-clients.sh laptop > ~/.config/sing-box/travel.json
 ./files/laptop/travel-clients.sh ssh >> ~/.ssh/config
 
@@ -412,7 +412,7 @@ roost-net travel off
 ### Laptop scripts (`files/laptop/`)
 
 - `roost-net-fw.sh {open,close,status}` -- toggle Hetzner cloud firewall for travel ports (dual-stack). Firewall identity is `${SERVER_NAME}-fw`.
-- `travel-clients.sh {android,laptop,ssh} [--qr]` -- SSHes to server, calls `roost-net client <mode>`; `--qr` pipes the JSON through `qrencode` for phone transfer over trusted transport.
+- `travel-clients.sh {android,laptop,ssh} [--save PATH | --send-tailscale PEER]` -- SSHes to server, calls `roost-net client <mode>`. Without flags prints to stdout; `--save` writes to a 0600 file; `--send-tailscale` saves + `tailscale file cp` to a peer. No QR option -- SFA's QR scanner expects URI profiles (vless://, ss://, sing-box://import-remote-profile?url=...) and rejects raw JSON.
 - `travel-test.sh [--simulate-gfw] [--tailscale-check]` -- end-to-end reachability + routing assertions, locally simulatable GFW conditions.
 
 ### Reboot behavior
