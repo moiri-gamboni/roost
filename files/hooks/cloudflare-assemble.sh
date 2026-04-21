@@ -6,7 +6,12 @@ set -euo pipefail
 source "$(dirname "$0")/_hook-env.sh"
 
 CONFIG="/etc/cloudflared/config.yml"
-APPS_DIR="$HOME/${ROOST_DIR_NAME}/cloudflared/apps"
+# Derive APPS_DIR from the script's own path (/.../$ROOST_DIR_NAME/claude/hooks/
+# -> /.../$ROOST_DIR_NAME/cloudflared/apps) rather than $HOME, which is /root
+# when roost-net invokes this via `sudo cloudflare-assemble.sh`.
+_SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+_ROOST_DIR="$(cd "$_SCRIPT_DIR/../.." && pwd)"
+APPS_DIR="$_ROOST_DIR/cloudflared/apps"
 
 if [ ! -f "$CONFIG" ]; then
     logger -t "$_HOOK_TAG" "No existing $CONFIG, nothing to assemble"
