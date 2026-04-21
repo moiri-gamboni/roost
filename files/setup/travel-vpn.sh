@@ -102,7 +102,18 @@ fi
 
 # --- State + log directories ---
 install -d -m 0755 -o root -g root "$STATE_DIR"
+install -d -m 0700 -o root -g root "$STATE_DIR/proton-profiles"
 install -d -m 0750 -o xray -g xray "$LOG_DIR"
+
+# Remove the stale drop-in dir left over from the wg-quick@proton naming
+# (renamed to wg-quick@wg-proton so the interface name the scripts use
+# matches the interface wg-quick actually creates).
+if [ -d /etc/systemd/system/wg-quick@proton.service.d ] \
+   && [ ! -d /etc/systemd/system/wg-quick@wg-proton.service.d ]; then
+    rm -rf /etc/systemd/system/wg-quick@proton.service.d
+    systemctl daemon-reload
+    info "Removed stale /etc/systemd/system/wg-quick@proton.service.d"
+fi
 
 # --- Seed state files (off/off until operator toggles) ---
 for f in travel vpn; do
