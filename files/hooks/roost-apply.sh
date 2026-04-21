@@ -140,7 +140,7 @@ files/travel/proton-routing.sh|/etc/roost-travel/proton-routing.sh|plain+x|
 files/travel/proton-keepalive-check|/usr/local/bin/proton-keepalive-check|plain+x|
 files/travel/proton-keepalive.service|/etc/systemd/system/proton-keepalive.service|plain|daemon-reload
 files/travel/proton-keepalive.timer|/etc/systemd/system/proton-keepalive.timer|plain|daemon-reload
-files/travel/wg-proton.service.d/roost.conf|/etc/systemd/system/wg-quick@proton.service.d/roost.conf|plain|daemon-reload
+files/travel/wg-proton.service.d/roost.conf|/etc/systemd/system/wg-quick@wg-proton.service.d/roost.conf|plain|daemon-reload
 files/travel/proton.conf.example|/etc/roost-travel/proton.conf.example|plain|
 files/travel/travel-cloudflare.yml.tmpl|/etc/roost-travel/travel-cloudflare.yml|envsubst:DOMAIN|
 MANIFEST_B
@@ -159,8 +159,13 @@ expand_path() {
 
 # Check if a file needs root to write
 needs_root() {
+    # Assume root ownership for any absolute path outside /home and /tmp.
+    # Previously only matched /etc/*, which broke deploys to /usr/local/bin/*
+    # and similar root-owned paths (e.g. proton-keepalive-check after it had
+    # already been installed via sudo by setup/travel-vpn.sh).
     case "$1" in
-        /etc/*) return 0 ;;
+        /home/*|/tmp/*) return 1 ;;
+        /*) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -642,15 +647,15 @@ cmd_flag_reload() {
         # is-active distinguishes active-since-cmd_vpn-on from a lingering DOWN
         # interface: restarting the unit on the latter would flip VPN on without
         # going through cmd_vpn's ASN gate or state-file update.
-        if sudo systemctl is-active --quiet wg-quick@proton; then
-            info "Restarting wg-quick@proton to pick up drop-in..."
-            if sudo systemctl restart wg-quick@proton; then
-                ok "wg-quick@proton restarted"
+        if sudo systemctl is-active --quiet wg-quick@wg-proton; then
+            info "Restarting wg-quick@wg-proton to pick up drop-in..."
+            if sudo systemctl restart wg-quick@wg-proton; then
+                ok "wg-quick@wg-proton restarted"
             else
-                reload_failed+=("wg-quick@proton")
+                reload_failed+=("wg-quick@wg-proton")
             fi
         else
-            skip "wg-quick@proton inactive (vpn=off)"
+            skip "wg-quick@wg-proton inactive (vpn=off)"
         fi
     fi
 
@@ -699,7 +704,7 @@ Flags (direct service reload):
   --systemd    Daemon-reload and restart systemd units
   --cron       No-op (cron auto-reloads)
   --xray       Re-render /etc/xray/config.json from state.env and restart xray
-  --proton     Daemon-reload, restart proton-keepalive.timer + wg-quick@proton (if up)
+  --proton     Daemon-reload, restart proton-keepalive.timer + wg-quick@wg-proton (if up)
 
 Options:
   -y, --yes    Skip confirmation prompts (push only)
