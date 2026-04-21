@@ -1,0 +1,20 @@
+[Unit]
+Description=roost-travel sing-box tunnel
+Documentation=https://github.com/moiri-gamboni/roost
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# sing-box TUN requires CAP_NET_ADMIN; simpler to run as root than to dance
+# with ambient caps on a user account. The tunnel binary itself runs sandboxed
+# via its own config (no shell, no external processes other than DNS probes).
+ExecStart=${SING_BOX_BIN} run -c /home/${USERNAME}/.config/sing-box/travel.json
+# If sing-box exits unexpectedly (crash, SIGKILL), try to clean up the TUN
+# interface so the next start doesn't find a stale tun0.
+ExecStopPost=/bin/sh -c 'ip link delete tun0 2>/dev/null; exit 0'
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
