@@ -1,6 +1,7 @@
 {
     auto_https off
     default_bind $TAILSCALE_IP
+    email roost@$DOMAIN
 }
 
 import /etc/caddy/sites-enabled/*
