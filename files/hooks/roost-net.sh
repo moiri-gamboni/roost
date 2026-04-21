@@ -77,8 +77,8 @@ cmd_status() {
 
     if [ "$vpn_state" = "on" ]; then
         local wg_status
-        wg_status=$(systemctl is-active wg-quick@proton.service || true)
-        echo "wg-quick@proton: $wg_status"
+        wg_status=$(systemctl is-active wg-quick@wg-proton.service || true)
+        echo "wg-quick@wg-proton: $wg_status"
     fi
 
     echo
@@ -168,26 +168,26 @@ cmd_vpn() {
 
     case "$action" in
         on)
-            sudo test -f /etc/wireguard/proton.conf || die "No /etc/wireguard/proton.conf"
-            if ! sudo systemctl enable --now wg-quick@proton; then
-                sudo systemctl disable wg-quick@proton || true
+            sudo test -f /etc/wireguard/wg-proton.conf || die "No /etc/wireguard/wg-proton.conf"
+            if ! sudo systemctl enable --now wg-quick@wg-proton; then
+                sudo systemctl disable wg-quick@wg-proton || true
                 # wg-quick@ is Type=oneshot with RemainAfterExit=yes: if ExecStart
                 # (wg-quick up) fails partway, ExecStop is NOT auto-invoked, so
                 # PreDown (proton-routing.sh down) may not have run. Explicit
                 # teardown prevents orphan fwmark/kill-switch rules.
                 sudo /etc/roost-travel/proton-routing.sh down || true
-                die "wg-quick@proton failed to start"
+                die "wg-quick@wg-proton failed to start"
             fi
             local ip
             if ! ip=$(sudo -u xray curl -sf --max-time 10 --interface wg-proton https://api.ipify.org); then
-                sudo systemctl disable --now wg-quick@proton
+                sudo systemctl disable --now wg-quick@wg-proton
                 die "Egress verification failed (no response via wg-proton)"
             fi
             # Fail-closed on 2 (lookup failed): the ASN gate is the only
             # backstop against a Hetzner-egress leak after wg-quick up, so a
             # single ipinfo outage must not rubber-stamp activation.
             is_proton_asn "$ip" || {
-                sudo systemctl disable --now wg-quick@proton
+                sudo systemctl disable --now wg-quick@wg-proton
                 die "Egress $ip ASN check failed (rc=$?; not Proton or ipinfo unreachable)"
             }
             sudo systemctl enable --now proton-keepalive.timer
@@ -197,13 +197,56 @@ cmd_vpn() {
             ;;
         off)
             sudo systemctl disable --now proton-keepalive.timer || true
-            sudo systemctl disable --now wg-quick@proton || true
+            sudo systemctl disable --now wg-quick@wg-proton || true
             echo "off" | sudo tee "$STATE_DIR/vpn" >/dev/null
             ntfy_send -t "VPN OFF" "Hetzner egress"
             echo "VPN mode: OFF"
             ;;
+        profile)
+            local profile="${2:-}"
+            local profiles_dir="$STATE_DIR/proton-profiles"
+            local live="/etc/wireguard/wg-proton.conf"
+            if [ -z "$profile" ]; then
+                # List mode
+                local current=""
+                if sudo test -L "$live"; then
+                    current=$(sudo readlink -f "$live")
+                fi
+                echo "Available Proton profiles (drop *.conf files under $profiles_dir):"
+                local found=false
+                while IFS= read -r -d '' f; do
+                    found=true
+                    local name marker=""
+                    name=$(basename "$f" .conf)
+                    [ "$f" = "$current" ] && marker=" [active]"
+                    echo "  $name$marker"
+                done < <(sudo find "$profiles_dir" -maxdepth 1 -name '*.conf' -type f -print0 2>/dev/null)
+                $found || echo "  (none — add configs then 'roost-net vpn profile <name>')"
+                return 0
+            fi
+            local target="$profiles_dir/$profile.conf"
+            sudo test -f "$target" || die "No profile '$profile' at $target"
+            sudo ln -sfT "$target" "$live"
+            echo "Active Proton profile: $profile -> $target"
+            # If VPN is currently on, restart wg-quick to pick up the new config.
+            # Re-verify egress + ASN so a bad profile fails closed rather than
+            # silently flipping the egress to an unintended country/network.
+            if [ "$(read_state_file "$STATE_DIR/vpn" "off")" = "on" ]; then
+                info "Restarting wg-quick@wg-proton with new profile..."
+                if ! sudo systemctl restart wg-quick@wg-proton; then
+                    sudo /etc/roost-travel/proton-routing.sh down || true
+                    die "wg-quick@wg-proton restart failed after profile swap to '$profile'"
+                fi
+                local ip
+                ip=$(sudo -u xray curl -sf --max-time 10 --interface wg-proton https://api.ipify.org) \
+                    || die "Egress verification failed after profile swap to '$profile'"
+                is_proton_asn "$ip" || die "Egress $ip ASN check failed after profile swap (rc=$?)"
+                ntfy_send -t "VPN profile: $profile" "Egress: $ip"
+                echo "Egress: $ip"
+            fi
+            ;;
         *)
-            die "Usage: roost-net vpn on|off"
+            die "Usage: roost-net vpn {on|off|profile [name]}"
             ;;
     esac
 }
@@ -257,7 +300,7 @@ cmd_test() {
             fail=$((fail + 1))
         fi
     else
-        echo "--- VPN off: fwmark/routing/kill-switch skipped (proton-routing.sh only installs when wg-quick@proton is up) ---"
+        echo "--- VPN off: fwmark/routing/kill-switch skipped (proton-routing.sh only installs when wg-quick@wg-proton is up) ---"
     fi
 
     echo
@@ -449,7 +492,9 @@ Usage: roost-net <subcommand> [args]
 Subcommands:
   status                     Show travel/vpn state, service health, egress IP+ASN
   travel {on|off}            Toggle Path A (CF Tunnel fragment + UFW 443/51820)
-  vpn {on|off}               Toggle Proton egress (wg-quick@proton + keepalive)
+  vpn {on|off}               Toggle Proton egress (wg-quick@wg-proton + keepalive)
+  vpn profile [name]         List or activate a Proton profile from /etc/roost-travel/proton-profiles/.
+                             Swaps /etc/wireguard/wg-proton.conf symlink; restarts wg if vpn=on.
   test                       Assert fwmark, routing, kill-switch
   client {android|laptop|ssh}  Emit client config to stdout
   rotate-keys                Regenerate UUID + REALITY keys + SS-2022 password
