@@ -69,10 +69,13 @@ xray_path=$(openssl rand -hex 6)
 # `tr < /dev/urandom | head` would raise under `set -o pipefail`.
 grpc_service_name=$(openssl rand -base64 16 | tr -d '/+=' | head -c 10)
 
-# REALITY x25519 keypair — xray emits both lines; parse each.
+# REALITY x25519 keypair. Xray v26 output format:
+#   PrivateKey: <base64url>
+#   Password (PublicKey): <base64url>
+#   Hash32: <base64url>
 x25519_output=$("$XRAY_BIN" x25519)
-reality_private_key=$(awk -F': *' '/^Private ?[Kk]ey/ {print $2; exit}' <<< "$x25519_output")
-reality_public_key=$(awk -F': *' '/^Public ?[Kk]ey/  {print $2; exit}' <<< "$x25519_output")
+reality_private_key=$(awk '/^PrivateKey:/ {print $2; exit}' <<< "$x25519_output")
+reality_public_key=$(awk  '/PublicKey/   {print $NF; exit}' <<< "$x25519_output")
 if [ -z "$reality_private_key" ] || [ -z "$reality_public_key" ]; then
     echo "Error: failed to parse x25519 keypair from xray output" >&2
     echo "$x25519_output" >&2
