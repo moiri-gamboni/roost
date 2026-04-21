@@ -5,27 +5,29 @@ set -euo pipefail
 
 LOG_TAG="roost/travel-clients"
 log()  { logger -t "$LOG_TAG" "$*"; echo "$*" >&2; }
-warn() { logger -t "$LOG_TAG" -p user.warning "$*"; echo "WARNING: $*" >&2; }
 die()  { logger -t "$LOG_TAG" -p user.err "$*"; echo "ERROR: $*" >&2; exit 1; }
-
-DEFAULT_QR_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/roost"
 
 usage() {
     cat <<EOF
-Usage: travel-clients {android|laptop|ssh} [--qr] [--qr-file PATH]
+Usage: travel-clients {android|laptop|ssh} [--save PATH] [--send-tailscale PEER]
 
-Fetch a travel-VPN client config from the server and print it to stdout.
+Fetch a travel-VPN client config from the server; stdout by default.
 
 Subcommands:
-  android   Android sing-box JSON (TUN-only).
+  android   Android sing-box JSON (TUN-only). Import as Local profile -> From
+            file in sing-box-for-android. SFA's QR scanner expects URI profiles
+            (vless://, ss://, or sing-box://import-remote-profile?url=...) and
+            rejects raw JSON, so a QR workflow would require hosting the JSON
+            and isn't worth the infra here -- use --send-tailscale instead.
   laptop    Linux sing-box JSON (TUN + 127.0.0.1:1080 SOCKS5 inbound).
   ssh       SSH config snippet for the \`roost-travel\` host alias.
 
 Flags:
-  --qr              Render the output as a terminal QR code (UTF8).
-  --qr-file PATH    Also write a PNG QR to PATH
-                    (default: ${DEFAULT_QR_DIR}/sb-<mode>.png, mode 0600).
-  --help            Show this message.
+  --save PATH            Write config to PATH (mode 0600, parent 0700).
+  --send-tailscale PEER  Save to a temp file and \`tailscale file cp\` to PEER.
+                         Requires Tailscale up on both laptop and PEER with
+                         incoming files enabled on PEER.
+  --help                 Show this message.
 
 Environment:
   Reads USERNAME and SERVER_NAME from .env at repo root. Target:
@@ -33,9 +35,8 @@ Environment:
   Server resolves via Tailscale MagicDNS, so this only works with Tailscale up.
 
 Examples:
-  travel-clients android > ~/.cache/roost/sb-android.json
-  travel-clients android --qr
-  travel-clients android --qr-file ~/.cache/roost/sb.png
+  travel-clients android --save ~/.cache/roost/sb-android.json
+  travel-clients android --send-tailscale pixel-7a
   travel-clients laptop > ~/.config/sing-box/travel.json
   travel-clients ssh   >> ~/.ssh/config
 EOF
@@ -52,14 +53,16 @@ case "$MODE" in
     *) echo "Unknown subcommand: $MODE" >&2; usage; exit 2 ;;
 esac
 
-QR=0
-QR_FILE=""
+SAVE_PATH=""
+TS_PEER=""
 while [ $# -gt 0 ]; do
     case "$1" in
-        --qr) QR=1; shift ;;
-        --qr-file)
-            [ $# -ge 2 ] || die "--qr-file requires a path"
-            QR_FILE="$2"; shift 2 ;;
+        --save)
+            [ $# -ge 2 ] || die "--save requires a path"
+            SAVE_PATH="$2"; shift 2 ;;
+        --send-tailscale)
+            [ $# -ge 2 ] || die "--send-tailscale requires a peer name"
+            TS_PEER="$2"; shift 2 ;;
         --help|-h) usage; exit 0 ;;
         *) die "Unknown flag: $1" ;;
     esac
@@ -84,10 +87,7 @@ fi
 SSH_TARGET="$USERNAME@$SERVER_NAME"
 
 command -v ssh >/dev/null || die "ssh not found"
-if [ "$QR" -eq 1 ] || [ -n "$QR_FILE" ]; then
-    command -v qrencode >/dev/null \
-        || die "qrencode not found (apt install qrencode)"
-fi
+[ -n "$TS_PEER" ] && { command -v tailscale >/dev/null || die "tailscale CLI not found"; }
 
 log "fetching client config ($MODE) via ssh $SSH_TARGET"
 # -n : detach stdin so subshell capture doesn't deadlock on an SSH prompt.
@@ -103,21 +103,29 @@ if [ -z "$CONFIG" ]; then
     die "server returned empty config for mode '$MODE'"
 fi
 
-printf '%s\n' "$CONFIG"
+# Write to a specific path under 0700 parent + 0600 file (config carries long-
+# lived credentials: UUID, REALITY private key, SS-2022 password).
+save_config() {
+    local path="$1" dir
+    dir=$(dirname -- "$path")
+    install -d -m 0700 "$dir"
+    ( umask 077 && printf '%s\n' "$CONFIG" > "$path" )
+    chmod 0600 "$path"
+    log "wrote $path (mode 0600)"
+}
 
-if [ "$QR" -eq 1 ]; then
-    printf '%s' "$CONFIG" | qrencode -t UTF8 -o - >&2
-fi
-
-# Default QR file only auto-applied for android (typical mobile import use case).
-if [ -n "$QR_FILE" ] || { [ "$QR" -eq 1 ] && [ "$MODE" = "android" ]; }; then
-    qr_path="${QR_FILE:-$DEFAULT_QR_DIR/sb-${MODE}.png}"
-    qr_dir=$(dirname -- "$qr_path")
-    # Config contains long-lived credentials (UUID, REALITY key, SS-2022 pw).
-    # Guard against world-readable /tmp-style leaks even if the user supplied
-    # a custom path by forcing 0700 dir + 0600 file.
-    install -d -m 0700 "$qr_dir"
-    ( umask 077 && printf '%s' "$CONFIG" | qrencode -o "$qr_path" )
-    chmod 0600 "$qr_path"
-    log "QR written: $qr_path (mode 0600)"
+if [ -n "$SAVE_PATH" ]; then
+    save_config "$SAVE_PATH"
+elif [ -n "$TS_PEER" ]; then
+    tmp_dir="${XDG_CACHE_HOME:-$HOME/.cache}/roost"
+    tmp_path="$tmp_dir/sb-${MODE}.json"
+    save_config "$tmp_path"
+    log "sending to tailscale peer '$TS_PEER'..."
+    if tailscale file cp "$tmp_path" "${TS_PEER}:"; then
+        log "sent $tmp_path -> ${TS_PEER}: (receive on peer via Tailscale app -> Files)"
+    else
+        die "tailscale file cp failed (is '$TS_PEER' online and accepting files?); local copy left at $tmp_path"
+    fi
+else
+    printf '%s\n' "$CONFIG"
 fi
