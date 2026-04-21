@@ -15,3 +15,6 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 
 # Weekly auto-update (Sunday 3am, before weekly memory cleanup at 10am)
 0 3 * * 0 $USERNAME flock -n $HOME_DIR/.locks/auto-update $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/auto-update.sh
+
+# Weekly Travel-VPN audit (Sunday 4am): roost-net test when vpn=on. cmd_test ntfy_sends on failure so no extra wrapper is needed.
+0 4 * * 0 $USERNAME flock -n $HOME_DIR/.locks/travel-audit sh -c 'if [ "$(cat /etc/roost-travel/vpn)" = "on" ]; then $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/roost-net.sh test; fi'

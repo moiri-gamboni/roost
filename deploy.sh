@@ -451,10 +451,19 @@ else
     fi
 fi
 
-# --- Resolve SERVER_IP ---
+# --- Resolve SERVER_IP + public IPv6 ---
 
 SERVER_IP=$(hcloud server ip "$SERVER_NAME")
-ok "Server IP: $SERVER_IP"
+HETZNER_PUBLIC_IPV4="$SERVER_IP"
+# hcloud reports IPv6 as a /64 CIDR (e.g. "2a01:4f8:...::/64"); the server binds
+# the ::1 address within that prefix.
+HETZNER_PUBLIC_IPV6_CIDR=$(hcloud server describe -o json "$SERVER_NAME" | jq -r '.public_net.ipv6.ip // empty')
+if [ -n "$HETZNER_PUBLIC_IPV6_CIDR" ]; then
+    HETZNER_PUBLIC_IPV6="${HETZNER_PUBLIC_IPV6_CIDR%/*}1"
+else
+    HETZNER_PUBLIC_IPV6=""
+fi
+ok "Server IP: $SERVER_IP${HETZNER_PUBLIC_IPV6:+ / $HETZNER_PUBLIC_IPV6}"
 
 # --- Wait for SSH ---
 
@@ -603,14 +612,6 @@ if [ "$SSH_USER" = "root" ]; then
 fi
 
 # ============================================
-# Disable IPv6
-# ============================================
-
-section "Disable IPv6"
-remote_script "setup/ipv6-disable.sh"
-ok "IPv6 configuration applied"
-
-# ============================================
 # Swap
 # ============================================
 
@@ -659,6 +660,11 @@ TAILSCALE_DNS=$(remote "$ROOT_CMD timeout 10 tailscale status --json" | jq -r '.
 if [ -n "$TAILSCALE_DNS" ]; then
     info "Tailscale DNS: $TAILSCALE_DNS"
 fi
+
+# Advertise as exit node so travel-vpn "home-private" mode can route
+# laptop/phone egress through Proton via this server.
+remote "$ROOT_CMD tailscale set --advertise-exit-node"
+ok "Tailscale exit-node advertised"
 
 # Cache Tailscale host keys in known_hosts for future SSH access
 ssh-keyscan -H "$TAILSCALE_IP" >> ~/.ssh/known_hosts || true
@@ -910,6 +916,14 @@ remote "$ROOT_CMD systemctl restart cloudflared"
 ok "cloudflared running as systemd service"
 
 # ============================================
+# Travel VPN (Xray + Proton egress)
+# ============================================
+
+section "Travel VPN"
+remote_script "setup/travel-vpn.sh"
+ok "Xray + travel-vpn configs deployed (travel=off, vpn=off by default)"
+
+# ============================================
 # Agent Tools
 # ============================================
 
@@ -973,6 +987,8 @@ USERNAME="$USERNAME"
 DOMAIN="$DOMAIN"
 ROOST_DIR_NAME="$ROOST_DIR_NAME"
 CLOUDFLARE_TUNNEL_NAME="$TUNNEL_NAME"
+HETZNER_PUBLIC_IPV4="$HETZNER_PUBLIC_IPV4"
+HETZNER_PUBLIC_IPV6="$HETZNER_PUBLIC_IPV6"
 SYNC_EOF
 ok "Wrote $SYNC_ENV for local sync"
 

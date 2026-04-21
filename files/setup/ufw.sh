@@ -1,5 +1,7 @@
 #!/bin/bash
 # Configure UFW: deny all incoming except Tailscale.
+# Manages both v4 and v6 (IPV6=yes default in /etc/default/ufw); every
+# `ufw allow` below applies to both stacks.
 source "$(dirname "$0")/../_setup-env.sh"
 
 # Only reset if rules don't already match expected state

@@ -63,6 +63,16 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
 
 **Firewall model**: The Hetzner cloud firewall has a temporary SSH rule that exists only during deploys. `deploy.sh` adds it at the start and removes it at the end, so public SSH is locked out between deploys. UFW on the server allows SSH on port 22 (the cloud firewall controls whether traffic reaches it). Tailscale handles private access; Cloudflare Tunnel handles public web traffic. The only permanent public port is UDP 41641 (Tailscale WireGuard).
 
+**Dual-stack networking**: IPv6 is **enabled** server-wide. Hetzner provides a /64; the server binds `::1` of the prefix on eth0. Every firewall rule you add must cover both stacks:
+- `iptables ...` → add a matching `ip6tables ...` rule (same chain, same intent).
+- `ip rule add ...` → add a matching `ip -6 rule add ...`.
+- `ip route ...` in a named table → same for `ip -6 route ...`.
+- `ufw allow ...` → UFW manages both stacks automatically when `IPV6=yes` in `/etc/default/ufw` (Ubuntu default).
+- Hetzner cloud firewall rules added via `hcloud firewall add-rule` → pass **both** `--source-ips 0.0.0.0/0 --source-ips ::/0` so v6 traffic isn't silently dropped.
+- Anything sysctl-related on `net.ipv4.conf.*` almost always needs the `net.ipv6.conf.*` counterpart (`rp_filter` is an exception — v6 doesn't have it).
+
+Services that must stay **v4-only** pin their bind explicitly: Caddy via `default_bind $TAILSCALE_IP`, ntfy via `listen-http: "0.0.0.0:2586"`. New services that bind `:` or `::` will auto-pick-up v6 on dual-stack Linux — decide intentionally.
+
 **`~/roost/` directory**: All managed state lives under `~/$ROOST_DIR_NAME/` (default `~/roost/`, configurable via `ROOST_DIR_NAME` in `.env`). `CLAUDE_CONFIG_DIR=~/$ROOST_DIR_NAME/claude` redirects Claude Code's config there.
 
 ## File Layout
@@ -78,6 +88,7 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
   - `caddy-tailscale.conf` -- Systemd drop-in for Caddy to wait for Tailscale
   - `cloudflare-config.yml` -- Cloudflare Tunnel base config template (envsubst-expanded); app ingress via fragments
   - `ntfy-server.yml` -- ntfy server configuration
+  - `tailscaled-iptables.conf` -- Systemd drop-in pinning `tailscaled` to the iptables firewall backend (so travel-vpn's masked fwmark has predictable Tailscale mark bits to work around)
   - `tmux.conf` -- Tmux configuration deployed to server
   - `btrfs-convert.sh` -- Rescue-mode script to convert ext4 to btrfs with @rootfs subvolume
   - `glances.service` -- Systemd unit for Glances monitoring
@@ -90,11 +101,21 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
     - `_hook-env.sh` -- Shared library: JSON input parsing (`hook_json`), ntfy helpers, rate limiting, logging
     - `reflect.md` -- Prompt injected by `reflect.sh` before context compaction
     - `roost-apply.sh` -- Config deployment and service reload (manifest-based + flag mode)
+    - `roost-net.sh` -- Travel VPN control CLI: `status`, `travel on/off`, `vpn on/off`, `test`, `client {android|laptop|ssh}`, `rotate-keys`; symlinked as `~/bin/roost-net`
     - `cloudflare-assemble.sh` -- Assembles cloudflare config from base header + app fragments
   - `skills/` -- Claude Code skills deployed to `$CLAUDE_CONFIG_DIR/skills/`
     - `html2markdown/SKILL.md`, `havelock-api/SKILL.md`
   - `sshd/` -- sshd drop-in configs (`50-clip-forward.conf`: `StreamLocalBindUnlink yes`)
-  - `setup/` -- Modular setup scripts, run via `remote_script()` in deploy.sh: `system`, `create-user`, `ssh-hardening`, `ufw`, `ipv6-disable`, `swap`, `snapper` (btrfs), `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `clip-forward`, `unattended-upgrades`
+  - `travel/` -- Travel VPN server pieces (Xray + Proton egress); see Travel VPN section below
+    - `xray.service`, `xray-boot-guard`, `xray-logrotate.conf`, `xray-config.json.tmpl` -- Xray runtime
+    - `keys-init.sh` -- Generates `/etc/roost-travel/state.env` (REALITY keypair, UUID, SS-2022 password, shortIds)
+    - `proton-routing.sh` -- wg-quick PostUp/PreDown: dual-stack fwmark policy routing + kill-switch
+    - `proton-keepalive.service` / `.timer` / `proton-keepalive-check` -- Debounced watchdog (30s)
+    - `wg-proton.service.d/roost.conf` -- Drop-in for `wg-quick@proton` (ordering + kill-switch sanity)
+    - `proton.conf.example` -- Template for the user's `/etc/wireguard/proton.conf`
+    - `travel-health.sh` -- Deployed as `health-check-apps.sh`; sourced by the base health check
+    - `travel-cloudflare.yml.tmpl` -- CF Tunnel ingress fragment (copied to `~/roost/cloudflared/apps/travel.yml` by `roost-net travel on`)
+  - `setup/` -- Modular setup scripts, run via `remote_script()` in deploy.sh: `system`, `create-user`, `ssh-hardening`, `ufw`, `swap`, `snapper` (btrfs), `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `travel-vpn`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `clip-forward`, `unattended-upgrades`
   - `laptop/` -- Scripts and systemd units designed to run on the laptop, not the server
     - `btrfs-backup.sh` -- Pull-based incremental btrfs snapshot backup (laptop SSHes to server, `btrfs send`/`receive`)
     - `roost-backup.service` / `roost-backup.timer` -- Daily systemd timer for btrfs backup (`RandomizedDelaySec=1h`, `Persistent=true`)
@@ -104,6 +125,9 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
     - `gh-ruleset-sync.sh` -- Periodic sync of the "Protect main" ruleset across all repos owned by the authenticated gh user; closes the gap between `./deploy.sh` runs
     - `gh-ruleset-sync.service` / `gh-ruleset-sync.timer` -- Systemd timer (daily + 2h jitter, `Persistent=true`) driving the sync
     - `protect-main.ruleset.json` -- Canonical ruleset body shared between `deploy.sh` initial provision and the timer (single source of truth)
+    - `roost-net-fw.sh` -- Open/close the Hetzner cloud firewall ports (443/tcp, 51820/tcp+udp) during travel
+    - `travel-clients.sh` -- SSHes to server, calls `roost-net client <mode>`, optionally runs `qrencode` for QR phone transfer
+    - `travel-test.sh` -- End-to-end sanity checks for all three paths; `--simulate-gfw` blocks UDP locally to verify TCP-only paths still work; `--tailscale-check` validates exit-node routing
 - **`extras/`** -- Standalone utilities not part of the main setup flow
   - `hetzner-watch.sh` -- Polls Hetzner API for server type availability, sends ntfy alerts
 - **`test-server.sh`** -- Server verification script; tests services over SSH, logs to `logs/`
@@ -164,6 +188,40 @@ All infrastructure runs as native systemd services installed via official apt re
 
 Caddy has a systemd drop-in that waits for Tailscale before starting. Updates are handled by `apt upgrade` (via auto-update.sh and unattended-upgrades).
 
+## Travel VPN
+
+Toggleable GFW-resistant network with a Proton egress layer. See `plans/travel-vpn-architecture.md` for full design rationale. High-level:
+
+**Paths:** three concurrent Xray inbounds on the server, sing-box urltest on clients picks the fastest:
+- **Path A** -- VLESS + WebSocket + TLS behind the existing Cloudflare Tunnel (CF terminates TLS, xray listens on `127.0.0.1:10000`).
+- **Path B** -- VLESS + gRPC + REALITY on `:::443` direct to Hetzner (masquerades as `www.samsung.com`).
+- **Path C** -- Shadowsocks-2022 (`chacha20-poly1305`) on `:::51820` direct to Hetzner, TCP + UDP.
+
+**Egress:** optional ProtonVPN WireGuard (`wg-proton`) as a policy-routed outbound. Traffic from the `xray` system user plus Tailscale-exit-node forwarded traffic gets fwmarked with `0x1337` (mask `0x0000ffff`, so Tailscale's own mark bits survive). A dual-stack kill-switch REJECTs anything from those sources that would otherwise leak out `eth0`.
+
+**Toggles (four modes, two state files in `/etc/roost-travel/`):**
+
+| Mode | Phone transport | `roost-net travel` | `roost-net vpn` | Phone egress |
+|---|---|---|---|---|
+| Home, normal | ISP direct | off | off | ISP |
+| Home, private | Tailscale exit node | off | on | Proton |
+| Travel | Xray A/B/C | on | off | Hetzner |
+| Travel, private | Xray A/B/C | on | on | Proton |
+
+**State:** `/etc/roost-travel/{travel,vpn}` contain `on`/`off`. `/etc/roost-travel/state.env` (`0600 root`) holds the generated keys (UUID, REALITY keypair, shortIds, SS-2022 password). `vpn=on` is persisted via `systemctl enable --now wg-quick@proton` so the server survives an in-country update + reboot.
+
+**Server CLI (`roost-net`):**
+- `roost-net status` -- current toggles, egress IP, service status
+- `roost-net travel on|off` -- deploy/remove CF fragment, open/close UFW for 443/tcp + 51820/tcp+udp
+- `roost-net vpn on|off` -- enable/disable `wg-quick@proton` + keepalive timer, verify Proton ASN on activation
+- `roost-net test` -- plan §4.2 assertions (fwmark masking, kill-switch REJECT, egress ASN)
+- `roost-net client {android|laptop|ssh}` -- emit sing-box or SSH config from `state.env`
+- `roost-net rotate-keys` -- regenerate `state.env` via `keys-init.sh --force`, restart Xray
+
+**Laptop CLI (`files/laptop/roost-net-fw.sh`):** opens/closes the Hetzner cloud firewall for travel ports (dual-stack). `SERVER_NAME-fw` is the firewall name convention from `deploy.sh`.
+
+**Operational playbook:** pre-departure, travel, mid-flight degradation handling -- see README + `plans/travel-vpn-architecture.md` §6.
+
 ## App-Specific Extensions
 
 The base infrastructure configs are generic and stay in the repo. Server-specific app configs go in dedicated locations that the base configs import/source, avoiding divergence:
@@ -174,7 +232,7 @@ The base infrastructure configs are generic and stay in the repo. Server-specifi
 | Caddy Tailscale-only apps | `/etc/caddy/apps-enabled/<app>.caddy` | Per-app `handle_path` fragments imported by `sites-enabled/apps.caddy` (see below) |
 | Cloudflare ingress | `~/roost/cloudflared/apps/<app>.yml` | Assembled by `cloudflare-assemble.sh`; each file contains ingress rule lines |
 | App cron jobs | `/etc/cron.d/${ROOST_DIR_NAME}-apps` | Separate file from the base cron; filenames must not contain dots |
-| App health checks | `~/roost/claude/hooks/health-check-apps.sh` | Sourced by `health-check.sh` if present; uses same `check()` and `check_service()` helpers |
+| App health checks | `~/roost/claude/hooks/health-check-apps.sh` | Sourced by `health-check.sh` if present; uses same `check()` and `check_service()` helpers. Currently occupied by travel-vpn (`files/travel/travel-health.sh` deploys to that path); append additional app-specific checks rather than overwrite. |
 
 ### Tailscale-Only Static Apps
 
@@ -219,6 +277,8 @@ roost-apply --cloudflare     # Assemble fragments and restart cloudflared
 roost-apply --ntfy           # Restart ntfy
 roost-apply --systemd        # Daemon-reload + restart changed systemd units
 roost-apply --cron           # Reinstall crontab
+roost-apply --xray           # Re-render /etc/xray/config.json from state.env and restart xray
+roost-apply --proton         # Daemon-reload; restart proton-keepalive.timer + wg-quick@proton (skipped when vpn=off)
 ```
 
 ## Recovery
