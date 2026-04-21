@@ -36,6 +36,60 @@ export PATH=$PATH:~/bin:~/.local/bin
 
 # Roost server management (symlink created by setup/shell-config.sh)
 
+# --- VS Code Remote IPC ---
+
+# VS Code Remote-SSH creates a per-window unix socket under /run/user/$UID/ and
+# passes its path via VSCODE_IPC_HOOK_CLI so `code <file>` can round-trip to the
+# editor. On a clean exit the socket file is removed; on a crashed or
+# disconnected session it leaks. Long-running shells and tmux panes inherit the
+# old value of VSCODE_IPC_HOOK_CLI and then fail with ECONNREFUSED when they
+# outlive the window.
+#
+# Fix: export a stable path and keep a symlink there pointing at whichever
+# live socket is currently listening. Any process started from a shell that
+# sourced this file sees the stable path and always reaches a live window.
+export VSCODE_IPC_HOOK_CLI="$HOME/.vscode-ipc.sock"
+
+_vscode_ipc_is_live() {
+    local path="$1"
+    [[ -n "$path" && -S "$path" ]] || return 1
+    ss -xlH | tr -s ' \t' '\n' | grep -Fxq "$path"
+}
+
+_vscode_ipc_sync() {
+    local stable="$HOME/.vscode-ipc.sock"
+    local current=""
+    [[ -L "$stable" ]] && current=$(readlink "$stable")
+    _vscode_ipc_is_live "$current" && return 0
+
+    # Newest live vscode-ipc listening socket wins (most recently opened window).
+    local fresh
+    fresh=$(ss -xlH \
+        | awk '{for(i=1;i<=NF;i++) if($i ~ /\/run\/user\/[0-9]+\/vscode-ipc-[-a-f0-9]+\.sock$/) print $i}' \
+        | while IFS= read -r s; do
+            [[ -e "$s" ]] && printf '%s\t%s\n' "$(stat -c %Y "$s")" "$s"
+          done \
+        | sort -nr | head -1 | cut -f2)
+
+    if [[ -n "$fresh" ]]; then
+        ln -sfn "$fresh" "$stable"
+    elif [[ -L "$stable" ]]; then
+        rm -f "$stable"
+    fi
+}
+
+_vscode_ipc_sync
+# Resync before each prompt (~10ms; catches windows opened/closed mid-session).
+case ";${PROMPT_COMMAND:-};" in
+    *";_vscode_ipc_sync;"*) ;;
+    *) PROMPT_COMMAND="_vscode_ipc_sync${PROMPT_COMMAND:+; $PROMPT_COMMAND}" ;;
+esac
+
+# Overwrite the tmux-cached value so new panes start with the stable path.
+if [[ -n "${TMUX:-}" ]]; then
+    tmux set-environment -g VSCODE_IPC_HOOK_CLI "$VSCODE_IPC_HOOK_CLI"
+fi
+
 # --- GitHub token resolution ---
 
 # Resolve a GH_TOKEN from ~/.config/git/tokens/ based on the git remote's owner.
