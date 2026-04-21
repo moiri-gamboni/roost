@@ -300,14 +300,11 @@ render_android() {
                     inet6_address: "fdfe:dcba:9876::1/126",
                     auto_route: true,
                     strict_route: true,
-                    stack: "system",
-                    sniff: true
+                    stack: "system"
                 }
             ],
             outbounds: [
                 {type: "direct", tag: "direct"},
-                {type: "block", tag: "block"},
-                {type: "dns", tag: "dns-out"},
                 {
                     type: "urltest",
                     tag: "urltest",
@@ -363,7 +360,8 @@ render_android() {
             route: {
                 auto_detect_interface: true,
                 rules: [
-                    {protocol: "dns", outbound: "dns-out"},
+                    {action: "sniff"},
+                    {protocol: "dns", action: "hijack-dns"},
                     {ip_cidr: ["0.0.0.0/0", "::/0"], outbound: "urltest"}
                 ]
             }
@@ -379,7 +377,8 @@ render_laptop() {
             {type: "socks", tag: "local-socks", listen: "127.0.0.1", listen_port: 1080, users: []}
         ]
         | .route.rules = [
-            {protocol: "dns", outbound: "dns-out"},
+            {action: "sniff"},
+            {protocol: "dns", action: "hijack-dns"},
             {inbound: ["local-socks"], outbound: "urltest"},
             {ip_cidr: ["0.0.0.0/0", "::/0"], outbound: "urltest"}
         ]
