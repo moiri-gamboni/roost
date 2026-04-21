@@ -1,18 +1,27 @@
 # ProtonVPN WireGuard config — TEMPLATE.
 #
-# Copy to /etc/wireguard/proton.conf (owned root:root, mode 0600) and replace
-# every <bracketed placeholder> with values from the Proton dashboard
-# (https://account.protonvpn.com/downloads, WireGuard tab).
+# Multi-profile workflow (e.g. NetShield-on vs NetShield-off):
 #
-# Generate the config on the Proton dashboard with IPv6 enabled; without that,
-# the Address line below will lack a v6 entry and the ip6tables kill-switch will
-# have no v6 egress to gate — leaking IPv6 past Proton.
+#   1. Download each variant from https://account.protonvpn.com/downloads
+#      (WireGuard tab -> enable IPv6 -> pick country -> pick NetShield setting).
+#   2. Fill in PostUp / PreDown / Table / DNS per the blocks below.
+#   3. Install each under /etc/roost-travel/proton-profiles/<NAME>.conf:
+#        sudo install -m 0600 -o root -g root ch-netshield.conf \
+#            /etc/roost-travel/proton-profiles/netshield.conf
+#        sudo install -m 0600 -o root -g root ch-clean.conf \
+#            /etc/roost-travel/proton-profiles/clean.conf
+#   4. Activate one:
+#        roost-net vpn profile netshield   # symlinks /etc/wireguard/wg-proton.conf
+#   5. Toggle VPN:
+#        roost-net vpn on
+#   6. Switch later (hot-swap, auto-restarts wg-quick if vpn=on):
+#        roost-net vpn profile clean
 #
-# After editing:
-#   sudo install -m 0600 -o root -g root proton.conf /etc/wireguard/proton.conf
-#   sudo roost-net vpn on
+# Single-profile shortcut: if you only ever want one config, put it at
+# /etc/wireguard/wg-proton.conf directly and skip the profiles dir.
 #
-# See plans/travel-vpn-architecture.md §6 "Pre-departure".
+# IPv6 is mandatory for the dual-stack kill-switch to be meaningful. Without v6
+# in Address below, ip6tables REJECT rules have no egress to gate, leaking v6.
 
 [Interface]
 # Private key generated and shown once on the Proton dashboard (cannot be retrieved later).

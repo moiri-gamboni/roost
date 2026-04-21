@@ -337,13 +337,19 @@ GFW-resistant remote access: Xray multi-path stack (VLESS+WS behind Cloudflare, 
 ### Pre-departure (2+ weeks before)
 
 ```bash
-# 1. Drop your Proton WireGuard config on the server
-sudo install -m 0600 -o root -g root /path/to/proton.conf /etc/wireguard/proton.conf
-# Edit to include PostUp/PreDown (see /etc/roost-travel/proton.conf.example):
+# 1. Drop one or more Proton WireGuard profiles on the server (e.g. NetShield
+#    on vs off). Each goes under /etc/roost-travel/proton-profiles/<name>.conf:
+sudo install -m 0600 -o root -g root ~/netshield.conf \
+    /etc/roost-travel/proton-profiles/netshield.conf
+sudo install -m 0600 -o root -g root ~/clean.conf \
+    /etc/roost-travel/proton-profiles/clean.conf
+# Edit each to include PostUp/PreDown (see /etc/roost-travel/proton.conf.example):
 #   PostUp  = /etc/roost-travel/proton-routing.sh up
 #   PreDown = /etc/roost-travel/proton-routing.sh down
 #   Table = off
 #   DNS =
+# Activate one (symlinks /etc/wireguard/wg-proton.conf):
+roost-net vpn profile netshield
 
 # 2. Install sing-box for Android from GitHub releases
 #    github.com/SagerNet/sing-box-for-android/releases (not F-Droid; may lag)
@@ -373,7 +379,7 @@ roost-net travel off
 ```bash
 # Server (via Tailscale SSH)
 roost-net travel on    # deploys CF fragment, reloads cloudflared, opens UFW
-roost-net vpn on       # enables wg-quick@proton (survives reboot)
+roost-net vpn on       # enables wg-quick@wg-proton (survives reboot)
 
 # Laptop
 ./files/laptop/roost-net-fw.sh open   # opens 443/tcp, 51820/tcp+udp on Hetzner FW
@@ -404,7 +410,7 @@ roost-net travel off
 |---|---|
 | `roost-net status` | Toggles, service states, egress IP (raw + via-Proton) |
 | `roost-net travel on` / `off` | Enable/disable the CF fragment + UFW rules for 443/tcp + 51820/tcp+udp |
-| `roost-net vpn on` / `off` | Enable/disable `wg-quick@proton` + keepalive timer; verifies Proton ASN on activation |
+| `roost-net vpn on` / `off` | Enable/disable `wg-quick@wg-proton` + keepalive timer; verifies Proton ASN on activation |
 | `roost-net test` | Plan §4.2 assertions (masked fwmark, kill-switch REJECT, egress ASN) |
 | `roost-net client {android\|laptop\|ssh}` | Emit sing-box or SSH config from `/etc/roost-travel/state.env` |
 | `roost-net rotate-keys` | Regenerate `state.env` (UUID + REALITY keypair + shortIds + SS-2022 password); restart xray |
@@ -417,7 +423,7 @@ roost-net travel off
 
 ### Reboot behavior
 
-`xray.service` is enabled at install. When `vpn=on`, `wg-quick@proton.service` is also enabled (via `systemctl enable --now`), so an `apt upgrade && reboot` in-country restores full state automatically. `xray-boot-guard` (ExecStartPre) blocks Xray startup until `wg-proton` + the kill-switch REJECT rule are both present, eliminating the boot-order leak window.
+`xray.service` is enabled at install. When `vpn=on`, `wg-quick@wg-proton.service` is also enabled (via `systemctl enable --now`), so an `apt upgrade && reboot` in-country restores full state automatically. `xray-boot-guard` (ExecStartPre) blocks Xray startup until `wg-proton` + the kill-switch REJECT rule are both present, eliminating the boot-order leak window.
 
 ## Architecture
 

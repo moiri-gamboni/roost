@@ -27,6 +27,6 @@ if [ "$((NOW - LAST_RESTART))" -lt "$RESTART_DEBOUNCE" ]; then
     exit 0
 fi
 
-logger -t roost/proton-keepalive "probe failed and debounce expired; restarting wg-quick@proton"
+logger -t roost/proton-keepalive "probe failed and debounce expired; restarting wg-quick@wg-proton"
 echo "$NOW" > "$LAST_RESTART_FILE"
-systemctl restart wg-quick@proton
+systemctl restart wg-quick@wg-proton
