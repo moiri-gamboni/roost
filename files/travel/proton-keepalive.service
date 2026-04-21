@@ -1,7 +1,7 @@
 [Unit]
 Description=Proton WireGuard keepalive probe
 ConditionPathExists=/sys/class/net/wg-proton
-After=wg-quick@proton.service
+After=wg-quick@wg-proton.service
 
 [Service]
 Type=oneshot

@@ -111,8 +111,8 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
     - `keys-init.sh` -- Generates `/etc/roost-travel/state.env` (REALITY keypair, UUID, SS-2022 password, shortIds)
     - `proton-routing.sh` -- wg-quick PostUp/PreDown: dual-stack fwmark policy routing + kill-switch
     - `proton-keepalive.service` / `.timer` / `proton-keepalive-check` -- Debounced watchdog (30s)
-    - `wg-proton.service.d/roost.conf` -- Drop-in for `wg-quick@proton` (ordering + kill-switch sanity)
-    - `proton.conf.example` -- Template for the user's `/etc/wireguard/proton.conf`
+    - `wg-proton.service.d/roost.conf` -- Drop-in for `wg-quick@wg-proton` (ordering + kill-switch sanity)
+    - `proton.conf.example` -- Template for Proton WG configs; drop per-profile copies under `/etc/roost-travel/proton-profiles/<name>.conf`
     - `travel-health.sh` -- Deployed as `health-check-apps.sh`; sourced by the base health check
     - `travel-cloudflare.yml.tmpl` -- CF Tunnel ingress fragment (copied to `~/roost/cloudflared/apps/travel.yml` by `roost-net travel on`)
   - `setup/` -- Modular setup scripts, run via `remote_script()` in deploy.sh: `system`, `create-user`, `ssh-hardening`, `ufw`, `swap`, `snapper` (btrfs), `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `travel-vpn`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `clip-forward`, `unattended-upgrades`
@@ -208,12 +208,13 @@ Toggleable GFW-resistant network with a Proton egress layer. See `plans/travel-v
 | Travel | Xray A/B/C | on | off | Hetzner |
 | Travel, private | Xray A/B/C | on | on | Proton |
 
-**State:** `/etc/roost-travel/{travel,vpn}` contain `on`/`off`. `/etc/roost-travel/state.env` (`0600 root`) holds the generated keys (UUID, REALITY keypair, shortIds, SS-2022 password). `vpn=on` is persisted via `systemctl enable --now wg-quick@proton` so the server survives an in-country update + reboot.
+**State:** `/etc/roost-travel/{travel,vpn}` contain `on`/`off`. `/etc/roost-travel/state.env` (`0600 root`) holds the generated keys (UUID, REALITY keypair, shortIds, SS-2022 password). `vpn=on` is persisted via `systemctl enable --now wg-quick@wg-proton` so the server survives an in-country update + reboot.
 
 **Server CLI (`roost-net`):**
 - `roost-net status` -- current toggles, egress IP, service status
 - `roost-net travel on|off` -- deploy/remove CF fragment, open/close UFW for 443/tcp + 51820/tcp+udp
-- `roost-net vpn on|off` -- enable/disable `wg-quick@proton` + keepalive timer, verify Proton ASN on activation
+- `roost-net vpn on|off` -- enable/disable `wg-quick@wg-proton` + keepalive timer, verify Proton ASN on activation
+- `roost-net vpn profile [name]` -- list/activate Proton profiles under `/etc/roost-travel/proton-profiles/*.conf` (e.g. NetShield-on vs NetShield-off); swaps `/etc/wireguard/wg-proton.conf` symlink and hot-restarts wg-quick if vpn=on
 - `roost-net test` -- plan §4.2 assertions (fwmark masking, kill-switch REJECT, egress ASN)
 - `roost-net client {android|laptop|ssh}` -- emit sing-box or SSH config from `state.env`
 - `roost-net rotate-keys` -- regenerate `state.env` via `keys-init.sh --force`, restart Xray
@@ -278,7 +279,7 @@ roost-apply --ntfy           # Restart ntfy
 roost-apply --systemd        # Daemon-reload + restart changed systemd units
 roost-apply --cron           # Reinstall crontab
 roost-apply --xray           # Re-render /etc/xray/config.json from state.env and restart xray
-roost-apply --proton         # Daemon-reload; restart proton-keepalive.timer + wg-quick@proton (skipped when vpn=off)
+roost-apply --proton         # Daemon-reload; restart proton-keepalive.timer + wg-quick@wg-proton (skipped when vpn=off)
 ```
 
 ## Recovery
