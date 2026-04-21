@@ -121,14 +121,13 @@ elif [ -n "$TS_PEER" ]; then
     tmp_path="$tmp_dir/sb-${MODE}.json"
     save_config "$tmp_path"
     log "sending to tailscale peer '$TS_PEER'..."
-    ts_cp_out=$(tailscale file cp "$tmp_path" "${TS_PEER}:" 2>&1) \
-        && { log "sent $tmp_path -> ${TS_PEER}: (receive on peer via Tailscale app -> Files)"; } \
-        || {
-            if echo "$ts_cp_out" | grep -q 'Access denied'; then
-                die "tailscale file cp needs root on Linux. Run ONCE: sudo tailscale set --operator=\$USER, then retry. Local copy left at $tmp_path"
-            fi
-            die "tailscale file cp failed: $ts_cp_out (is '$TS_PEER' online and accepting files? local copy at $tmp_path)"
-        }
+    if ts_cp_out=$(tailscale file cp "$tmp_path" "${TS_PEER}:" 2>&1); then
+        log "sent $tmp_path -> ${TS_PEER}: (receive on peer via Tailscale app -> Files)"
+    elif echo "$ts_cp_out" | grep -q 'Access denied'; then
+        die "tailscale file cp needs root on Linux. Run ONCE: sudo tailscale set --operator=\$USER, then retry. Local copy left at $tmp_path"
+    else
+        die "tailscale file cp failed: $ts_cp_out (is '$TS_PEER' online and accepting files? local copy at $tmp_path)"
+    fi
 else
     printf '%s\n' "$CONFIG"
 fi
