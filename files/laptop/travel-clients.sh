@@ -19,7 +19,7 @@ Subcommands:
             (vless://, ss://, or sing-box://import-remote-profile?url=...) and
             rejects raw JSON, so a QR workflow would require hosting the JSON
             and isn't worth the infra here -- use --send-tailscale instead.
-  laptop    Linux sing-box JSON (TUN + 127.0.0.1:1080 SOCKS5 inbound).
+  laptop    Linux sing-box JSON (TUN + 127.0.0.1:54321 SOCKS5 inbound).
   ssh       SSH config snippet for the \`roost-travel\` host alias.
 
 Flags:
