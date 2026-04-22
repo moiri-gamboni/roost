@@ -44,6 +44,23 @@ load_state_env() {
     set +a
 }
 
+# Probe the wg-proton tunnel's egress IP, retrying while WireGuard handshakes.
+# wg-quick start returns when the interface is up, but the first packet still
+# has to trigger a handshake (1-2 RTTs to Proton's endpoint), and Proton can
+# occasionally be sluggish on quick reconnects, so a single probe after
+# `systemctl restart` races the tunnel establishment.
+probe_wg_egress() {
+    local attempt ip
+    for attempt in 1 2 3; do
+        if ip=$(sudo -u xray curl -sf --max-time 10 --interface wg-proton https://api.ipify.org); then
+            printf '%s\n' "$ip"
+            return 0
+        fi
+        sleep 2
+    done
+    return 1
+}
+
 # Check that egress IP is external (not our own Hetzner server).
 # Proton-affiliated egresses ride upstreams like Datacamp (AS212238) or M247,
 # so allowlisting "Proton AG / AS62371" misses real Proton paths. Invert the
@@ -184,7 +201,7 @@ cmd_vpn() {
                 die "wg-quick@wg-proton failed to start"
             fi
             local ip
-            if ! ip=$(sudo -u xray curl -sf --max-time 10 --interface wg-proton https://api.ipify.org); then
+            if ! ip=$(probe_wg_egress); then
                 sudo systemctl disable --now wg-quick@wg-proton
                 die "Egress verification failed (no response via wg-proton)"
             fi
@@ -242,7 +259,7 @@ cmd_vpn() {
                     die "wg-quick@wg-proton restart failed after profile swap to '$profile'"
                 fi
                 local ip
-                ip=$(sudo -u xray curl -sf --max-time 10 --interface wg-proton https://api.ipify.org) \
+                ip=$(probe_wg_egress) \
                     || die "Egress verification failed after profile swap to '$profile'"
                 is_external_egress "$ip" || die "Egress $ip matches Hetzner after profile swap"
                 ntfy_send -t "VPN profile: $profile" "Egress: $ip"
