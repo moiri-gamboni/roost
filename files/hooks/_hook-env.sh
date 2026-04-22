@@ -96,6 +96,20 @@ rate_limit_ok() {
     return 0
 }
 
+# Per-event cooldown. Returns 0 (allowed) if the named event hasn't fired
+# within the cooldown window, 1 otherwise. Updates the state file on success.
+# Usage: cooldown_ok <name> <seconds>
+cooldown_ok() {
+    local name="$1" seconds="$2"
+    local state_file="$HOOK_RUNTIME_DIR/cooldown-$name"
+    local now last=0
+    now=$(date +%s)
+    [ -f "$state_file" ] && last=$(cat "$state_file" 2>/dev/null || echo 0)
+    [ $((now - last)) -lt "$seconds" ] && return 1
+    echo "$now" > "$state_file"
+    return 0
+}
+
 # --- Hook execution logging (journald) ---
 _hook_exit() {
     local rc=$?
