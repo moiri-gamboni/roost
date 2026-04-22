@@ -44,22 +44,29 @@ load_state_env() {
     set +a
 }
 
-# Query IP's ASN via ipinfo.io.
-# Returns: 0 = Proton (AS62371 "Proton AG"), 1 = non-Proton, 2 = lookup failed.
-# Callers decide fail-open vs fail-closed: cmd_status/cmd_test treat 2 as
-# non-fatal; cmd_vpn on must fail-closed on 2 so a single ipinfo outage
-# doesn't let a Hetzner-egress leak through the ASN gate.
-is_proton_asn() {
-    local ip="$1" org
-    if ! org=$(curl -sf --max-time 5 "https://ipinfo.io/${ip}/org"); then
-        logger -t "$_HOOK_TAG" -p user.warning "ipinfo lookup failed for $ip"
-        return 2
+# Check that egress IP is external (not our own Hetzner server).
+# Proton-affiliated egresses ride upstreams like Datacamp (AS212238) or M247,
+# so allowlisting "Proton AG / AS62371" misses real Proton paths. Invert the
+# check: the threat model is "xray traffic leaked out of eth0 as Hetzner",
+# which IP-diff catches directly without needing to identify Proton.
+# Returns 0 = external (tunnel active), 1 = matches our eth0 or Hetzner ASN.
+is_external_egress() {
+    local ip="$1" our_ip org
+    our_ip=$(ip -4 addr show eth0 | awk '/inet / {print $2; exit}' | cut -d/ -f1)
+    if [ -n "$our_ip" ] && [ "$ip" = "$our_ip" ]; then
+        logger -t "$_HOOK_TAG" -p user.warning "Egress $ip matches eth0 address (leak)"
+        return 1
     fi
-    if printf '%s\n' "$org" | grep -qiE 'proton|AS62371'; then
-        return 0
+    if org=$(curl -sf --max-time 5 "https://ipinfo.io/${ip}/org"); then
+        if printf '%s\n' "$org" | grep -qiE 'hetzner|AS24940'; then
+            logger -t "$_HOOK_TAG" -p user.warning "Egress $ip reports Hetzner: $org (leak)"
+            return 1
+        fi
+        logger -t "$_HOOK_TAG" "Egress $ip org: $org"
+    else
+        logger -t "$_HOOK_TAG" "ipinfo lookup failed for $ip (IP differs from eth0, trusting)"
     fi
-    logger -t "$_HOOK_TAG" "ASN lookup for $ip: $org"
-    return 1
+    return 0
 }
 
 cmd_status() {
@@ -82,15 +89,14 @@ cmd_status() {
     fi
 
     echo
-    local ip asn_rc
+    local ip egress_rc
     if ip=$(sudo -u xray curl -sf --max-time 5 https://api.ipify.org); then
         echo "Egress (default): $ip"
-        # `|| asn_rc=$?` captures non-zero without tripping `set -e`.
-        asn_rc=0; is_proton_asn "$ip" || asn_rc=$?
-        case "$asn_rc" in
-            0) echo "  ASN: Proton" ;;
-            1) echo "  ASN: Hetzner (or non-Proton)" ;;
-            *) echo "  ASN: unknown (ipinfo lookup failed)" ;;
+        # `|| egress_rc=$?` captures non-zero without tripping `set -e`.
+        egress_rc=0; is_external_egress "$ip" || egress_rc=$?
+        case "$egress_rc" in
+            0) echo "  Egress: external (tunnel)" ;;
+            1) echo "  Egress: Hetzner (direct / leak)" ;;
         esac
     else
         echo "Egress (default): unreachable"
@@ -100,11 +106,10 @@ cmd_status() {
         local vpn_ip
         if vpn_ip=$(sudo -u xray curl -sf --max-time 5 --interface wg-proton https://api.ipify.org); then
             echo "Egress (wg-proton): $vpn_ip"
-            asn_rc=0; is_proton_asn "$vpn_ip" || asn_rc=$?
-            case "$asn_rc" in
-                0) echo "  ASN: Proton" ;;
-                1) echo "  ASN: non-Proton (unexpected — investigate)" ;;
-                *) echo "  ASN: unknown (ipinfo lookup failed)" ;;
+            egress_rc=0; is_external_egress "$vpn_ip" || egress_rc=$?
+            case "$egress_rc" in
+                0) echo "  Egress: external (Proton)" ;;
+                1) echo "  Egress: Hetzner (unexpected — investigate)" ;;
             esac
         else
             echo "Egress (wg-proton): unreachable"
@@ -183,12 +188,11 @@ cmd_vpn() {
                 sudo systemctl disable --now wg-quick@wg-proton
                 die "Egress verification failed (no response via wg-proton)"
             fi
-            # Fail-closed on 2 (lookup failed): the ASN gate is the only
-            # backstop against a Hetzner-egress leak after wg-quick up, so a
-            # single ipinfo outage must not rubber-stamp activation.
-            is_proton_asn "$ip" || {
+            # IP-diff primary: if egress != eth0 IP, tunnel is working. This
+            # holds even if ipinfo is down, so no fail-closed-on-lookup needed.
+            is_external_egress "$ip" || {
                 sudo systemctl disable --now wg-quick@wg-proton
-                die "Egress $ip ASN check failed (rc=$?; not Proton or ipinfo unreachable)"
+                die "Egress $ip matches Hetzner (leak detected)"
             }
             sudo systemctl enable --now proton-keepalive.timer
             echo "on" | sudo tee "$STATE_DIR/vpn" >/dev/null
@@ -240,7 +244,7 @@ cmd_vpn() {
                 local ip
                 ip=$(sudo -u xray curl -sf --max-time 10 --interface wg-proton https://api.ipify.org) \
                     || die "Egress verification failed after profile swap to '$profile'"
-                is_proton_asn "$ip" || die "Egress $ip ASN check failed after profile swap (rc=$?)"
+                is_external_egress "$ip" || die "Egress $ip matches Hetzner after profile swap"
                 ntfy_send -t "VPN profile: $profile" "Egress: $ip"
                 echo "Egress: $ip"
             fi
@@ -289,12 +293,12 @@ cmd_test() {
         # Kill-switch: xray uid without --interface wg-proton must NOT reach the internet.
         assert "kill-switch blocks xray default egress" \
             bash -c "! sudo -u xray curl -sf --max-time 5 https://api.ipify.org >/dev/null"
-        # With --interface wg-proton: must succeed and be a Proton ASN.
+        # With --interface wg-proton: must succeed and be external (not our Hetzner IP).
         local vip
         if vip=$(sudo -u xray curl -sf --max-time 10 --interface wg-proton https://api.ipify.org); then
             echo "  [PASS] wg-proton egress reachable for xray ($vip)"
             pass=$((pass + 1))
-            assert "wg-proton egress is Proton ASN" is_proton_asn "$vip"
+            assert "wg-proton egress is external (not Hetzner)" is_external_egress "$vip"
         else
             echo "  [FAIL] wg-proton egress unreachable for xray"
             fail=$((fail + 1))
