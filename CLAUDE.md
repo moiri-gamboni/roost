@@ -214,9 +214,9 @@ Toggleable GFW-resistant network with a Proton egress layer. See `plans/travel-v
 **Server CLI (`roost-net`):**
 - `roost-net status` -- current toggles, egress IP, service status
 - `roost-net travel on|off` -- deploy/remove CF fragment, open/close UFW for 443/tcp + 51820/tcp+udp
-- `roost-net vpn on|off` -- enable/disable `wg-quick@wg-proton` + keepalive timer, verify Proton ASN on activation
+- `roost-net vpn on|off` -- enable/disable `wg-quick@wg-proton` + keepalive timer, verify egress is external (not our Hetzner IP) on activation
 - `roost-net vpn profile [name]` -- list/activate Proton profiles under `/etc/roost-travel/proton-profiles/*.conf` (e.g. NetShield-on vs NetShield-off); swaps `/etc/wireguard/wg-proton.conf` symlink and hot-restarts wg-quick if vpn=on
-- `roost-net test` -- plan §4.2 assertions (fwmark masking, kill-switch REJECT, egress ASN)
+- `roost-net test` -- plan §4.2 assertions (fwmark masking, kill-switch REJECT, external egress)
 - `roost-net client {android|laptop|ssh}` -- emit sing-box or SSH config from `state.env`
 - `roost-net rotate-keys` -- regenerate `state.env` via `keys-init.sh --force`, restart Xray
 

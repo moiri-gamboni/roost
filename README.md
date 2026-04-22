@@ -410,8 +410,8 @@ roost-net travel off
 |---|---|
 | `roost-net status` | Toggles, service states, egress IP (raw + via-Proton) |
 | `roost-net travel on` / `off` | Enable/disable the CF fragment + UFW rules for 443/tcp + 51820/tcp+udp |
-| `roost-net vpn on` / `off` | Enable/disable `wg-quick@wg-proton` + keepalive timer; verifies Proton ASN on activation |
-| `roost-net test` | Plan §4.2 assertions (masked fwmark, kill-switch REJECT, egress ASN) |
+| `roost-net vpn on` / `off` | Enable/disable `wg-quick@wg-proton` + keepalive timer; verifies egress is external (not our Hetzner IP) on activation |
+| `roost-net test` | Plan §4.2 assertions (masked fwmark, kill-switch REJECT, external egress) |
 | `roost-net client {android\|laptop\|ssh}` | Emit sing-box or SSH config from `/etc/roost-travel/state.env` |
 | `roost-net rotate-keys` | Regenerate `state.env` (UUID + REALITY keypair + shortIds + SS-2022 password); restart xray |
 
