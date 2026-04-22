@@ -89,8 +89,30 @@ sudo systemctl reset-failed roost-travel.service 2>/dev/null || true
 # so the operator starts fresh with `roost-travel on`.
 sudo systemctl stop roost-travel.service 2>/dev/null || true
 
-step "Fetching sing-box config from the server (travel-clients.sh laptop)"
-"$SCRIPT_DIR/travel-clients.sh" laptop --save "$HOME/.config/sing-box/travel.json"
+step "Writing $HOME/.config/roost-travel/env (SSH target for roost-travel on/config)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+if [ -f "$REPO_ROOT/.env" ]; then
+    # Subshell so sourcing .env doesn't clobber install-script-local USERNAME.
+    ssh_target=$(
+        set -a
+        # shellcheck disable=SC1090,SC1091
+        . "$REPO_ROOT/.env"
+        set +a
+        : "${USERNAME:?USERNAME missing from .env}"
+        : "${SERVER_NAME:?SERVER_NAME missing from .env}"
+        printf '%s@%s' "$USERNAME" "$SERVER_NAME"
+    )
+    install -d -m 0700 "$HOME/.config/roost-travel"
+    printf 'ROOST_SSH_TARGET=%q\n' "$ssh_target" > "$HOME/.config/roost-travel/env"
+    chmod 0600 "$HOME/.config/roost-travel/env"
+    ok "wrote ROOST_SSH_TARGET=$ssh_target"
+else
+    echo "  [!] no .env at $REPO_ROOT/.env; skip and set ROOST_SSH_TARGET manually" >&2
+    skip "env file not written"
+fi
+
+step "Fetching sing-box config from the server (roost-travel config)"
+/usr/local/bin/roost-travel config
 ok "config at $HOME/.config/sing-box/travel.json"
 
 echo
