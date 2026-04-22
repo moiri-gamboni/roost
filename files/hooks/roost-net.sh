@@ -309,6 +309,15 @@ cmd_test() {
             bash -c "ip rule show | grep -qE 'uidrange ${xray_uid}-${xray_uid} lookup 51820'"
         assert "ip -6 rule: uidrange xray lookup 51820" \
             bash -c "ip -6 rule show | grep -qE 'uidrange ${xray_uid}-${xray_uid} lookup 51820'"
+        # Inbound-reply escape: new connections to public service ports are
+        # connmarked, restored on OUTPUT, and routed via main (eth0/tailscale0)
+        # so external clients see a SYN-ACK from the Hetzner IP they connected to.
+        assert "ip rule: fwmark 0x4000/0x4000 lookup main (inbound-reply)" \
+            bash -c "ip rule show | grep -q 'fwmark 0x4000/0x4000 lookup main'"
+        assert "mangle PREROUTING connmarks inbound 443/51820" \
+            bash -c "sudo iptables -t mangle -S PREROUTING | grep -qE 'dports 443,51820 .* --set-xmark 0x4000'"
+        assert "mangle OUTPUT restores 0x4000 connmark to fwmark" \
+            bash -c "sudo iptables -t mangle -S OUTPUT | grep -qE 'restore-mark .* 0x4000'"
         # Mask is required (Tailscale's upper bits would otherwise cause misses);
         # fwmark rule still handles Tailscale-FORWARDED traffic that has no uid.
         assert "ip rule: fwmark 0x1337/0xffff lookup 51820" \
