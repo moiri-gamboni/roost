@@ -23,6 +23,9 @@ export PATH=$PATH:/usr/local/go/bin:~/go/bin
 FNM_DIR="$HOME/.local/share/fnm"
 if [ -x "$FNM_DIR/fnm" ]; then
     export PATH="$FNM_DIR:$PATH"
+    # Drop any stale multishell path inherited from a long-lived parent;
+    # the eval below always allocates a fresh one and prepends its bin to PATH.
+    unset FNM_MULTISHELL_PATH
     eval "$($FNM_DIR/fnm env --use-on-cd --shell bash)"
 fi
 
