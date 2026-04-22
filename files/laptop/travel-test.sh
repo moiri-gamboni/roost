@@ -21,7 +21,7 @@ Options:
   --yes               Skip the interactive confirmation prompt for --simulate-gfw.
   --tailscale-check   Verify Tailscale status and exit-node egress IP.
   --socks5 HOST:PORT  Local sing-box SOCKS5 to use for via-tunnel curl tests
-                      (default: 127.0.0.1:1080; test skipped if port closed).
+                      (default: 127.0.0.1:54321; test skipped if port closed).
   --help              Show this message.
 
 Environment:
@@ -37,7 +37,7 @@ QUICK=0
 SIMULATE_GFW=0
 TAILSCALE_CHECK=0
 ASSUME_YES=0
-SOCKS5_TARGET="127.0.0.1:1080"
+SOCKS5_TARGET="127.0.0.1:54321"
 
 case "${1:-}" in
     --help|-h|help) usage; exit 0 ;;
