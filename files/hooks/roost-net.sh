@@ -190,15 +190,38 @@ cmd_vpn() {
 
     case "$action" in
         on)
-            sudo test -f /etc/wireguard/wg-proton.conf || die "No /etc/wireguard/wg-proton.conf"
-            if ! sudo systemctl enable --now wg-quick@wg-proton; then
+            if ! sudo test -e /etc/wireguard/wg-proton.conf; then
+                # Distinguish "no symlink / no file" from "dangling symlink"
+                # (e.g. user renamed the profile file). `test -f` follows symlinks
+                # so both look identical without the extra -L check.
+                if sudo test -L /etc/wireguard/wg-proton.conf; then
+                    local tgt
+                    tgt=$(sudo readlink /etc/wireguard/wg-proton.conf)
+                    die "wg-proton.conf -> $tgt (target missing — profile renamed?). Fix with: roost-net vpn profile <name>"
+                fi
+                die "No /etc/wireguard/wg-proton.conf. Drop a profile under $STATE_DIR/proton-profiles/ and run: roost-net vpn profile <name>"
+            fi
+            # Heal orphan kernel state: the interface can outlive the systemd
+            # unit (e.g. after manual `systemctl restart` during testing or
+            # PreDown failures). wg-quick refuses to re-create an existing
+            # interface, so next `enable --now` fails with "already exists".
+            if ! sudo systemctl is-active --quiet wg-quick@wg-proton && ip link show wg-proton >/dev/null 2>&1; then
+                logger -t "$_HOOK_TAG" "wg-proton orphaned (kernel up, unit inactive); tearing down"
+                sudo wg-quick down wg-proton 2>&1 >/dev/null || true
+                sudo systemctl reset-failed wg-quick@wg-proton || true
+            fi
+            sudo systemctl enable --now wg-quick@wg-proton
+            # `enable --now` exits 0 on enable success even if --now's start
+            # phase fails (bug-ish but documented behaviour). Verify with
+            # is-active so we catch actual start failures.
+            if ! sudo systemctl is-active --quiet wg-quick@wg-proton; then
                 sudo systemctl disable wg-quick@wg-proton || true
                 # wg-quick@ is Type=oneshot with RemainAfterExit=yes: if ExecStart
                 # (wg-quick up) fails partway, ExecStop is NOT auto-invoked, so
                 # PreDown (proton-routing.sh down) may not have run. Explicit
                 # teardown prevents orphan fwmark/kill-switch rules.
                 sudo /etc/roost-travel/proton-routing.sh down || true
-                die "wg-quick@wg-proton failed to start"
+                die "wg-quick@wg-proton failed to start (check: journalctl -u wg-quick@wg-proton -n 20)"
             fi
             local ip
             if ! ip=$(probe_wg_egress); then
