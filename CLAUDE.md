@@ -128,7 +128,7 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
     - `roost-net-fw.sh` -- Open/close the Hetzner cloud firewall ports (443/tcp, 51820/tcp+udp) during travel
     - `travel-clients.sh` -- SSHes to server, calls `roost-net client <mode>`, prints to stdout or writes to `--save PATH` or ships to a Tailscale peer via `--send-tailscale PEER`
     - `travel-test.sh` -- End-to-end sanity checks for all three paths; `--simulate-gfw` blocks UDP locally to verify TCP-only paths still work; `--tailscale-check` validates exit-node routing
-    - `roost-travel.sh` + `roost-travel.service` + `install-travel.sh` -- Laptop-side sing-box tunnel. `install-travel.sh` is a one-shot installer (sing-box CLI + wrapper + systemd unit + config fetch). Usage: `roost-travel {on|off|status|logs|config}`; `on`/`off` toggle both running state and enabled state (persistence across reboot).
+    - `roost-travel.sh` + `roost-travel.service` + `install-travel.sh` -- Laptop-side sing-box tunnel. `install-travel.sh` is a one-shot installer (sing-box CLI + wrapper + systemd unit + config fetch). Usage: `roost-travel {on|off|status|logs|config|profiles}`; `on`/`off` toggle both running state and enabled state (persistence across reboot).
 - **`extras/`** -- Standalone utilities not part of the main setup flow
   - `hetzner-watch.sh` -- Polls Hetzner API for server type availability, sends ntfy alerts
 - **`test-server.sh`** -- Server verification script; tests services over SSH, logs to `logs/`
