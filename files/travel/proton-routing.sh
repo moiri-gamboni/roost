@@ -46,6 +46,16 @@ case "$ACTION" in
         ip route replace default dev "$WG_IFACE" table "$TABLE"
         ip -6 route replace default dev "$WG_IFACE" table "$TABLE"
 
+        # Inbound-reply escape hatch: reply packets for client connections to
+        # our public service ports (443/51820) must return via the interface
+        # they arrived on (main table → eth0 or tailscale0), not via wg-proton.
+        # Without this, the uidrange rule below routes xray's SYN-ACK out
+        # wg-proton → Proton CH. Proton SNATs or upstream ISPs RPF-drop, and
+        # external clients never see the handshake complete. Mark new inbound
+        # connections at PREROUTING; restore on OUTPUT so ip rule 140 wins.
+        ip rule add fwmark 0x4000/0x4000 lookup main priority 140
+        ip -6 rule add fwmark 0x4000/0x4000 lookup main priority 140
+
         # Policy: route xray-uid sockets straight into the Proton table at
         # routing-decision time. This is strictly stronger than the fwmark rule
         # below for OUTPUT — the mangle MARK fires after the initial route
@@ -75,6 +85,18 @@ case "$ACTION" in
         iptables  -t mangle -I FORWARD -i tailscale0 ! -d "$TS_SUBNET_V4" -j MARK --set-xmark "${FWMARK}/${MASK}"
         ip6tables -t mangle -I FORWARD -i tailscale0 ! -d "$TS_SUBNET_V6" -j MARK --set-xmark "${FWMARK}/${MASK}"
 
+        # Tag inbound NEW connections to our public service ports on the
+        # conntrack entry; restore that bit on OUTPUT so the reply packet
+        # carries fwmark 0x4000 and ip rule 140 routes via main table. -A
+        # appends so the restore runs after the xray MARK above — otherwise
+        # the xray MARK's --set-xmark 0x1337/0xffff would clobber bit 14.
+        iptables  -t mangle -A PREROUTING -p tcp -m multiport --dports 443,51820 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x4000/0x4000
+        iptables  -t mangle -A PREROUTING -p udp --dport 51820 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x4000/0x4000
+        ip6tables -t mangle -A PREROUTING -p tcp -m multiport --dports 443,51820 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x4000/0x4000
+        ip6tables -t mangle -A PREROUTING -p udp --dport 51820 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x4000/0x4000
+        iptables  -t mangle -A OUTPUT -j CONNMARK --restore-mark --mask 0x4000
+        ip6tables -t mangle -A OUTPUT -j CONNMARK --restore-mark --mask 0x4000
+
         # Kill-switch: REJECT any Xray or forwarded traffic not leaving via wg-proton.
         # iptables-nft rejects multiple `-o` flags per rule, so the OUTPUT kill-
         # switch is split into three rules (order matters; inserted at position 1
@@ -87,10 +109,15 @@ case "$ACTION" in
         iptables  -I OUTPUT  1 -m owner --uid-owner "$XRAY_UID" -o lo -j ACCEPT
         iptables  -I OUTPUT  1 -m owner --uid-owner "$XRAY_UID" -o "$WG_IFACE" -j ACCEPT
         [ -n "$ENDPOINT_V4" ] && iptables  -I OUTPUT 1 -m owner --uid-owner "$XRAY_UID" -d "$ENDPOINT_V4" -p udp -j ACCEPT
+        # Inbound-reply ACCEPT (connmark matches only replies to 443/51820
+        # connections tagged at PREROUTING); put this on top so the REJECT
+        # doesn't kill legitimate server replies going out eth0/tailscale0.
+        iptables  -I OUTPUT  1 -m owner --uid-owner "$XRAY_UID" -m connmark --mark 0x4000/0x4000 -j ACCEPT
         ip6tables -I OUTPUT  1 -m owner --uid-owner "$XRAY_UID" -j REJECT
         ip6tables -I OUTPUT  1 -m owner --uid-owner "$XRAY_UID" -o lo -j ACCEPT
         ip6tables -I OUTPUT  1 -m owner --uid-owner "$XRAY_UID" -o "$WG_IFACE" -j ACCEPT
         [ -n "$ENDPOINT_V6" ] && ip6tables -I OUTPUT 1 -m owner --uid-owner "$XRAY_UID" -d "$ENDPOINT_V6" -p udp -j ACCEPT
+        ip6tables -I OUTPUT  1 -m owner --uid-owner "$XRAY_UID" -m connmark --mark 0x4000/0x4000 -j ACCEPT
         # FORWARD kill-switch uses -d + -o (different match types), iptables-nft
         # allows that combination in a single rule.
         iptables  -I FORWARD 1 -i tailscale0 ! -d "$TS_SUBNET_V4" ! -o "$WG_IFACE" -j REJECT
@@ -116,6 +143,8 @@ case "$ACTION" in
         [ -n "$ENDPOINT_V4" ] && ip rule del to "$ENDPOINT_V4" lookup main priority 50 2>/dev/null
         [ -n "$ENDPOINT_V6" ] && ip -6 rule del to "$ENDPOINT_V6" lookup main priority 50 2>/dev/null
 
+        ip rule del fwmark 0x4000/0x4000 lookup main priority 140 2>/dev/null
+        ip -6 rule del fwmark 0x4000/0x4000 lookup main priority 140 2>/dev/null
         ip rule del uidrange "$XRAY_UID-$XRAY_UID" lookup "$TABLE" priority 150 2>/dev/null
         ip -6 rule del uidrange "$XRAY_UID-$XRAY_UID" lookup "$TABLE" priority 150 2>/dev/null
         ip rule del fwmark "$FWMARK/0xffff" lookup "$TABLE" priority 200 2>/dev/null
@@ -131,10 +160,19 @@ case "$ACTION" in
         iptables  -t mangle -D FORWARD -i tailscale0 ! -d "$TS_SUBNET_V4" -j MARK --set-xmark "${FWMARK}/${MASK}" 2>/dev/null
         ip6tables -t mangle -D FORWARD -i tailscale0 ! -d "$TS_SUBNET_V6" -j MARK --set-xmark "${FWMARK}/${MASK}" 2>/dev/null
 
+        iptables  -t mangle -D PREROUTING -p tcp -m multiport --dports 443,51820 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x4000/0x4000 2>/dev/null
+        iptables  -t mangle -D PREROUTING -p udp --dport 51820 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x4000/0x4000 2>/dev/null
+        ip6tables -t mangle -D PREROUTING -p tcp -m multiport --dports 443,51820 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x4000/0x4000 2>/dev/null
+        ip6tables -t mangle -D PREROUTING -p udp --dport 51820 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x4000/0x4000 2>/dev/null
+        iptables  -t mangle -D OUTPUT -j CONNMARK --restore-mark --mask 0x4000 2>/dev/null
+        ip6tables -t mangle -D OUTPUT -j CONNMARK --restore-mark --mask 0x4000 2>/dev/null
+
+        iptables  -D OUTPUT -m owner --uid-owner "$XRAY_UID" -m connmark --mark 0x4000/0x4000 -j ACCEPT 2>/dev/null
         [ -n "$ENDPOINT_V4" ] && iptables  -D OUTPUT -m owner --uid-owner "$XRAY_UID" -d "$ENDPOINT_V4" -p udp -j ACCEPT 2>/dev/null
         iptables  -D OUTPUT  -m owner --uid-owner "$XRAY_UID" -o "$WG_IFACE" -j ACCEPT 2>/dev/null
         iptables  -D OUTPUT  -m owner --uid-owner "$XRAY_UID" -o lo -j ACCEPT 2>/dev/null
         iptables  -D OUTPUT  -m owner --uid-owner "$XRAY_UID" -j REJECT 2>/dev/null
+        ip6tables -D OUTPUT -m owner --uid-owner "$XRAY_UID" -m connmark --mark 0x4000/0x4000 -j ACCEPT 2>/dev/null
         [ -n "$ENDPOINT_V6" ] && ip6tables -D OUTPUT -m owner --uid-owner "$XRAY_UID" -d "$ENDPOINT_V6" -p udp -j ACCEPT 2>/dev/null
         ip6tables -D OUTPUT  -m owner --uid-owner "$XRAY_UID" -o "$WG_IFACE" -j ACCEPT 2>/dev/null
         ip6tables -D OUTPUT  -m owner --uid-owner "$XRAY_UID" -o lo -j ACCEPT 2>/dev/null
