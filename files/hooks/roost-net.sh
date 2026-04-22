@@ -302,14 +302,23 @@ cmd_test() {
             bash -c "ip route show table 51820 | grep -q 'default.*wg-proton'"
         assert "ip -6 route table 51820 has default via wg-proton" \
             bash -c "ip -6 route show table 51820 | grep -q 'default.*wg-proton'"
-        # Mask is required (Tailscale's upper bits would otherwise cause misses).
+        # uidrange is the primary router for xray-uid OUTPUT (no reroute race).
+        local xray_uid
+        xray_uid=$(id -u xray)
+        assert "ip rule: uidrange xray lookup 51820" \
+            bash -c "ip rule show | grep -qE 'uidrange ${xray_uid}-${xray_uid} lookup 51820'"
+        assert "ip -6 rule: uidrange xray lookup 51820" \
+            bash -c "ip -6 rule show | grep -qE 'uidrange ${xray_uid}-${xray_uid} lookup 51820'"
+        # Mask is required (Tailscale's upper bits would otherwise cause misses);
+        # fwmark rule still handles Tailscale-FORWARDED traffic that has no uid.
         assert "ip rule: fwmark 0x1337/0xffff lookup 51820" \
             bash -c "ip rule show | grep -q 'fwmark 0x1337/0xffff lookup 51820'"
         assert "ip -6 rule: fwmark 0x1337/0xffff lookup 51820" \
             bash -c "ip -6 rule show | grep -q 'fwmark 0x1337/0xffff lookup 51820'"
-        # Kill-switch: xray uid without --interface wg-proton must NOT reach the internet.
-        assert "kill-switch blocks xray default egress" \
-            bash -c "! sudo -u xray curl -sf --max-time 5 https://api.ipify.org >/dev/null"
+        # Kill-switch defense-in-depth: xray uid forced onto eth0 (bypassing the
+        # uidrange rule with SO_BINDTODEVICE) must be REJECTed.
+        assert "kill-switch blocks xray forced-eth0 egress" \
+            bash -c "! sudo -u xray curl -sf --max-time 3 --interface eth0 https://1.1.1.1/ >/dev/null"
         # With --interface wg-proton: must succeed and be external (not our Hetzner IP).
         local vip
         if vip=$(sudo -u xray curl -sf --max-time 10 --interface wg-proton https://api.ipify.org); then
