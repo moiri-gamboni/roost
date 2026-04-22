@@ -236,7 +236,7 @@ cmd_vpn() {
             # Re-verify egress + ASN so a bad profile fails closed rather than
             # silently flipping the egress to an unintended country/network.
             if [ "$(read_state_file "$STATE_DIR/vpn" "off")" = "on" ]; then
-                info "Restarting wg-quick@wg-proton with new profile..."
+                echo "Restarting wg-quick@wg-proton with new profile..."
                 if ! sudo systemctl restart wg-quick@wg-proton; then
                     sudo /etc/roost-travel/proton-routing.sh down || true
                     die "wg-quick@wg-proton restart failed after profile swap to '$profile'"
