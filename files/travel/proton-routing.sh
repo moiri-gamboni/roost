@@ -46,9 +46,20 @@ case "$ACTION" in
         ip route replace default dev "$WG_IFACE" table "$TABLE"
         ip -6 route replace default dev "$WG_IFACE" table "$TABLE"
 
+        # Policy: route xray-uid sockets straight into the Proton table at
+        # routing-decision time. This is strictly stronger than the fwmark rule
+        # below for OUTPUT — the mangle MARK fires after the initial route
+        # lookup, so internally-dialed sockets (e.g. REALITY's fallthrough to
+        # www.samsung.com:443) that don't carry sockopt.mark race the reroute
+        # and leak out eth0, getting REJECTed by the kill-switch and making the
+        # server fail an active-probe TLS-masquerade check.
+        ip rule add uidrange "$XRAY_UID-$XRAY_UID" lookup "$TABLE" priority 150
+        ip -6 rule add uidrange "$XRAY_UID-$XRAY_UID" lookup "$TABLE" priority 150
+
         # Policy: marked traffic uses Proton table; unmarked falls through to main.
         # Mask matches iptables --set-xmark MASK so Tailscale's upper mark bits
         # (0x40000 forwarded-traffic) don't cause exact-match fwmark misses.
+        # Still needed for Tailscale-FORWARDED traffic (no owner uid on forwards).
         ip rule add fwmark "$FWMARK/0xffff" lookup "$TABLE" priority 200
         ip -6 rule add fwmark "$FWMARK/0xffff" lookup "$TABLE" priority 200
 
@@ -105,6 +116,8 @@ case "$ACTION" in
         [ -n "$ENDPOINT_V4" ] && ip rule del to "$ENDPOINT_V4" lookup main priority 50 2>/dev/null
         [ -n "$ENDPOINT_V6" ] && ip -6 rule del to "$ENDPOINT_V6" lookup main priority 50 2>/dev/null
 
+        ip rule del uidrange "$XRAY_UID-$XRAY_UID" lookup "$TABLE" priority 150 2>/dev/null
+        ip -6 rule del uidrange "$XRAY_UID-$XRAY_UID" lookup "$TABLE" priority 150 2>/dev/null
         ip rule del fwmark "$FWMARK/0xffff" lookup "$TABLE" priority 200 2>/dev/null
         ip rule del fwmark "$FWMARK/0xffff" unreachable priority 300 2>/dev/null
         ip -6 rule del fwmark "$FWMARK/0xffff" lookup "$TABLE" priority 200 2>/dev/null
