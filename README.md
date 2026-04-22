@@ -430,7 +430,7 @@ roost-net travel off
 ./files/laptop/install-travel.sh
 ```
 
-Installs the sing-box CLI, the wrapper, the systemd unit, and fetches your config. Then `roost-travel {on|off|status|logs|config}`; `on` persists across reboots (`enable --now`), `off` unpersists. `./files/laptop/travel-clients.sh ssh >> ~/.ssh/config` adds the `ssh roost-travel` alias (routes through sing-box's SOCKS5 inbound on `127.0.0.1:54321` -- only works while the tunnel is up).
+Installs the sing-box CLI, the wrapper, the systemd unit, and fetches your config. Then `roost-travel {on|off|status|logs|config|profiles}`; `on` persists across reboots (`enable --now`), `off` unpersists. `./files/laptop/travel-clients.sh ssh >> ~/.ssh/config` adds the `ssh roost-travel` alias (routes through sing-box's SOCKS5 inbound on `127.0.0.1:54321` -- only works while the tunnel is up).
 
 ### Reboot behavior
 
