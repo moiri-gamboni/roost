@@ -18,17 +18,15 @@ fi
 
 usage() {
     cat <<EOF
-Usage: roost-travel {on|off|status|logs|config|profiles}
+Usage: roost-travel {on|off|status|logs|config}
 
-  on        Start the tunnel (systemd). Best-effort config refresh first:
-            falls back to the existing config if the server is unreachable.
-  off       Stop the tunnel.
-  status    Show tunnel state + current egress IP.
-  logs      Tail journald output for the service.
-  config    Explicit config refresh from the server; restarts the tunnel if
-            it's already running. Fails loudly if the server is unreachable.
-  profiles  List Proton WireGuard profiles installed on the server (marking
-            the active one).
+  on       Start the tunnel (systemd). Best-effort config refresh first:
+           falls back to the existing config if the server is unreachable.
+  off      Stop the tunnel.
+  status   Show tunnel state + current egress IP.
+  logs     Tail journald output for the service.
+  config   Explicit config refresh from the server; restarts the tunnel if
+           it's already running. Fails loudly if the server is unreachable.
 EOF
 }
 
@@ -116,18 +114,6 @@ cmd_logs() {
     sudo journalctl -u "$UNIT" -f -n 50
 }
 
-cmd_profiles() {
-    local target="${ROOST_SSH_TARGET:-}"
-    if [ -z "$target" ]; then
-        echo "ROOST_SSH_TARGET not set (expected in $ENV_FILE)." >&2
-        exit 1
-    fi
-    # sudo so readlink can resolve the symlink under /etc/wireguard/ (which
-    # is root-only). Same -q/-n/BatchMode/ConnectTimeout combo as fetch_config.
-    ssh -q -n -o BatchMode=yes -o ConnectTimeout=10 "$target" \
-        "bash -lc 'sudo roost-net vpn profile'"
-}
-
 cmd_config() {
     if ! fetch_config; then
         echo "Failed to fetch config from '${ROOST_SSH_TARGET:-<unset>}'." >&2
@@ -151,7 +137,6 @@ case "${1:-}" in
     status)            cmd_status ;;
     logs)              cmd_logs ;;
     config)            cmd_config ;;
-    profiles)          cmd_profiles ;;
     help|-h|--help|'') usage ;;
     *)                 usage; exit 2 ;;
 esac
