@@ -8,6 +8,7 @@
   "autoCompactEnabled": false,
   "autoMemoryEnabled": false,
   "effortLevel": "high",
+  "tui": "fullscreen",
   "skipAutoPermissionPrompt": true,
   "hooks": {
     "SessionStart": [
