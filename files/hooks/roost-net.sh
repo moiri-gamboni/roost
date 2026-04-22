@@ -352,8 +352,17 @@ cmd_test() {
 }
 
 render_android() {
-    local short_id_0
+    local short_id_0 server_v4 server_v6
     short_id_0=$(printf '%s' "$REALITY_SHORT_IDS" | jq -r '.[0]')
+    # Resolve the dual-stack A-record hostname into raw IPs. sing-box 1.13
+    # deprecated outbound-level `domain_strategy` and `network_strategy` /
+    # `fallback_delay` only work on Android/Apple GUI clients, so splitting
+    # paths B + C into per-family urltest members with raw addresses is the
+    # only portable way to get Happy-Eyeballs-style fallback on the laptop
+    # CLI too. If server has no v6, v6 variants are omitted downstream.
+    server_v4=$(getent ahostsv4 "travel-direct.$DOMAIN" | awk 'NR==1 {print $1}')
+    server_v6=$(getent ahostsv6 "travel-direct.$DOMAIN" | awk 'NR==1 {print $1}')
+    [ -n "$server_v4" ] || die "could not resolve travel-direct.$DOMAIN A record"
     jq -n \
         --arg domain "$DOMAIN" \
         --arg uuid "$XRAY_UUID" \
@@ -362,6 +371,8 @@ render_android() {
         --arg reality_public_key "$REALITY_PUBLIC_KEY" \
         --arg short_id "$short_id_0" \
         --arg ss_password "$SS2022_PASSWORD" \
+        --arg server_v4 "$server_v4" \
+        --arg server_v6 "$server_v6" \
         '{
             log: {level: "info"},
             dns: {
@@ -383,59 +394,92 @@ render_android() {
                     stack: "system"
                 }
             ],
-            outbounds: [
-                {
-                    type: "urltest",
-                    tag: "urltest",
-                    outbounds: ["path-a", "path-b", "path-c"],
-                    url: "https://www.gstatic.com/generate_204",
-                    interval: "3m",
-                    tolerance: 200
-                },
-                {
-                    type: "vless",
-                    tag: "path-a",
-                    server: "travel.\($domain)",
-                    server_port: 443,
-                    uuid: $uuid,
-                    tls: {
-                        enabled: true,
-                        server_name: "travel.\($domain)",
-                        utls: {enabled: true, fingerprint: "chrome"}
+            outbounds: (
+                [
+                    {
+                        type: "urltest",
+                        tag: "urltest",
+                        outbounds: (
+                            ["path-a", "path-b-v4", "path-c-v4"]
+                            + (if ($server_v6 | length) > 0 then ["path-b-v6", "path-c-v6"] else [] end)
+                        ),
+                        url: "https://www.gstatic.com/generate_204",
+                        interval: "3m",
+                        tolerance: 200
                     },
-                    transport: {
-                        type: "ws",
-                        path: "/\($path)",
-                        max_early_data: 0
-                    }
-                },
-                {
-                    type: "vless",
-                    tag: "path-b",
-                    server: "travel-direct.\($domain)",
-                    server_port: 443,
-                    uuid: $uuid,
-                    tls: {
-                        enabled: true,
-                        server_name: "www.samsung.com",
-                        utls: {enabled: true, fingerprint: "chrome"},
-                        reality: {
+                    {
+                        type: "vless",
+                        tag: "path-a",
+                        server: "travel.\($domain)",
+                        server_port: 443,
+                        uuid: $uuid,
+                        tls: {
                             enabled: true,
-                            public_key: $reality_public_key,
-                            short_id: $short_id
+                            server_name: "travel.\($domain)",
+                            utls: {enabled: true, fingerprint: "chrome"}
+                        },
+                        transport: {
+                            type: "ws",
+                            path: "/\($path)",
+                            max_early_data: 0
                         }
                     },
-                    transport: {type: "grpc", service_name: $service_name}
-                },
-                {
-                    type: "shadowsocks",
-                    tag: "path-c",
-                    server: "travel-direct.\($domain)",
-                    server_port: 51820,
-                    method: "2022-blake3-chacha20-poly1305",
-                    password: $ss_password
-                }
-            ],
+                    {
+                        type: "vless",
+                        tag: "path-b-v4",
+                        server: $server_v4,
+                        server_port: 443,
+                        uuid: $uuid,
+                        tls: {
+                            enabled: true,
+                            server_name: "www.samsung.com",
+                            utls: {enabled: true, fingerprint: "chrome"},
+                            reality: {
+                                enabled: true,
+                                public_key: $reality_public_key,
+                                short_id: $short_id
+                            }
+                        },
+                        transport: {type: "grpc", service_name: $service_name}
+                    },
+                    {
+                        type: "shadowsocks",
+                        tag: "path-c-v4",
+                        server: $server_v4,
+                        server_port: 51820,
+                        method: "2022-blake3-chacha20-poly1305",
+                        password: $ss_password
+                    }
+                ]
+                + (if ($server_v6 | length) > 0 then [
+                    {
+                        type: "vless",
+                        tag: "path-b-v6",
+                        server: $server_v6,
+                        server_port: 443,
+                        uuid: $uuid,
+                        tls: {
+                            enabled: true,
+                            server_name: "www.samsung.com",
+                            utls: {enabled: true, fingerprint: "chrome"},
+                            reality: {
+                                enabled: true,
+                                public_key: $reality_public_key,
+                                short_id: $short_id
+                            }
+                        },
+                        transport: {type: "grpc", service_name: $service_name}
+                    },
+                    {
+                        type: "shadowsocks",
+                        tag: "path-c-v6",
+                        server: $server_v6,
+                        server_port: 51820,
+                        method: "2022-blake3-chacha20-poly1305",
+                        password: $ss_password
+                    }
+                ] else [] end)
+            ),
             route: {
                 auto_detect_interface: true,
                 rules: [
