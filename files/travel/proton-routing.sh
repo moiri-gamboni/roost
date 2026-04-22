@@ -8,7 +8,7 @@ FWMARK="0x1337"
 MASK="0x0000ffff"
 TS_SUBNET_V4="100.64.0.0/10"
 TS_SUBNET_V6="fd7a:115c:a1e0::/48"
-PROTON_CONF="/etc/wireguard/proton.conf"
+PROTON_CONF="/etc/wireguard/wg-proton.conf"
 
 XRAY_UID=$(id -u xray)
 
@@ -64,10 +64,25 @@ case "$ACTION" in
         iptables  -t mangle -I FORWARD -i tailscale0 ! -d "$TS_SUBNET_V4" -j MARK --set-xmark "${FWMARK}/${MASK}"
         ip6tables -t mangle -I FORWARD -i tailscale0 ! -d "$TS_SUBNET_V6" -j MARK --set-xmark "${FWMARK}/${MASK}"
 
-        # Kill-switch: REJECT any Xray or forwarded traffic not leaving via wg-proton
-        iptables  -I OUTPUT  1 -m owner --uid-owner "$XRAY_UID" ! -o "$WG_IFACE" ! -o lo -j REJECT
+        # Kill-switch: REJECT any Xray or forwarded traffic not leaving via wg-proton.
+        # iptables-nft rejects multiple `-o` flags per rule, so the OUTPUT kill-
+        # switch is split into three rules (order matters; inserted at position 1
+        # in reverse so wg-proton → ACCEPT, lo → ACCEPT, else → REJECT).
+        # WireGuard's outer UDP to the Proton endpoint inherits skb->sk from the
+        # inner packet, so -m owner --uid-owner matches the encapsulated envelope
+        # and the REJECT would drop our own tunnel. The endpoint ACCEPT (inserted
+        # last so it ends up on top) exempts that path before the REJECT fires.
+        iptables  -I OUTPUT  1 -m owner --uid-owner "$XRAY_UID" -j REJECT
+        iptables  -I OUTPUT  1 -m owner --uid-owner "$XRAY_UID" -o lo -j ACCEPT
+        iptables  -I OUTPUT  1 -m owner --uid-owner "$XRAY_UID" -o "$WG_IFACE" -j ACCEPT
+        [ -n "$ENDPOINT_V4" ] && iptables  -I OUTPUT 1 -m owner --uid-owner "$XRAY_UID" -d "$ENDPOINT_V4" -p udp -j ACCEPT
+        ip6tables -I OUTPUT  1 -m owner --uid-owner "$XRAY_UID" -j REJECT
+        ip6tables -I OUTPUT  1 -m owner --uid-owner "$XRAY_UID" -o lo -j ACCEPT
+        ip6tables -I OUTPUT  1 -m owner --uid-owner "$XRAY_UID" -o "$WG_IFACE" -j ACCEPT
+        [ -n "$ENDPOINT_V6" ] && ip6tables -I OUTPUT 1 -m owner --uid-owner "$XRAY_UID" -d "$ENDPOINT_V6" -p udp -j ACCEPT
+        # FORWARD kill-switch uses -d + -o (different match types), iptables-nft
+        # allows that combination in a single rule.
         iptables  -I FORWARD 1 -i tailscale0 ! -d "$TS_SUBNET_V4" ! -o "$WG_IFACE" -j REJECT
-        ip6tables -I OUTPUT  1 -m owner --uid-owner "$XRAY_UID" ! -o "$WG_IFACE" ! -o lo -j REJECT
         ip6tables -I FORWARD 1 -i tailscale0 ! -d "$TS_SUBNET_V6" ! -o "$WG_IFACE" -j REJECT
 
         trap - ERR
@@ -103,9 +118,15 @@ case "$ACTION" in
         iptables  -t mangle -D FORWARD -i tailscale0 ! -d "$TS_SUBNET_V4" -j MARK --set-xmark "${FWMARK}/${MASK}" 2>/dev/null
         ip6tables -t mangle -D FORWARD -i tailscale0 ! -d "$TS_SUBNET_V6" -j MARK --set-xmark "${FWMARK}/${MASK}" 2>/dev/null
 
-        iptables  -D OUTPUT  -m owner --uid-owner "$XRAY_UID" ! -o "$WG_IFACE" ! -o lo -j REJECT 2>/dev/null
+        [ -n "$ENDPOINT_V4" ] && iptables  -D OUTPUT -m owner --uid-owner "$XRAY_UID" -d "$ENDPOINT_V4" -p udp -j ACCEPT 2>/dev/null
+        iptables  -D OUTPUT  -m owner --uid-owner "$XRAY_UID" -o "$WG_IFACE" -j ACCEPT 2>/dev/null
+        iptables  -D OUTPUT  -m owner --uid-owner "$XRAY_UID" -o lo -j ACCEPT 2>/dev/null
+        iptables  -D OUTPUT  -m owner --uid-owner "$XRAY_UID" -j REJECT 2>/dev/null
+        [ -n "$ENDPOINT_V6" ] && ip6tables -D OUTPUT -m owner --uid-owner "$XRAY_UID" -d "$ENDPOINT_V6" -p udp -j ACCEPT 2>/dev/null
+        ip6tables -D OUTPUT  -m owner --uid-owner "$XRAY_UID" -o "$WG_IFACE" -j ACCEPT 2>/dev/null
+        ip6tables -D OUTPUT  -m owner --uid-owner "$XRAY_UID" -o lo -j ACCEPT 2>/dev/null
+        ip6tables -D OUTPUT  -m owner --uid-owner "$XRAY_UID" -j REJECT 2>/dev/null
         iptables  -D FORWARD -i tailscale0 ! -d "$TS_SUBNET_V4" ! -o "$WG_IFACE" -j REJECT 2>/dev/null
-        ip6tables -D OUTPUT  -m owner --uid-owner "$XRAY_UID" ! -o "$WG_IFACE" ! -o lo -j REJECT 2>/dev/null
         ip6tables -D FORWARD -i tailscale0 ! -d "$TS_SUBNET_V6" ! -o "$WG_IFACE" -j REJECT 2>/dev/null
 
         logger -t roost/proton-routing "down: rules removed (best-effort)"
