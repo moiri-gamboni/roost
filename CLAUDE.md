@@ -116,14 +116,11 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
     - `travel-health.sh` -- Deployed as `health-check-apps.sh`; sourced by the base health check
     - `travel-cloudflare.yml.tmpl` -- CF Tunnel ingress fragment (copied to `~/roost/cloudflared/apps/travel.yml` by `roost-net travel on`)
   - `setup/` -- Modular setup scripts, run via `remote_script()` in deploy.sh: `system`, `create-user`, `ssh-hardening`, `ufw`, `swap`, `snapper` (btrfs), `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `travel-vpn`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `et`, `clip-forward`, `unattended-upgrades`
-  - `laptop/` -- Scripts and systemd units designed to run on the laptop, not the server
-    - `btrfs-backup.sh` -- Pull-based incremental btrfs snapshot backup (laptop SSHes to server, `btrfs send`/`receive`)
-    - `roost-backup.service` / `roost-backup.timer` -- Daily systemd timer for btrfs backup (`RandomizedDelaySec=1h`, `Persistent=true`)
-    - `drop-watch.sh` -- inotifywait-based folder watcher; auto-rsyncs `~/drop/` to server on change
-    - `drop-watch.service` -- Systemd unit for the drop folder watcher
+  - `laptop/` -- Scripts and systemd units designed to run on the laptop, not the server. Each component has a self-contained `install-*.sh` that reads `.env` and handles install + unit rendering + enable in one step.
+    - `btrfs-backup.sh` + `roost-backup.service` / `roost-backup.timer` + `install-btrfs-backup.sh` -- Pull-based incremental btrfs snapshot backup (`btrfs send`/`receive`). Daily timer (`RandomizedDelaySec=1h`, `Persistent=true`).
+    - `drop-watch.sh` + `drop-watch.service` + `install-drop-watch.sh` -- inotifywait-based folder watcher; auto-rsyncs `~/drop/` to server on change. Installed as a systemd *user* service (not system-wide) so it has the user's SSH keys.
     - `clip-forward.service` -- Clipboard forwarding daemon (image paste over SSH)
-    - `gh-ruleset-sync.sh` -- Periodic sync of the "Protect main" ruleset across all repos owned by the authenticated gh user; closes the gap between `./deploy.sh` runs
-    - `gh-ruleset-sync.service` / `gh-ruleset-sync.timer` -- Systemd timer (daily + 2h jitter, `Persistent=true`) driving the sync
+    - `gh-ruleset-sync.sh` + `gh-ruleset-sync.service` / `gh-ruleset-sync.timer` + `install-gh-ruleset-sync.sh` -- Periodic sync of the "Protect main" ruleset across all repos owned by the authenticated gh user; closes the gap between `./deploy.sh` runs. Daily + 2h jitter, `Persistent=true`.
     - `protect-main.ruleset.json` -- Canonical ruleset body shared between `deploy.sh` initial provision and the timer (single source of truth)
     - `roost-net-fw.sh` -- Open/close the Hetzner cloud firewall ports (443/tcp, 51820/tcp+udp) during travel
     - `travel-clients.sh` -- SSHes to server, calls `roost-net client <mode>`, prints to stdout or writes to `--save PATH` or ships to a Tailscale peer via `--send-tailscale PEER`
