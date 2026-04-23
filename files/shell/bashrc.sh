@@ -124,6 +124,27 @@ _resolve_gh_token() {
 
 # --- Agent management helpers ---
 
+# Name for this connection's grouped tmux session. $ROOST_CLIENT (set by the
+# client's alias, e.g. ROOST_CLIENT=pixel) gives stable rejoining across
+# reconnects; falls back to PID for plain ssh invocations.
+_roost_group_name() {
+    printf 'main-%s' "${ROOST_CLIENT:-$$}"
+}
+
+# Kill grouped sessions whose PID suffix no longer exists. Only sweeps
+# numeric suffixes (PID-style), never named ones (laptop/pixel/etc).
+_sweep_dead_groups() {
+    tmux list-sessions -F '#{session_name}' 2>/dev/null | while read -r s; do
+        case "$s" in
+            main-*[!0-9]*|main) ;;  # non-numeric or bare "main" — skip
+            main-*)
+                local pid="${s#main-}"
+                kill -0 "$pid" 2>/dev/null || tmux kill-session -t "$s" 2>/dev/null
+                ;;
+        esac
+    done
+}
+
 # Ensure a tmux session exists, starting one if needed.
 # Returns 0 if already inside tmux, 1 if a new session was started (caller
 # should use tmux send-keys instead of direct commands).
@@ -131,10 +152,11 @@ _ensure_tmux() {
     if [[ -n "${TMUX:-}" ]]; then
         return 0  # inside tmux
     fi
+    _sweep_dead_groups
     if tmux has-session -t main 2>/dev/null; then
         return 1  # session exists, need attach
     fi
-    # Check if the main group survives via grouped sessions (main-$$)
+    # Check if the main group survives via grouped sessions (main-<client>)
     local group_member
     group_member=$(tmux list-sessions -F '#{session_name} #{session_group}' 2>/dev/null \
         | awk '$2 == "main" {print $1; exit}')
@@ -216,11 +238,13 @@ agent() {
         tmux new-window -n "$name" "${cmd_parts[*]}"
     else
         # Outside tmux: create window in main, then attach via grouped session
+        local group
+        group=$(_roost_group_name)
         tmux new-window -t main -n "$name" "${cmd_parts[*]}"
-        if tmux has-session -t "main-$$" 2>/dev/null; then
-            tmux attach-session -t "main-$$" \; select-window -t "$name"
+        if tmux has-session -t "$group" 2>/dev/null; then
+            tmux attach-session -t "$group" \; select-window -t "$name"
         else
-            tmux new-session -t main -s "main-$$" \; select-window -t "$name"
+            tmux new-session -t main -s "$group" \; select-window -t "$name"
         fi
     fi
 }
@@ -230,10 +254,13 @@ agents() {
     if [[ -n "${TMUX:-}" ]]; then
         tmux choose-window
     else
-        if tmux has-session -t "main-$$" 2>/dev/null; then
-            tmux attach-session -t "main-$$" \; choose-window
+        _sweep_dead_groups
+        local group
+        group=$(_roost_group_name)
+        if tmux has-session -t "$group" 2>/dev/null; then
+            tmux attach-session -t "$group" \; choose-window
         else
-            tmux new-session -t main -s "main-$$" \; choose-window
+            tmux new-session -t main -s "$group" \; choose-window
         fi
     fi
 }
