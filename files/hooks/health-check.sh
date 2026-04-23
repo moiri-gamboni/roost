@@ -53,7 +53,12 @@ fi
 
 if [ -n "$FAILURES" ]; then
     logger -t "$_HOOK_TAG" "Health check FAILED"
-    ntfy_send -t "Service health alert" -p "high" "$(echo -e "Issues detected:$FAILURES")"
+    # Key the cooldown by the failure set so escalations / partial recoveries
+    # notify immediately; unchanged outages re-notify at most once per hour.
+    failures_hash=$(printf '%s' "$FAILURES" | sha256sum | cut -c1-16)
+    if cooldown_ok "health-$failures_hash" 3600; then
+        ntfy_send -t "Service health alert" -p "high" "$(echo -e "Issues detected:$FAILURES")"
+    fi
 else
     logger -t "$_HOOK_TAG" "Health check passed"
 fi
