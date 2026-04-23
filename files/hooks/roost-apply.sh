@@ -72,9 +72,14 @@ tailscale_ip() {
 
 tunnel_id() {
     if [ -z "$_RESOLVED_TUNNEL_ID" ]; then
-        _RESOLVED_TUNNEL_ID=$(sudo grep -oP '^tunnel: \K.+' /etc/cloudflared/config.yml 2>/dev/null || true)
+        # .base is the source of truth; .yml is the assembled output.
+        # Fall back to .yml on pre-migration servers.
+        for _f in /etc/cloudflared/config.yml.base /etc/cloudflared/config.yml; do
+            _RESOLVED_TUNNEL_ID=$(sudo grep -oP '^tunnel: \K.+' "$_f" 2>/dev/null || true)
+            [ -n "$_RESOLVED_TUNNEL_ID" ] && break
+        done
         if [ -z "$_RESOLVED_TUNNEL_ID" ]; then
-            warn "Could not resolve TUNNEL_ID from /etc/cloudflared/config.yml"
+            warn "Could not resolve TUNNEL_ID from /etc/cloudflared/config.yml{,.base}"
         fi
     fi
     echo "$_RESOLVED_TUNNEL_ID"
@@ -121,7 +126,7 @@ MANIFEST_A
     cat <<'MANIFEST_B'
 files/Caddyfile|/etc/caddy/Caddyfile|envsubst:TAILSCALE_IP,DOMAIN|reload-or-restart:caddy
 files/apps.caddy|/etc/caddy/sites-enabled/apps.caddy|plain|reload-or-restart:caddy
-files/cloudflare-config.yml|/etc/cloudflared/config.yml|envsubst:TUNNEL_ID,TUNNEL_NAME|restart:cloudflared
+files/cloudflare-config.yml|/etc/cloudflared/config.yml.base|envsubst:TUNNEL_ID,TUNNEL_NAME|run:~/roost/claude/hooks/cloudflare-assemble.sh,restart:cloudflared
 files/cloudflare-config.yml|$HOME_DIR/.cloudflared/config.yml|envsubst:TUNNEL_ID,TUNNEL_NAME|
 files/ntfy-server.yml|/etc/ntfy/server.yml|plain|restart:ntfy
 files/et.cfg|/etc/et.cfg|envsubst:TAILSCALE_IP|restart:et

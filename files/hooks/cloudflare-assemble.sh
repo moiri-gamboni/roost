@@ -6,6 +6,7 @@ set -euo pipefail
 source "$(dirname "$0")/_hook-env.sh"
 
 CONFIG="/etc/cloudflared/config.yml"
+BASE="/etc/cloudflared/config.yml.base"
 # Derive APPS_DIR from the script's own path (/.../$ROOST_DIR_NAME/claude/hooks/
 # -> /.../$ROOST_DIR_NAME/cloudflared/apps) rather than $HOME, which is /root
 # when roost-net invokes this via `sudo cloudflare-assemble.sh`.
@@ -13,17 +14,26 @@ _SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 _ROOST_DIR="$(cd "$_SCRIPT_DIR/../.." && pwd)"
 APPS_DIR="$_ROOST_DIR/cloudflared/apps"
 
-if [ ! -f "$CONFIG" ]; then
-    logger -t "$_HOOK_TAG" "No existing $CONFIG, nothing to assemble"
+# /etc/cloudflared/ is root:root 700; sudo for file tests + reads.
+# Prefer the base template as source of truth for the tunnel header.
+# Fall back to the assembled CONFIG on pre-migration servers that don't
+# have a .base file yet — on the next roost-apply push the manifest will
+# create .base and this fallback stops triggering.
+if sudo test -f "$BASE"; then
+    HEADER_SRC="$BASE"
+elif sudo test -f "$CONFIG"; then
+    HEADER_SRC="$CONFIG"
+    logger -t "$_HOOK_TAG" "No $BASE yet; reading tunnel header from $CONFIG (migration fallback)"
+else
+    logger -t "$_HOOK_TAG" "No tunnel config at $BASE or $CONFIG, nothing to assemble"
     exit 0
 fi
 
-# Extract tunnel header (everything before the ingress: block)
-TUNNEL_ID=$(grep -m1 '^tunnel:' "$CONFIG" | awk '{print $2}')
-CREDS_FILE=$(grep -m1 '^credentials-file:' "$CONFIG" | awk '{print $2}')
+TUNNEL_ID=$(sudo grep -m1 '^tunnel:' "$HEADER_SRC" | awk '{print $2}')
+CREDS_FILE=$(sudo grep -m1 '^credentials-file:' "$HEADER_SRC" | awk '{print $2}')
 
 if [ -z "$TUNNEL_ID" ] || [ -z "$CREDS_FILE" ]; then
-    logger -t "$_HOOK_TAG" "Could not parse tunnel ID or credentials-file from $CONFIG"
+    logger -t "$_HOOK_TAG" "Could not parse tunnel ID or credentials-file from $HEADER_SRC"
     exit 1
 fi
 
@@ -56,7 +66,7 @@ fi
 echo "  - service: http_status:404" >> "$ASSEMBLED"
 
 # Compare before writing
-if diff -q "$CONFIG" "$ASSEMBLED" > /dev/null 2>&1; then
+if sudo diff -q "$CONFIG" "$ASSEMBLED" > /dev/null 2>&1; then
     logger -t "$_HOOK_TAG" "Cloudflare config unchanged"
     exit 0
 fi
