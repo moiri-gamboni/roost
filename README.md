@@ -260,53 +260,28 @@ Code OAuth has expired, scheduled task failures will alert via ntfy.
 
 #### Laptop tools (`files/laptop/`):
 
+Each tool has a self-contained installer that reads `USERNAME` / `SERVER_NAME` / `ROOST_DIR_NAME` from `.env`, renders the systemd units, and enables them.
+
 **Off-site btrfs backup** (`btrfs-backup.sh`): Pull-based incremental backup. The laptop SSHes to the server, runs `btrfs send`, and pipes to local `btrfs receive`. First run does a full send; subsequent runs are incremental from the last known snapshot. Keeps 7 most recent snapshots on the laptop, prunes older ones. Alerts via ntfy on failure.
 
 Prerequisites: btrfs partition mounted at `/backup/roost/`, Tailscale connected.
 
 ```bash
-# Install the script
-sudo install -Dm755 files/laptop/btrfs-backup.sh /usr/local/bin/roost-backup
-
-# Install the units (expand ${USERNAME} and ${SERVER_NAME} from your environment)
-export USERNAME=$(whoami) SERVER_NAME="your-server-hostname"
-envsubst < files/laptop/roost-backup.service | sudo tee /etc/systemd/system/roost-backup.service > /dev/null
-sudo cp files/laptop/roost-backup.timer /etc/systemd/system/
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now roost-backup.timer
+./files/laptop/install-btrfs-backup.sh
 ```
 
 **GitHub ruleset sync** (`gh-ruleset-sync.sh`): Periodic re-application of the "Protect main" ruleset across all your GitHub repos. Closes the gap where repos created between `./deploy.sh` runs are unprotected. Skips forks and archived repos. Alerts via ntfy only if any repo fails after a retry.
 
-Prerequisites: `gh` CLI authenticated so `gh auth token` succeeds non-interactively (run `gh auth login --insecure-storage` if you've been using the system keyring — a system systemd unit has no access to gnome-keyring), `jq` installed.
+Prerequisites: `gh` CLI authenticated so `gh auth token` succeeds non-interactively (run `gh auth login --insecure-storage` if you've been using the system keyring -- a system systemd unit has no access to gnome-keyring), `jq` installed, Tailscale connected (so the installer can derive `NTFY_URL` from the server's tailnet IP).
 
 ```bash
-# Install the script and ruleset spec
-sudo install -Dm755 files/laptop/gh-ruleset-sync.sh /usr/local/bin/gh-ruleset-sync
-sudo install -Dm644 files/laptop/protect-main.ruleset.json /etc/roost/rulesets/protect-main.json
-
-# Install the units (expand ${USERNAME} and ${NTFY_URL} from your environment)
-export USERNAME=$(whoami) NTFY_URL="http://100.73.69.20:2586/claude-$(whoami)"
-envsubst < files/laptop/gh-ruleset-sync.service | sudo tee /etc/systemd/system/gh-ruleset-sync.service > /dev/null
-sudo cp files/laptop/gh-ruleset-sync.timer /etc/systemd/system/
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now gh-ruleset-sync.timer
-
-# Verify
-systemctl list-timers gh-ruleset-sync.timer
-sudo systemctl start gh-ruleset-sync.service
-journalctl -t roost/gh-ruleset-sync -n 20
+./files/laptop/install-gh-ruleset-sync.sh
 ```
 
-**Drop folder** (`drop-watch.sh`): Uses `inotifywait` to watch `~/roost/drop/` and auto-rsyncs to the server on change.
+**Drop folder** (`drop-watch.sh`): Uses `inotifywait` to watch `~/drop/` and auto-rsyncs to the server on change. Runs as a systemd *user* service (not system-wide) so it has access to the user's SSH keys and home directory.
 
 ```bash
-# Install the systemd service
-sudo cp files/laptop/drop-watch.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now drop-watch
+./files/laptop/install-drop-watch.sh
 ```
 
 #### Phone setup (GrapheneOS / Android):
