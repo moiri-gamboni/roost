@@ -144,8 +144,11 @@ install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton.conf.example"  
 
 # --- Deploy systemd units ---
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/xray.service"                /etc/systemd/system/xray.service
-install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton-keepalive.service"    /etc/systemd/system/proton-keepalive.service
-install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton-keepalive.timer"      /etc/systemd/system/proton-keepalive.timer
+install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton-keepalive.service"        /etc/systemd/system/proton-keepalive.service
+install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton-keepalive.timer"          /etc/systemd/system/proton-keepalive.timer
+install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton-routing-ensure.service"   /etc/systemd/system/proton-routing-ensure.service
+install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton-routing-ensure.timer"     /etc/systemd/system/proton-routing-ensure.timer
+install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/apt-roost-travel.conf"           /etc/apt/apt.conf.d/99-roost-travel.conf
 install -d -m 0755                                                                      /etc/systemd/system/wg-quick@proton.service.d
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/wg-proton.service.d/roost.conf" /etc/systemd/system/wg-quick@proton.service.d/roost.conf
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/xray-logrotate.conf"         /etc/logrotate.d/xray

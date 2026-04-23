@@ -109,8 +109,10 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
   - `travel/` -- Travel VPN server pieces (Xray + Proton egress); see Travel VPN section below
     - `xray.service`, `xray-boot-guard`, `xray-logrotate.conf`, `xray-config.json.tmpl` -- Xray runtime
     - `keys-init.sh` -- Generates `/etc/roost-travel/state.env` (REALITY keypair, UUID, SS-2022 password, shortIds)
-    - `proton-routing.sh` -- wg-quick PostUp/PreDown: dual-stack fwmark policy routing + kill-switch
+    - `proton-routing.sh` -- wg-quick PostUp/PreDown: dual-stack fwmark policy routing + kill-switch. Also supports `ensure` (idempotent re-apply of ip rules + proton-table route) for self-heal.
     - `proton-keepalive.service` / `.timer` / `proton-keepalive-check` -- Debounced watchdog (30s)
+    - `proton-routing-ensure.service` / `.timer` -- Self-heal: `proton-routing.sh ensure` runs every 5m. Catches ip-rule flushes from systemd re-exec etc. that iptables survives but ip rules don't.
+    - `apt-roost-travel.conf` -- Dpkg `Post-Invoke` hook deployed to `/etc/apt/apt.conf.d/99-roost-travel.conf`. Runs `proton-routing.sh ensure` after every dpkg op so unattended-upgrades re-execs don't leave a 5m outage window.
     - `wg-proton.service.d/roost.conf` -- Drop-in for `wg-quick@wg-proton` (ordering + kill-switch sanity)
     - `proton.conf.example` -- Template for Proton WG configs; drop per-profile copies under `/etc/roost-travel/proton-profiles/<name>.conf`
     - `travel-health.sh` -- Deployed as `health-check-apps.sh`; sourced by the base health check
@@ -277,7 +279,7 @@ roost-apply --ntfy           # Restart ntfy
 roost-apply --systemd        # Daemon-reload + restart changed systemd units
 roost-apply --cron           # Reinstall crontab
 roost-apply --xray           # Re-render /etc/xray/config.json from state.env and restart xray
-roost-apply --proton         # Daemon-reload; restart proton-keepalive.timer + wg-quick@wg-proton (skipped when vpn=off)
+roost-apply --proton         # Daemon-reload; restart proton-keepalive.timer + proton-routing-ensure.timer + wg-quick@wg-proton (skipped when vpn=off)
 ```
 
 ## Recovery

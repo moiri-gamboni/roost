@@ -1,0 +1,11 @@
+[Unit]
+Description=Proton policy-routing reconciliation (5m)
+Requires=proton-routing-ensure.service
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=5m
+Unit=proton-routing-ensure.service
+
+[Install]
+WantedBy=timers.target

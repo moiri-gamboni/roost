@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-ACTION="${1:?usage: proton-routing.sh up|down}"
+ACTION="${1:?usage: proton-routing.sh up|down|ensure}"
 WG_IFACE="wg-proton"
 TABLE=51820
 FWMARK="0x1337"
@@ -128,6 +128,50 @@ case "$ACTION" in
             "up: endpoint_host=$ENDPOINT_HOST v4=$ENDPOINT_V4 v6=$ENDPOINT_V6 uid=$XRAY_UID mask=$MASK"
         ;;
 
+    ensure)
+        # Re-apply ip rules + proton-table default route. systemd re-exec
+        # (unattended-upgrades picking up a systemd package) flushes ip
+        # rules not owned by systemd-networkd, without notice. Iptables
+        # rules typically survive. Both apt dpkg hook and a 5m systemd
+        # timer call this. Idempotent: canary check short-circuits when
+        # state is intact; otherwise del-then-add each rule.
+        if ip rule    show | awk '$1=="200:"{f=1;exit} END{exit !f}' \
+           && ip -6 rule show | awk '$1=="200:"{f=1;exit} END{exit !f}' \
+           && ip    route show table "$TABLE" | grep -qF "default dev $WG_IFACE" \
+           && ip -6 route show table "$TABLE" | grep -qF "default dev $WG_IFACE"; then
+            exit 0
+        fi
+
+        logger -t roost/proton-routing "ensure: ip rules/routes flushed, re-applying"
+
+        ENDPOINT_HOST=$(parse_endpoint)
+        ENDPOINT_V4=""
+        ENDPOINT_V6=""
+        if [ -n "$ENDPOINT_HOST" ]; then
+            ENDPOINT_V4=$(getent ahostsv4 "$ENDPOINT_HOST" | awk 'NR==1 {print $1}' || true)
+            ENDPOINT_V6=$(getent ahostsv6 "$ENDPOINT_HOST" | awk 'NR==1 {print $1}' || true)
+        fi
+
+        ip    route replace default dev "$WG_IFACE" table "$TABLE"
+        ip -6 route replace default dev "$WG_IFACE" table "$TABLE"
+
+        re4() { ip    rule del "$@" 2>/dev/null || true; ip    rule add "$@"; }
+        re6() { ip -6 rule del "$@" 2>/dev/null || true; ip -6 rule add "$@"; }
+
+        [ -n "$ENDPOINT_V4" ] && re4 to "$ENDPOINT_V4" lookup main priority 50
+        [ -n "$ENDPOINT_V6" ] && re6 to "$ENDPOINT_V6" lookup main priority 50
+        re4 fwmark 0x4000/0x4000 lookup main priority 140
+        re6 fwmark 0x4000/0x4000 lookup main priority 140
+        re4 uidrange "$XRAY_UID-$XRAY_UID" lookup "$TABLE" priority 150
+        re6 uidrange "$XRAY_UID-$XRAY_UID" lookup "$TABLE" priority 150
+        re4 fwmark "$FWMARK/0xffff" lookup "$TABLE" priority 200
+        re6 fwmark "$FWMARK/0xffff" lookup "$TABLE" priority 200
+        re4 fwmark "$FWMARK/0xffff" unreachable priority 300
+        re6 fwmark "$FWMARK/0xffff" unreachable priority 300
+
+        logger -t roost/proton-routing "ensure: rules restored"
+        ;;
+
     down)
         set +e
 
@@ -184,7 +228,7 @@ case "$ACTION" in
         ;;
 
     *)
-        echo "usage: $0 up|down" >&2
+        echo "usage: $0 up|down|ensure" >&2
         exit 2
         ;;
 esac

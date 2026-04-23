@@ -73,11 +73,15 @@ if [ "$_travel_vpn_state" = "on" ]; then
         FAILURES="$FAILURES\n- IPv6 kill-switch REJECT rule missing"
     fi
 
-    if sudo -u xray curl -sf --max-time 5 --interface wg-proton https://api.ipify.org > /dev/null; then
-        logger -t "$_HOOK_TAG" "OK: xray egress via wg-proton reachable"
+    # No --interface: exercises the full policy-routing path (mangle MARK →
+    # ip rule fwmark → table 51820 → wg-proton). --interface bypasses policy
+    # routing, so a probe with it keeps passing when the ip rules go missing
+    # (e.g. after a systemd re-exec), hiding a real outage.
+    if sudo -u xray curl -sf --max-time 5 https://api.ipify.org > /dev/null; then
+        logger -t "$_HOOK_TAG" "OK: xray egress routed via wg-proton"
     else
-        logger -t "$_HOOK_TAG" "FAIL: xray egress via wg-proton unreachable"
-        FAILURES="$FAILURES\n- xray egress via wg-proton unreachable"
+        logger -t "$_HOOK_TAG" "FAIL: xray egress failed (routing rules missing? kill-switch?)"
+        FAILURES="$FAILURES\n- xray egress failed (policy routing or kill-switch broken)"
     fi
 fi
 
