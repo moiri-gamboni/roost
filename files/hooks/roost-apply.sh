@@ -124,6 +124,7 @@ files/apps.caddy|/etc/caddy/sites-enabled/apps.caddy|plain|reload-or-restart:cad
 files/cloudflare-config.yml|/etc/cloudflared/config.yml|envsubst:TUNNEL_ID,TUNNEL_NAME|restart:cloudflared
 files/cloudflare-config.yml|$HOME_DIR/.cloudflared/config.yml|envsubst:TUNNEL_ID,TUNNEL_NAME|
 files/ntfy-server.yml|/etc/ntfy/server.yml|plain|restart:ntfy
+files/et.cfg|/etc/et.cfg|envsubst:TAILSCALE_IP|restart:et
 files/caddy-tailscale.conf|/etc/systemd/system/caddy.service.d/tailscale.conf|plain|daemon-reload
 files/glances.service|/etc/systemd/system/glances.service|envsubst:USERNAME|daemon-reload,restart:glances
 files/ram-monitor.service|/etc/systemd/system/ram-monitor.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload

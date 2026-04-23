@@ -464,10 +464,16 @@ else
     fail "tmux"
 fi
 
-if run command -v mosh-server >/dev/null 2>&1; then
-    pass "mosh installed"
+if run command -v etserver >/dev/null 2>&1; then
+    pass "et installed"
 else
-    fail "mosh"
+    fail "et"
+fi
+
+if run systemctl is-active et.service >/dev/null 2>&1; then
+    pass "et.service running"
+else
+    fail "et.service not running"
 fi
 
 if run command -v jq >/dev/null 2>&1; then

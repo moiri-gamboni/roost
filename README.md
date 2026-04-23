@@ -314,8 +314,15 @@ sudo systemctl enable --now drop-watch
 1. **Tailscale**: Install from F-Droid, join your tailnet
 2. **Termux**: Install from F-Droid (not Google Play)
    - On GrapheneOS you may need "exploit protection compatibility mode" for Termux
-   - `pkg install mosh openssh`
-   - Add alias: `echo "alias cc='mosh <username>@<tailscale-ip>'" >> ~/.bashrc`
+   - `pkg install eternalterminal openssh`
+   - Connect (drops into the tmux window picker; `ROOST_CLIENT` gives stable session rejoining across reconnects):
+     ```bash
+     et <username>@<tailscale-ip> --command='bash -lc "ROOST_CLIENT=pixel agents"'
+     ```
+   - Or add a `cc` function to `~/.bashrc` on the phone (also opts out of et's telemetry):
+     ```bash
+     cc() { ET_NO_TELEMETRY=1 et <username>@<tailscale-ip> --command='bash -lc "ROOST_CLIENT=pixel agents"' "$@"; }
+     ```
 3. **ntfy**: Install from F-Droid
    - Settings > General > Manage Users: add user `phone` for server `http://<tailscale-ip>:2586`
      (password in `~/services/.ntfy-phone-pass` on the server)
@@ -444,7 +451,7 @@ Public Internet                         Private (Tailscale)
 app.example.dev ──────→ Cloudflare ──→ cloudflared ──→ Caddy
                                                         │
                         Tailscale IP ────────────────→ Server
-                        ├── SSH/mosh
+                        ├── SSH/et (Eternal Terminal :2022)
                         ├── ntfy (push notifications)
                         └── Glances (monitoring)
 ```
