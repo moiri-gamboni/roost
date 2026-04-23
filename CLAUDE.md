@@ -115,7 +115,7 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
     - `proton.conf.example` -- Template for Proton WG configs; drop per-profile copies under `/etc/roost-travel/proton-profiles/<name>.conf`
     - `travel-health.sh` -- Deployed as `health-check-apps.sh`; sourced by the base health check
     - `travel-cloudflare.yml.tmpl` -- CF Tunnel ingress fragment (copied to `~/roost/cloudflared/apps/travel.yml` by `roost-net travel on`)
-  - `setup/` -- Modular setup scripts, run via `remote_script()` in deploy.sh: `system`, `create-user`, `ssh-hardening`, `ufw`, `swap`, `snapper` (btrfs), `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `travel-vpn`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `clip-forward`, `unattended-upgrades`
+  - `setup/` -- Modular setup scripts, run via `remote_script()` in deploy.sh: `system`, `create-user`, `ssh-hardening`, `ufw`, `swap`, `snapper` (btrfs), `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `travel-vpn`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `et`, `clip-forward`, `unattended-upgrades`
   - `laptop/` -- Scripts and systemd units designed to run on the laptop, not the server
     - `btrfs-backup.sh` -- Pull-based incremental btrfs snapshot backup (laptop SSHes to server, `btrfs send`/`receive`)
     - `roost-backup.service` / `roost-backup.timer` -- Daily systemd timer for btrfs backup (`RandomizedDelaySec=1h`, `Persistent=true`)

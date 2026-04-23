@@ -932,6 +932,14 @@ remote_script "setup/agent-tools.sh"
 ok "Agent tools ready"
 
 # ============================================
+# Eternal Terminal (persistent shell over TCP)
+# ============================================
+
+section "Eternal Terminal"
+remote_script "setup/et.sh"
+ok "et installed; config deploys via roost-apply push"
+
+# ============================================
 # Clipboard Forwarding (SSH image paste)
 # ============================================
 
