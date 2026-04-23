@@ -505,12 +505,21 @@ cmd_push() {
         ok "${changed_repos[$i]} -> $sp"
     done
 
-    # Phase 5: daemon-reload, restart services, run commands
+    # Phase 5: daemon-reload → run commands → restart services.
+    # Run commands fire before restarts so post-write transforms (e.g.
+    # cloudflare-assemble.sh building config.yml from config.yml.base +
+    # fragments) land before the service picks up its new config.
     if [ "$need_daemon_reload" = true ]; then
         info "Running systemctl daemon-reload..."
         sudo systemctl daemon-reload
         ok "daemon-reload"
     fi
+
+    # Run commands are from the hardcoded manifest only (no user input)
+    for cmd in "${run_commands[@]}"; do
+        info "Running: $cmd"
+        bash -c "$cmd" || true
+    done
 
     local restart_failed=()
     for action in "${!services_to_restart[@]}"; do
@@ -523,12 +532,6 @@ cmd_push() {
             restart_failed+=("$unit")
             warn "Failed: systemctl $verb $unit"
         fi
-    done
-
-    # Run commands are from the hardcoded manifest only (no user input)
-    for cmd in "${run_commands[@]}"; do
-        info "Running: $cmd"
-        bash -c "$cmd" || true
     done
 
     echo ""
