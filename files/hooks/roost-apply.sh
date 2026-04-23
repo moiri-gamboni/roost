@@ -141,6 +141,9 @@ files/travel/proton-routing.sh|/etc/roost-travel/proton-routing.sh|plain+x|
 files/travel/proton-keepalive-check|/usr/local/bin/proton-keepalive-check|plain+x|
 files/travel/proton-keepalive.service|/etc/systemd/system/proton-keepalive.service|plain|daemon-reload
 files/travel/proton-keepalive.timer|/etc/systemd/system/proton-keepalive.timer|plain|daemon-reload
+files/travel/proton-routing-ensure.service|/etc/systemd/system/proton-routing-ensure.service|plain|daemon-reload
+files/travel/proton-routing-ensure.timer|/etc/systemd/system/proton-routing-ensure.timer|plain|daemon-reload
+files/travel/apt-roost-travel.conf|/etc/apt/apt.conf.d/99-roost-travel.conf|plain|
 files/travel/wg-proton.service.d/roost.conf|/etc/systemd/system/wg-quick@wg-proton.service.d/roost.conf|plain|daemon-reload
 files/travel/proton.conf.example|/etc/roost-travel/proton.conf.example|plain|
 files/travel/travel-cloudflare.yml.tmpl|/etc/roost-travel/travel-cloudflare.yml|envsubst:DOMAIN|
@@ -645,6 +648,16 @@ cmd_flag_reload() {
         else
             skip "proton-keepalive.timer inactive (vpn=off)"
         fi
+        if sudo systemctl is-active proton-routing-ensure.timer >/dev/null; then
+            info "Restarting proton-routing-ensure.timer..."
+            if sudo systemctl restart proton-routing-ensure.timer; then
+                ok "proton-routing-ensure.timer restarted"
+            else
+                reload_failed+=("proton-routing-ensure.timer")
+            fi
+        else
+            skip "proton-routing-ensure.timer inactive (vpn=off)"
+        fi
         # is-active distinguishes active-since-cmd_vpn-on from a lingering DOWN
         # interface: restarting the unit on the latter would flip VPN on without
         # going through cmd_vpn's ASN gate or state-file update.
@@ -705,7 +718,7 @@ Flags (direct service reload):
   --systemd    Daemon-reload and restart systemd units
   --cron       No-op (cron auto-reloads)
   --xray       Re-render /etc/xray/config.json from state.env and restart xray
-  --proton     Daemon-reload, restart proton-keepalive.timer + wg-quick@wg-proton (if up)
+  --proton     Daemon-reload, restart proton-keepalive.timer + proton-routing-ensure.timer + wg-quick@wg-proton (if up)
 
 Options:
   -y, --yes    Skip confirmation prompts (push only)

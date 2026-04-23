@@ -1,0 +1,8 @@
+[Unit]
+Description=Proton policy-routing reconciliation (self-heal)
+ConditionPathExists=/sys/class/net/wg-proton
+After=wg-quick@wg-proton.service
+
+[Service]
+Type=oneshot
+ExecStart=/etc/roost-travel/proton-routing.sh ensure

@@ -235,11 +235,13 @@ cmd_vpn() {
                 die "Egress $ip matches Hetzner (leak detected)"
             }
             sudo systemctl enable --now proton-keepalive.timer
+            sudo systemctl enable --now proton-routing-ensure.timer
             echo "on" | sudo tee "$STATE_DIR/vpn" >/dev/null
             ntfy_send -t "VPN ON" "Egress: $ip"
             echo "VPN mode: ON (egress $ip)"
             ;;
         off)
+            sudo systemctl disable --now proton-routing-ensure.timer || true
             sudo systemctl disable --now proton-keepalive.timer || true
             sudo systemctl disable --now wg-quick@wg-proton || true
             echo "off" | sudo tee "$STATE_DIR/vpn" >/dev/null
