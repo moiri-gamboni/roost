@@ -18,6 +18,9 @@ ExecStartPre=+/usr/local/bin/xray-boot-guard
 ExecStart=/usr/local/bin/xray run -c /etc/xray/config.json
 Restart=on-failure
 RestartSec=10s
+# Xray doesn't handle SIGHUP (terminates on default action). Systemd treats
+# SIGHUP-termination as clean, so without this, Restart=on-failure won't fire.
+RestartForceExitStatus=SIGHUP
 LimitNOFILE=1048576
 
 [Install]
