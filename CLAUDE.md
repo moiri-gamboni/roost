@@ -86,7 +86,7 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
     - `code-CLAUDE.md` -- Deployed to `~/roost/code/CLAUDE.md`; safety, planning, search, agent, and tool conventions
   - `Caddyfile` -- Caddy reverse proxy config template (envsubst-expanded); imports `/etc/caddy/sites-enabled/*` for app routes
   - `caddy-tailscale.conf` -- Systemd drop-in for Caddy to wait for Tailscale
-  - `cloudflare-config.yml` -- Cloudflare Tunnel base config template (envsubst-expanded); app ingress via fragments
+  - `cloudflare-config.yml` -- Cloudflare Tunnel base template (envsubst-expanded). Deployed to `/etc/cloudflared/config.yml.base`; `cloudflare-assemble.sh` reads its tunnel header and merges per-app fragments into the live `/etc/cloudflared/config.yml`. Never write the repo template directly to the live path — you'd clobber the assembled ingress.
   - `ntfy-server.yml` -- ntfy server configuration
   - `tailscaled-iptables.conf` -- Systemd drop-in pinning `tailscaled` to the iptables firewall backend (so travel-vpn's masked fwmark has predictable Tailscale mark bits to work around)
   - `tmux.conf` -- Tmux configuration deployed to server
@@ -177,7 +177,7 @@ Systemd timer (not cron):
 
 Server-side utilities (manually triggered, not hooks):
 - `roost-apply.sh` -- Config deployment and service reload. Subcommand mode (`diff`/`push`/`list`) deploys files from the repo manifest; flag mode (`--caddy`/`--cloudflare`/etc.) reloads specific services. Aliased as `roost-apply` in bashrc.
-- `cloudflare-assemble.sh` -- Assembles `/etc/cloudflared/config.yml` from base tunnel header + per-app fragments in `~/roost/cloudflared/apps/*.yml`
+- `cloudflare-assemble.sh` -- Assembles `/etc/cloudflared/config.yml` from `/etc/cloudflared/config.yml.base` (tunnel header) + per-app fragments in `~/roost/cloudflared/apps/*.yml`. Invoked by `roost-apply push files/cloudflare-config.yml` and by `roost-apply --cloudflare`; also safe to run standalone.
 
 ## Native Services
 
