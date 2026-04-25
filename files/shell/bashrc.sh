@@ -81,17 +81,44 @@ _vscode_ipc_sync() {
     fi
 }
 
+# The remote-cli `code` shim lives at a per-version path
+# (~/.vscode-server/cli/servers/Stable-<commit>/server/bin/remote-cli/code) that
+# rotates on every VS Code update. Symlink ~/bin/code (already on PATH) to the
+# newest one so $EDITOR=code keeps resolving across version bumps.
+_vscode_code_sync() {
+    local stable="$HOME/bin/code"
+    local fresh="" candidate
+    for candidate in "$HOME"/.vscode-server/cli/servers/Stable-*/server/bin/remote-cli/code; do
+        [[ -x "$candidate" ]] || continue
+        if [[ -z "$fresh" ]] || [[ "$candidate" -nt "$fresh" ]]; then
+            fresh="$candidate"
+        fi
+    done
+    if [[ -n "$fresh" ]]; then
+        ln -sfn "$fresh" "$stable"
+    elif [[ -L "$stable" && ! -e "$stable" ]]; then
+        rm -f "$stable"
+    fi
+}
+
 _vscode_ipc_sync
+_vscode_code_sync
 # Resync before each prompt (~10ms; catches windows opened/closed mid-session).
 case ";${PROMPT_COMMAND:-};" in
     *";_vscode_ipc_sync;"*) ;;
-    *) PROMPT_COMMAND="_vscode_ipc_sync${PROMPT_COMMAND:+; $PROMPT_COMMAND}" ;;
+    *) PROMPT_COMMAND="_vscode_ipc_sync; _vscode_code_sync${PROMPT_COMMAND:+; $PROMPT_COMMAND}" ;;
 esac
 
 # Overwrite the tmux-cached value so new panes start with the stable path.
 if [[ -n "${TMUX:-}" ]]; then
     tmux set-environment -g VSCODE_IPC_HOOK_CLI "$VSCODE_IPC_HOOK_CLI"
 fi
+
+# Ctrl+G in Claude Code, `git commit`, etc. honor $EDITOR. `--wait` blocks until
+# the tab is closed; `--reuse-window` opens it as a tab in the existing window
+# instead of spawning a new VS Code instance.
+export EDITOR='code --wait --reuse-window'
+export VISUAL="$EDITOR"
 
 # --- GitHub token resolution ---
 
