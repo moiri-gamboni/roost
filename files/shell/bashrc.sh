@@ -109,16 +109,21 @@ case ";${PROMPT_COMMAND:-};" in
     *) PROMPT_COMMAND="_vscode_ipc_sync; _vscode_code_sync${PROMPT_COMMAND:+; $PROMPT_COMMAND}" ;;
 esac
 
-# Overwrite the tmux-cached value so new panes start with the stable path.
-if [[ -n "${TMUX:-}" ]]; then
-    tmux set-environment -g VSCODE_IPC_HOOK_CLI "$VSCODE_IPC_HOOK_CLI"
-fi
-
 # Ctrl+G in Claude Code, `git commit`, etc. honor $EDITOR. `--wait` blocks until
 # the tab is closed; `--reuse-window` opens it as a tab in the existing window
 # instead of spawning a new VS Code instance.
 export EDITOR='code --wait --reuse-window'
 export VISUAL="$EDITOR"
+
+# Push these into tmux's server environment so windows opened via `tmux
+# new-window CMD` (which runs CMD through `sh -c`, not a fresh login shell)
+# inherit them. Without this, `agent` etc. spawn claude with empty $EDITOR.
+if [[ -n "${TMUX:-}" ]]; then
+    for _v in VSCODE_IPC_HOOK_CLI EDITOR VISUAL; do
+        tmux set-environment -g "$_v" "${!_v}"
+    done
+    unset _v
+fi
 
 # --- GitHub token resolution ---
 
