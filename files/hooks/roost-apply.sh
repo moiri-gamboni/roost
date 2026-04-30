@@ -627,7 +627,11 @@ cmd_flag_reload() {
             # shellcheck disable=SC1090
             eval "$(sudo cat "$state")"
             set +a
-            envsubst '$XRAY_UUID $XRAY_PATH $GRPC_SERVICE_NAME $REALITY_PRIVATE_KEY $REALITY_SHORT_IDS $SS2022_PASSWORD' \
+            # Sourced helper defines $XRAY_ENVSUBST_VARS — kept identical with
+            # files/setup/travel-vpn.sh's render path to avoid silent allowlist drift.
+            # shellcheck disable=SC1091
+            source "$REPO_DIR/files/travel/_envsubst-vars.sh"
+            envsubst "$XRAY_ENVSUBST_VARS" \
                 < "$template" > "$tmp"
             sudo install -m 0640 -o root -g xray "$tmp" /etc/xray/config.json
             rm -f "$tmp"

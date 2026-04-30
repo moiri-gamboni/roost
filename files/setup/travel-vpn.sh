@@ -156,10 +156,14 @@ install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/xray-logrotate.conf"  
 # --- Render xray config (envsubst on state.env values) ---
 install -d -m 0755 /etc/xray
 set -a; source "$STATE_DIR/state.env"; set +a
+# Sourced helper defines $XRAY_ENVSUBST_VARS — kept identical with the
+# refresh path in files/hooks/roost-apply.sh to avoid silent allowlist drift.
+# shellcheck disable=SC1091
+source "$REMOTE_DIR/files/travel/_envsubst-vars.sh"
 # mktemp (mode 0600) keeps secrets out of world-readable /tmp; shell > redirect
 # honors umask (0644 as root) and briefly exposes REALITY_PRIVATE_KEY + friends.
 _xray_tmp=$(mktemp)
-envsubst '$XRAY_UUID $XRAY_PATH $GRPC_SERVICE_NAME $REALITY_PRIVATE_KEY $REALITY_SHORT_IDS $SS2022_PASSWORD' \
+envsubst "$XRAY_ENVSUBST_VARS" \
     < "$REMOTE_DIR/files/travel/xray-config.json.tmpl" \
     > "$_xray_tmp"
 install -m 0640 -o root -g xray "$_xray_tmp" /etc/xray/config.json
