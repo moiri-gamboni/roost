@@ -388,6 +388,17 @@ render_android() {
     server_v4=$(getent ahostsv4 "travel-direct.$DOMAIN" | awk 'NR==1 {print $1}')
     server_v6=$(getent ahostsv6 "travel-direct.$DOMAIN" | awk 'NR==1 {print $1}')
     [ -n "$server_v4" ] || die "could not resolve travel-direct.$DOMAIN A record"
+    # Bake Path A's CF Anycast IP at render time so sing-box doesn't need
+    # runtime DNS to dial it. Without this, cf-doh's bootstrap loop blocks
+    # all DNS on networks where the underlying interface can't reach 1.1.1.1
+    # (the loop: cf-doh -> tun -> urltest -> path-a [hostname] -> cf-doh).
+    # SNI stays as the hostname for cert validation. Soft-fallback to hostname
+    # if getent fails so transient resolver issues don't kill the render.
+    path_a_ipv4=$(getent ahostsv4 "travel.$DOMAIN" | awk 'NR==1 {print $1}')
+    if [ -z "$path_a_ipv4" ]; then
+        printf 'WARNING: getent failed for travel.%s; Path A will use hostname (DNS-bootstrap-fragile)\n' "$DOMAIN" >&2
+        path_a_ipv4="travel.$DOMAIN"
+    fi
     jq -n \
         --arg domain "$DOMAIN" \
         --arg uuid "$XRAY_UUID" \
@@ -398,11 +409,13 @@ render_android() {
         --arg ss_password "$SS2022_PASSWORD" \
         --arg server_v4 "$server_v4" \
         --arg server_v6 "$server_v6" \
+        --arg path_a_ipv4 "$path_a_ipv4" \
         '{
+            comment: "rendered at \(now | todate)",
             log: {level: "info"},
             dns: {
                 servers: [
-                    {type: "https", tag: "cf-doh", server: "1.1.1.1"}
+                    {type: "https", tag: "cf-doh", server: "1.1.1.1", detour: "urltest", timeout: "3s"}
                 ],
                 rules: [
                     {domain: ["travel.\($domain)", "travel-direct.\($domain)"], action: "route", server: "cf-doh"}
@@ -435,7 +448,7 @@ render_android() {
                     {
                         type: "vless",
                         tag: "path-a",
-                        server: "travel.\($domain)",
+                        server: $path_a_ipv4,
                         server_port: 443,
                         uuid: $uuid,
                         tls: {
