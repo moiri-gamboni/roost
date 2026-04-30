@@ -154,6 +154,45 @@ info_msg() { echo "  [*] $1"; }
 CF_API="https://api.cloudflare.com/client/v4"
 CF_AUTH=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json")
 
+# Idempotent A/AAAA upsert helper. Used to keep travel-VPN-related DNS
+# records in sync without manual CF dashboard clicks.
+#
+#   ensure_dns_record <name> <type:A|AAAA> <content>
+#
+# - Absent  → POST a new record (proxied=false; we want direct-to-Hetzner).
+# - Wrong content → PATCH to update (rare; only matters if SERVER_IP changes).
+# - Correct → log "already correct" and return without API mutation.
+#
+# Requires CF_ZONE_ID (set below) and the CF_API token to have Zone:DNS:Edit
+# on the zone.
+ensure_dns_record() {
+    local name="$1" type="$2" content="$3" existing rec_id rec_content payload resp
+    existing=$(curl -fsS "${CF_AUTH[@]}" \
+        "$CF_API/zones/$CF_ZONE_ID/dns_records?name=$name&type=$type" \
+        | jq -c '.result[0] // empty')
+    if [ -z "$existing" ]; then
+        info_msg "DNS: creating $name $type $content"
+        payload=$(jq -nc --arg name "$name" --arg type "$type" --arg content "$content" \
+            '{type: $type, name: $name, content: $content, ttl: 1, proxied: false}')
+        resp=$(curl -fsS "${CF_AUTH[@]}" -X POST "$CF_API/zones/$CF_ZONE_ID/dns_records" --data "$payload")
+        echo "$resp" | jq -e '.success' >/dev/null \
+            || { echo "Error creating DNS record:"; echo "$resp" | jq '.errors // .'; exit 1; }
+        return
+    fi
+    rec_id=$(echo "$existing" | jq -r '.id')
+    rec_content=$(echo "$existing" | jq -r '.content')
+    if [ "$rec_content" = "$content" ]; then
+        info_msg "DNS: $name $type already correct ($content)"
+        return
+    fi
+    info_msg "DNS: updating $name $type $rec_content -> $content"
+    payload=$(jq -nc --arg name "$name" --arg type "$type" --arg content "$content" \
+        '{type: $type, name: $name, content: $content, ttl: 1, proxied: false}')
+    resp=$(curl -fsS "${CF_AUTH[@]}" -X PATCH "$CF_API/zones/$CF_ZONE_ID/dns_records/$rec_id" --data "$payload")
+    echo "$resp" | jq -e '.success' >/dev/null \
+        || { echo "Error updating DNS record:"; echo "$resp" | jq '.errors // .'; exit 1; }
+}
+
 # Zone ID (resolve first; the account ID can be derived from the zone if needed)
 ZONE_JSON=$(curl -s "${CF_AUTH[@]}" "$CF_API/zones?name=$DOMAIN")
 CF_ZONE_ID=$(echo "$ZONE_JSON" | jq -r '.result[0].id // empty')
@@ -925,6 +964,17 @@ ok "cloudflared running as systemd service"
 # ============================================
 
 section "Travel VPN"
+
+# Vision (Path D) SNI default is static.$DOMAIN; clients send that as the SNI
+# on the wildcard cert. The DNS record must resolve to the Hetzner IP so
+# GFW's SNI-resolves-to-connection-IP heuristic doesn't flag it. Idempotent —
+# operator can edit state.env later to use a different label, in which case
+# the corresponding DNS record needs adding by hand or via this helper.
+ensure_dns_record "static.$DOMAIN" A "$HETZNER_PUBLIC_IPV4"
+if [ -n "${HETZNER_PUBLIC_IPV6:-}" ]; then
+    ensure_dns_record "static.$DOMAIN" AAAA "$HETZNER_PUBLIC_IPV6"
+fi
+
 remote_script "setup/travel-vpn.sh"
 ok "Xray + travel-vpn configs deployed (travel=off, vpn=off by default)"
 
