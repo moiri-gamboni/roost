@@ -414,7 +414,7 @@ render_android() {
             log: {level: "info"},
             dns: {
                 servers: [
-                    {type: "https", tag: "cf-doh", server: "1.1.1.1", detour: "urltest", timeout: "3s"}
+                    {type: "https", tag: "cf-doh", server: "1.1.1.1", detour: "urltest"}
                 ],
                 rules: [
                     {domain: ["travel.\($domain)", "travel-direct.\($domain)"], action: "route", server: "cf-doh"}
