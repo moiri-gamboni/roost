@@ -622,7 +622,8 @@ cmd_flag_reload() {
         else
             info "Re-rendering /etc/xray/config.json..."
             local tmp
-            tmp=$(mktemp)
+            # .json suffix so `xray run -test` autodetects the format.
+            tmp=$(mktemp --suffix=.json)
             set -a
             # shellcheck disable=SC1090
             eval "$(sudo cat "$state")"
@@ -633,15 +634,33 @@ cmd_flag_reload() {
             source "$REPO_DIR/files/travel/_envsubst-vars.sh"
             envsubst "$XRAY_ENVSUBST_VARS" \
                 < "$template" > "$tmp"
-            sudo install -m 0640 -o root -g xray "$tmp" /etc/xray/config.json
-            rm -f "$tmp"
-            ok "Xray config rendered"
-            info "Restarting xray..."
-            if sudo systemctl restart xray; then
-                ok "xray restarted"
-            else
+            # Validate before install: a parse-time error (broken JSON, wrong
+            # types, missing required fields) would otherwise install
+            # successfully and crash xray on the subsequent restart, taking
+            # down all paths. `xray run -test` catches that class. Note: xray
+            # accepts unknown fields silently, so this guard does NOT catch
+            # the field-name-typo class (use upstream docs to verify).
+            if ! sudo /usr/local/bin/xray run -test -c "$tmp" >/dev/null 2>&1; then
+                local err
+                err=$(sudo /usr/local/bin/xray run -test -c "$tmp" 2>&1 || true)
+                warn "xray config validation failed; keeping previous /etc/xray/config.json"
+                echo "$err" | sed 's/^/    /' >&2
+                ntfy_send -t "roost-apply: xray config invalid" -p "high" \
+                    "Rendered xray config failed 'xray run -test'; previous config kept. Check journalctl -t roost/roost-apply." \
+                    || true
+                rm -f "$tmp"
                 reload_failed+=("xray")
-                warn "Failed: systemctl restart xray"
+            else
+                sudo install -m 0640 -o root -g xray "$tmp" /etc/xray/config.json
+                rm -f "$tmp"
+                ok "Xray config rendered"
+                info "Restarting xray..."
+                if sudo systemctl restart xray; then
+                    ok "xray restarted"
+                else
+                    reload_failed+=("xray")
+                    warn "Failed: systemctl restart xray"
+                fi
             fi
         fi
     fi
