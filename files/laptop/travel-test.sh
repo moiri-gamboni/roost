@@ -205,6 +205,26 @@ test_via_tunnel() {
     pass "via-tunnel: egress via $SOCKS5_TARGET -> $egress"
 }
 
+# DNS bootstrap-loop regression test. With sing-box's tun + auto_route +
+# strict_route + hijack-dns rule, getent's DNS query is captured by the tun
+# and routed via cf-doh through the tunnel. So a fast, non-empty response
+# here proves the bootstrap-loop fix is healthy. Failure mode (timeout or
+# empty result) indicates the loop has reappeared.
+test_dns_via_tunnel() {
+    if ! systemctl is-active --quiet roost-travel 2>/dev/null; then
+        skip "DNS via tunnel: roost-travel not running"
+        return
+    fi
+    local ips rc
+    ips=$(timeout 5 getent ahosts example.com 2>&1)
+    rc=$?
+    if [ "$rc" -ne 0 ] || [ -z "$ips" ]; then
+        fail "DNS via tunnel: getent example.com failed (rc=$rc): ${ips:-<empty>}"
+        return
+    fi
+    pass "DNS via tunnel: example.com -> $(echo "$ips" | awk 'NR==1 {print $1}')"
+}
+
 test_ssh_proxy() {
     local socks_host="${SOCKS5_TARGET%:*}"
     local socks_port="${SOCKS5_TARGET##*:}"
@@ -336,6 +356,7 @@ if [ "$QUICK" -eq 0 ]; then
 
     section "Via-tunnel functional"
     test_via_tunnel
+    test_dns_via_tunnel
 
     section "SSH ProxyCommand"
     test_ssh_proxy

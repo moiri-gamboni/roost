@@ -131,6 +131,9 @@ cmd_logs() {
 }
 
 cmd_config() {
+    local sb_version
+    sb_version=$(dpkg-query -W -f='${Version}' sing-box 2>/dev/null || echo unknown)
+    echo "[sing-box ${sb_version} on laptop]"
     if ! fetch_config; then
         echo "Failed to fetch config from '${ROOST_SSH_TARGET:-<unset>}'." >&2
         echo "Checks: Tailscale up? roost-net installed on server? $ENV_FILE present?" >&2
