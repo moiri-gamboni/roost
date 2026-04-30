@@ -223,6 +223,27 @@ Toggleable GFW-resistant network with a Proton egress layer. See `plans/travel-v
 
 **Operational playbook:** pre-departure, travel, mid-flight degradation handling -- see README + `plans/travel-vpn-architecture.md` §6.
 
+### Known operational notes
+
+**DNS bootstrap loop class** (fixed 2026-04-30 in `plans/singbox-dns-bootstrap-fix.md`): sing-box's cf-doh DNS server must have `detour: "urltest"` and Path A's outbound must use a render-time-baked CF IP, otherwise sing-box's internal DoH client gets captured by its own tun and can't bootstrap on networks where the underlying interface can't reach 1.1.1.1 directly. Diagnostic: `journalctl -u roost-travel | grep "1.1.1.1:443: i/o timeout"` while raw `nc -zv 1.1.1.1 443` succeeds = bootstrap loop. Render fix lives in `render_android` (`files/hooks/roost-net.sh`); `travel-test.sh` includes a regression assertion (`test_dns_via_tunnel`).
+
+**All-paths-fail DNS hang**: with cf-doh `detour: "urltest"`, if every urltest member fails simultaneously, DNS hangs at the urltest-selection stage. The `timeout: "3s"` on cf-doh bounds this; symptom is fast-failing DNS rather than silent hangs. If observed in normal operation, all paths are likely GFW-blocked simultaneously → fall back to eSIM-bypass routing (different operator route) or direct internet.
+
+**Issue #3792 (sing-box urltest+DoH)**: certain sing-box versions return `missing supported outbound` for the DoH-server-with-urltest-detour pattern this stack uses. Empirical-ok on 1.13.x at time of fix. Sing-box version is printed by `roost-travel config` for visibility; `dpkg -s sing-box | awk '/^Version:/ {print $2}'` checks it explicitly. Sidecar pre-test before deploy if the laptop or Android version drifts to anything unfamiliar.
+
+### Sing-box client deploy procedure (in-country safe)
+
+1. Pre-flight: `dpkg -s sing-box | awk '/^Version:/ {print $2}'` on laptop; manually note Android version from sing-box-app's About screen.
+2. Deploy server-side via existing eSIM-routed sing-box (or Tailscale): `roost-apply push files/hooks/roost-net.sh`. No service restart required server-side; effect on next client refresh.
+3. Refresh laptop: `roost-travel config` (auto-restarts unit if active; ~3-15s gap; the atomic-swap fallback keeps the previous config if the new one fails `sing-box check`).
+4. Refresh Android: `roost-net client android --send-tailscale <peer>` from laptop, then re-import in the sing-box-for-android app. Verify the active profile name + the timestamp comment (`jq -r '.comment'` on the imported config).
+5. Verify post-deploy: `bash files/laptop/travel-test.sh` includes a `DNS via tunnel: example.com -> ...` PASS line. Curl through tunnel works.
+6. Rollback if needed: `git revert <commit>` + `roost-apply push files/hooks/roost-net.sh` + `roost-travel config` on laptop. Realistic 60-120s. Tailscale stays up throughout (independent transport).
+
+### 30-day post-deploy review
+
+Scrape `journalctl -u roost-travel --since '30 days ago' | grep -iE 'i/o timeout|missing supported outbound|dns'` for any new DNS-related errors. Revisit follow-up work if the symptom returns: multi-IP Path A clone (mirror Paths B/C v4/v6) for CF-IP-throttle resilience; Quad9 secondary DoH for Issue #3792 fallback.
+
 ## App-Specific Extensions
 
 The base infrastructure configs are generic and stay in the repo. Server-specific app configs go in dedicated locations that the base configs import/source, avoiding divergence:
