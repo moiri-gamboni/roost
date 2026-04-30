@@ -327,6 +327,30 @@ cmd_test() {
             fail=$((fail + 1))
         fi
     }
+    skip() {
+        echo "  [SKIP] $1"
+    }
+
+    # --- Path D (Vision) — runs whenever the cert exists, independent of
+    # travel/vpn toggles. Skips silently in the pre-cert-init state so the
+    # report doesn't shout about a deliberately-deferred operator step.
+    local vision_cert=/etc/roost-travel/vision-cert/fullchain.cer
+    if sudo test -r "$vision_cert"; then
+        echo "--- Path D (Vision) ---"
+        assert "vision cert valid >7 days" \
+            sudo openssl x509 -checkend 604800 -noout -in "$vision_cert"
+        # xray listens on :: so loopback connect reaches it.
+        assert "Path D :8443 reachable on loopback" \
+            bash -c "exec 3<>/dev/tcp/127.0.0.1/8443 2>/dev/null && exec 3>&- 3<&-"
+        # Bad-key probe: send HTTP through the TLS listener; xray's fallbacks
+        # block forwards to 127.0.0.1:8081 where Caddy responds with the canned
+        # page. -k bypasses cert validation; --resolve points the SNI to localhost.
+        local sni="${VISION_SNI:-static.$DOMAIN}"
+        assert "vision fallback responds with Caddy canned page" \
+            bash -c "curl -k -s --max-time 5 --resolve '$sni:8443:127.0.0.1' 'https://$sni:8443/' | grep -q 'It works'"
+    else
+        skip "Path D: cert not present at $vision_cert (run vision-cert-init.sh)"
+    fi
 
     if [ "$vpn_state" = "on" ]; then
         echo "--- fwmark masking + routing ---"
