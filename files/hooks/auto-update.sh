@@ -200,6 +200,21 @@ else
     logger -t "$_HOOK_TAG" "gitleaks: skipped (release < 7 days old)"
 fi
 
+# --- acme.sh (Let's Encrypt client for Vision Path D wildcard cert) ---
+# Self-update is disabled in vision-cert-init.sh (--auto-upgrade 0); we update
+# acme.sh from here on the same 7-day-cooldown discipline as other tools so
+# its supply-chain timing matches the rest of the stack. Skip if acme.sh
+# isn't installed (cert-init never ran).
+if [ -x /root/.acme.sh/acme.sh ] && github_release_cooldown_ok "acmesh-official/acme.sh" 7; then
+    ACME_LATEST=$(github_latest_version "acmesh-official/acme.sh")
+    ACME_CURRENT=$(sudo /root/.acme.sh/acme.sh --version 2>/dev/null | grep -oP 'v?\d+\.\d+\.\d+' | sed 's/^v//' || echo "")
+    if [ -n "$ACME_LATEST" ] && [ "$ACME_CURRENT" != "$ACME_LATEST" ]; then
+        track "acme.sh" sudo /root/.acme.sh/acme.sh --upgrade
+    fi
+elif [ -x /root/.acme.sh/acme.sh ]; then
+    logger -t "$_HOOK_TAG" "acme.sh: skipped (release < 7 days old)"
+fi
+
 # --- rodney (headless Chrome CLI) ---
 track "rodney" bash -c "go install github.com/simonw/rodney@latest"
 
