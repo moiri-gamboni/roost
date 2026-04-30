@@ -190,7 +190,7 @@ Caddy has a systemd drop-in that waits for Tailscale before starting. Updates ar
 
 ## Travel VPN
 
-Toggleable GFW-resistant network with a Proton egress layer. See `plans/travel-vpn-architecture.md` for full design rationale. High-level:
+Toggleable GFW-resistant network with a Proton egress layer. High-level:
 
 **Paths:** four concurrent Xray inbounds on the server, sing-box urltest on clients picks the fastest:
 - **Path A** -- VLESS + WebSocket + TLS behind the existing Cloudflare Tunnel (CF terminates TLS, xray listens on `127.0.0.1:10000`).
@@ -224,13 +224,13 @@ acme.sh persists the token into its account config so subsequent `--cron` renewa
 - `roost-net travel on|off` -- deploy/remove CF fragment, open/close UFW for 443/tcp + 51820/tcp+udp + 8443/tcp (8443/tcp is conditional on Vision cert presence — skipped with a warning if `/etc/roost-travel/vision-cert/fullchain.cer` is absent)
 - `roost-net vpn on|off` -- enable/disable `wg-quick@wg-proton` + keepalive timer, verify egress is external (not our Hetzner IP) on activation
 - `roost-net vpn profile [name]` -- list/activate Proton profiles under `/etc/roost-travel/proton-profiles/*.conf` (e.g. NetShield-on vs NetShield-off); swaps `/etc/wireguard/wg-proton.conf` symlink and hot-restarts wg-quick if vpn=on
-- `roost-net test` -- plan §4.2 assertions (fwmark masking, kill-switch REJECT, external egress) + Path D assertions (vision cert validity, :8443 reachability, fallback responds)
+- `roost-net test` -- fwmark masking, kill-switch REJECT, external egress, plus Path D assertions (vision cert validity, :8443 reachability, fallback responds)
 - `roost-net client {android|laptop|ssh}` -- emit sing-box or SSH config from `state.env`
 - `roost-net rotate-keys` -- regenerate `state.env` via `keys-init.sh --force`, restart Xray
 
 **Laptop CLI (`files/laptop/roost-net-fw.sh`):** opens/closes the Hetzner cloud firewall for travel ports (dual-stack). `SERVER_NAME-fw` is the firewall name convention from `deploy.sh`.
 
-**Operational playbook:** pre-departure, travel, mid-flight degradation handling -- see README + `plans/travel-vpn-architecture.md` §6.
+**Operational playbook:** pre-departure, travel, mid-flight degradation handling -- see README.
 
 ### Known operational notes
 
