@@ -236,7 +236,7 @@ Toggleable GFW-resistant network with a Proton egress layer. See `plans/travel-v
 1. Pre-flight: `dpkg -s sing-box | awk '/^Version:/ {print $2}'` on laptop; manually note Android version from sing-box-app's About screen.
 2. Deploy server-side via existing eSIM-routed sing-box (or Tailscale): `roost-apply push files/hooks/roost-net.sh`. No service restart required server-side; effect on next client refresh.
 3. Refresh laptop: `roost-travel config` (auto-restarts unit if active; ~3-15s gap; the atomic-swap fallback keeps the previous config if the new one fails `sing-box check`).
-4. Refresh Android: `roost-net client android --send-tailscale <peer>` from laptop, then re-import in the sing-box-for-android app. Verify the active profile name + the timestamp comment (`jq -r '.comment'` on the imported config).
+4. Refresh Android: `roost-net client android --send-tailscale <peer>` from laptop, then re-import in the sing-box-for-android app. Verify the active profile name in the app.
 5. Verify post-deploy: `bash files/laptop/travel-test.sh` includes a `DNS via tunnel: example.com -> ...` PASS line. Curl through tunnel works.
 6. Rollback if needed: `git revert <commit>` + `roost-apply push files/hooks/roost-net.sh` + `roost-travel config` on laptop. Realistic 60-120s. Tailscale stays up throughout (independent transport).
 

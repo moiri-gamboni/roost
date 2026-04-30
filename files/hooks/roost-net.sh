@@ -411,7 +411,6 @@ render_android() {
         --arg server_v6 "$server_v6" \
         --arg path_a_ipv4 "$path_a_ipv4" \
         '{
-            comment: "rendered at \(now | todate)",
             log: {level: "info"},
             dns: {
                 servers: [
