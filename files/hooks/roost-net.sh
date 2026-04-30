@@ -424,6 +424,7 @@ render_android() {
         --arg server_v4 "$server_v4" \
         --arg server_v6 "$server_v6" \
         --arg path_a_ipv4 "$path_a_ipv4" \
+        --arg vision_sni "${VISION_SNI:-static.$DOMAIN}" \
         '{
             log: {level: "info"},
             dns: {
@@ -451,8 +452,8 @@ render_android() {
                         type: "urltest",
                         tag: "urltest",
                         outbounds: (
-                            ["path-a", "path-b-v4", "path-c-v4"]
-                            + (if ($server_v6 | length) > 0 then ["path-b-v6", "path-c-v6"] else [] end)
+                            ["path-a", "path-b-v4", "path-c-v4", "path-d-v4"]
+                            + (if ($server_v6 | length) > 0 then ["path-b-v6", "path-c-v6", "path-d-v6"] else [] end)
                         ),
                         url: "https://www.gstatic.com/generate_204",
                         interval: "3m",
@@ -500,6 +501,19 @@ render_android() {
                         server_port: 51820,
                         method: "2022-blake3-chacha20-poly1305",
                         password: $ss_password
+                    },
+                    {
+                        type: "vless",
+                        tag: "path-d-v4",
+                        server: $server_v4,
+                        server_port: 8443,
+                        uuid: $uuid,
+                        flow: "xtls-rprx-vision",
+                        tls: {
+                            enabled: true,
+                            server_name: $vision_sni,
+                            utls: {enabled: true, fingerprint: "chrome"}
+                        }
                     }
                 ]
                 + (if ($server_v6 | length) > 0 then [
@@ -528,6 +542,19 @@ render_android() {
                         server_port: 51820,
                         method: "2022-blake3-chacha20-poly1305",
                         password: $ss_password
+                    },
+                    {
+                        type: "vless",
+                        tag: "path-d-v6",
+                        server: $server_v6,
+                        server_port: 8443,
+                        uuid: $uuid,
+                        flow: "xtls-rprx-vision",
+                        tls: {
+                            enabled: true,
+                            server_name: $vision_sni,
+                            utls: {enabled: true, fingerprint: "chrome"}
+                        }
                     }
                 ] else [] end)
             ),
