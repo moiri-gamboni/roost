@@ -39,6 +39,21 @@ else
     FAILURES="$FAILURES\n- Nothing listening on 127.0.0.1:10000 (CF Tunnel origin)"
 fi
 
+# Vision (Path D) cert expiry probe. Only runs if the cert exists at all,
+# so this stays silent until the operator runs vision-cert-init.sh. The
+# weekly renewal timer should refresh the cert ~30d before expiry; alarm
+# at <30d means renewal has been failing or the timer is disabled.
+_travel_vision_cert=/etc/roost-travel/vision-cert/fullchain.cer
+if [ -f "$_travel_vision_cert" ]; then
+    if openssl x509 -checkend $(( 30 * 86400 )) -noout -in "$_travel_vision_cert" >/dev/null 2>&1; then
+        logger -t "$_HOOK_TAG" "OK: Vision cert is valid for >30 days"
+    else
+        _expiry=$(openssl x509 -enddate -noout -in "$_travel_vision_cert" 2>/dev/null | cut -d= -f2-)
+        logger -t "$_HOOK_TAG" "FAIL: Vision cert expires within 30 days (notAfter=$_expiry)"
+        FAILURES="$FAILURES\n- Vision cert expires within 30 days (notAfter=$_expiry); check vision-cert-renew.timer"
+    fi
+fi
+
 if [ -f "$_travel_state_dir/vpn" ]; then
     _travel_vpn_state=$(cat "$_travel_state_dir/vpn")
 else

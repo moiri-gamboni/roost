@@ -1,0 +1,22 @@
+[Unit]
+Description=Renew Vision (Path D) wildcard cert via acme.sh
+Documentation=file:///etc/roost-travel/vision-cert-init.sh
+ConditionPathExists=/root/.acme.sh/acme.sh
+OnFailure=ntfy-cert-renew@%n.service
+
+[Service]
+Type=oneshot
+# `acme.sh --cron` runs the renewal logic for any cert past its renewal
+# threshold (default: 60d). Token comes from acme.sh's saved account.conf,
+# established by vision-cert-init.sh on first run.
+ExecStart=/root/.acme.sh/acme.sh --cron --config-home /etc/roost-travel/acme-config --cert-home /etc/roost-travel/vision-cert
+# install-cert is run as part of the issue/renew lifecycle; --cron does this
+# too if the cert has the Le_RealFullChainPath etc. saved. We re-run
+# install-cert defensively so an interrupted previous renewal can't leave
+# the live path stale.
+ExecStartPost=/root/.acme.sh/acme.sh --install-cert -d "*.${DOMAIN}" --config-home /etc/roost-travel/acme-config --cert-home /etc/roost-travel/vision-cert --fullchain-file /etc/roost-travel/vision-cert/fullchain.cer --key-file /etc/roost-travel/vision-cert/private.key
+ExecStartPost=/bin/chgrp xray /etc/roost-travel/vision-cert/fullchain.cer /etc/roost-travel/vision-cert/private.key
+ExecStartPost=/bin/chmod 0640 /etc/roost-travel/vision-cert/fullchain.cer /etc/roost-travel/vision-cert/private.key
+EnvironmentFile=/etc/roost-travel/vision-cert.env
+StandardOutput=journal
+StandardError=journal
