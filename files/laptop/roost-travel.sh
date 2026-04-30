@@ -30,10 +30,16 @@ Usage: roost-travel {on|off|status|logs|config}
 EOF
 }
 
-# Fetch sing-box config via ssh; write to $CONFIG. 0 = success, 1 = failure
-# (no target, ssh blocked, roost-net missing). ssh -q suppresses handshake
-# chatter so cmd_on stays quiet on the best-effort path; cmd_config prints
-# its own actionable error.
+# Fetch sing-box config via ssh; validate with `sing-box check`; atomic-swap
+# into $CONFIG. 0 = success, 1 = failure (no target, ssh blocked, roost-net
+# missing, or rendered config fails sing-box check). ssh -q suppresses
+# handshake chatter so cmd_on stays quiet on the best-effort path; cmd_config
+# prints its own actionable error.
+#
+# The validate-then-swap pattern protects against a render bug shipping a
+# broken config that the systemd unit then loops on with Restart=on-failure.
+# It must live in fetch_config (not in cmd_config) so cmd_on gets the same
+# protection — otherwise cmd_on's invocation would leave orphan .new files.
 fetch_config() {
     local target="${ROOST_SSH_TARGET:-}" new_config
     [ -n "$target" ] || return 1
@@ -45,8 +51,18 @@ fetch_config() {
         "bash -lc 'roost-net client laptop'") || return 1
     [ -n "$new_config" ] || return 1
     install -d -m 0700 "$(dirname "$CONFIG")"
-    ( umask 077 && printf '%s\n' "$new_config" > "$CONFIG" )
-    chmod 0600 "$CONFIG"
+    # Write to .new with mode 0600 (preserves the secrecy of the SS-2022
+    # password and UUID baked into the config).
+    ( umask 077 && printf '%s\n' "$new_config" > "${CONFIG}.new" )
+    chmod 0600 "${CONFIG}.new"
+    # Validate before swap. Failure = leave old config alone, no orphan.
+    if ! sing-box check -c "${CONFIG}.new" >&2; then
+        echo "Rendered config failed sing-box check; keeping previous config." >&2
+        rm -f "${CONFIG}.new"
+        return 1
+    fi
+    # Atomic swap.
+    mv "${CONFIG}.new" "$CONFIG"
 }
 
 cmd_status() {
