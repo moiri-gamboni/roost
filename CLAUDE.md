@@ -192,10 +192,11 @@ Caddy has a systemd drop-in that waits for Tailscale before starting. Updates ar
 
 Toggleable GFW-resistant network with a Proton egress layer. See `plans/travel-vpn-architecture.md` for full design rationale. High-level:
 
-**Paths:** three concurrent Xray inbounds on the server, sing-box urltest on clients picks the fastest:
+**Paths:** four concurrent Xray inbounds on the server, sing-box urltest on clients picks the fastest:
 - **Path A** -- VLESS + WebSocket + TLS behind the existing Cloudflare Tunnel (CF terminates TLS, xray listens on `127.0.0.1:10000`).
 - **Path B** -- VLESS + gRPC + REALITY on `:::443` direct to Hetzner (masquerades as `www.samsung.com`).
 - **Path C** -- Shadowsocks-2022 (`chacha20-poly1305`) on `:::51820` direct to Hetzner, TCP + UDP.
+- **Path D** -- VLESS + XTLS-Vision over plain TLS on `:::8443` direct to Hetzner (Let's Encrypt wildcard cert via acme.sh DNS-01; bad-key probes fall back to a Caddy canned page on `127.0.0.1:8081` so the listener doesn't TCP-RST and fingerprint as a proxy).
 
 **Egress:** optional ProtonVPN WireGuard (`wg-proton`) as a policy-routed outbound. Traffic from the `xray` system user plus Tailscale-exit-node forwarded traffic gets fwmarked with `0x1337` (mask `0x0000ffff`, so Tailscale's own mark bits survive). A dual-stack kill-switch REJECTs anything from those sources that would otherwise leak out `eth0`.
 
@@ -205,17 +206,25 @@ Toggleable GFW-resistant network with a Proton egress layer. See `plans/travel-v
 |---|---|---|---|---|
 | Home, normal | ISP direct | off | off | ISP |
 | Home, private | Tailscale exit node | off | on | Proton |
-| Travel | Xray A/B/C | on | off | Hetzner |
-| Travel, private | Xray A/B/C | on | on | Proton |
+| Travel | Xray A/B/C/D | on | off | Hetzner |
+| Travel, private | Xray A/B/C/D | on | on | Proton |
 
-**State:** `/etc/roost-travel/{travel,vpn}` contain `on`/`off`. `/etc/roost-travel/state.env` (`0600 root`) holds the generated keys (UUID, REALITY keypair, shortIds, SS-2022 password). `vpn=on` is persisted via `systemctl enable --now wg-quick@wg-proton` so the server survives an in-country update + reboot.
+**State:** `/etc/roost-travel/{travel,vpn}` contain `on`/`off`. `/etc/roost-travel/state.env` (`0600 root`) holds the generated keys (UUID, REALITY keypair, shortIds, SS-2022 password, VISION_SNI). `vpn=on` is persisted via `systemctl enable --now wg-quick@wg-proton` so the server survives an in-country update + reboot.
+
+**Path D one-time provisioning** (separate from the toggles above): the wildcard cert for `*.$DOMAIN` lives at `/etc/roost-travel/vision-cert/`. Issued by `vision-cert-init.sh` once per server lifetime (or per cert rotation), renewed weekly by `vision-cert-renew.timer` (Tue 04:00 UTC). The init step needs the Cloudflare API token, which is laptop-only by design; pass it explicitly:
+
+```bash
+sudo CF_Token=$CLOUDFLARE_API_TOKEN DOMAIN=$DOMAIN /etc/roost-travel/vision-cert-init.sh
+```
+
+acme.sh persists the token into its account config so subsequent `--cron` renewals (driven by the timer) don't need it. Cert expiry is monitored by `travel-health.sh` (alarms at <30d remaining); renewal failures trigger ntfy via `OnFailure=ntfy-cert-renew@%n.service`.
 
 **Server CLI (`roost-net`):**
 - `roost-net status` -- current toggles, egress IP, service status
-- `roost-net travel on|off` -- deploy/remove CF fragment, open/close UFW for 443/tcp + 51820/tcp+udp
+- `roost-net travel on|off` -- deploy/remove CF fragment, open/close UFW for 443/tcp + 51820/tcp+udp + 8443/tcp (8443/tcp is conditional on Vision cert presence — skipped with a warning if `/etc/roost-travel/vision-cert/fullchain.cer` is absent)
 - `roost-net vpn on|off` -- enable/disable `wg-quick@wg-proton` + keepalive timer, verify egress is external (not our Hetzner IP) on activation
 - `roost-net vpn profile [name]` -- list/activate Proton profiles under `/etc/roost-travel/proton-profiles/*.conf` (e.g. NetShield-on vs NetShield-off); swaps `/etc/wireguard/wg-proton.conf` symlink and hot-restarts wg-quick if vpn=on
-- `roost-net test` -- plan §4.2 assertions (fwmark masking, kill-switch REJECT, external egress)
+- `roost-net test` -- plan §4.2 assertions (fwmark masking, kill-switch REJECT, external egress) + Path D assertions (vision cert validity, :8443 reachability, fallback responds)
 - `roost-net client {android|laptop|ssh}` -- emit sing-box or SSH config from `state.env`
 - `roost-net rotate-keys` -- regenerate `state.env` via `keys-init.sh --force`, restart Xray
 
@@ -243,6 +252,19 @@ Toggleable GFW-resistant network with a Proton egress layer. See `plans/travel-v
 ### 30-day post-deploy review
 
 Scrape `journalctl -u roost-travel --since '30 days ago' | grep -iE 'i/o timeout|missing supported outbound|dns'` for any new DNS-related errors. Revisit follow-up work if the symptom returns: multi-IP Path A clone (mirror Paths B/C v4/v6) for CF-IP-throttle resilience; Quad9 secondary DoH for Issue #3792 fallback.
+
+### Path D (Vision) runbook
+
+If Path D fails or sing-box urltest never picks it:
+
+1. Cert health: `sudo openssl x509 -checkend 604800 -noout -in /etc/roost-travel/vision-cert/fullchain.cer && echo OK` — fail = cert renewal stuck; check `journalctl -u vision-cert-renew` for the last run, or rerun manually with `sudo systemctl start vision-cert-renew.service`. If the timer hasn't fired at all, `systemctl list-timers vision-cert-renew.timer`.
+2. Listener health: `sudo /home/moiri/roost/claude/hooks/roost-net.sh test` exercises the loopback + fallback chain. The `[PASS] vision fallback responds` line is end-to-end.
+3. xray-side errors: `journalctl -u xray --since '5 minutes ago' | grep -iE 'vision|tls|cert'`. Cert path mismatch and chmod issues (xray needs read access via group=xray) are the typical first-deploy bugs.
+4. Abuse signals: `sudo cat /var/lib/roost-travel/vision-seen-ips.txt` lists every IP that has ever connected to the Vision inbound. The daily `vision-abuse-watch.sh` ntfys novel IPs; if you see a sudden spike, rotate `XRAY_UUID` via `roost-net rotate-keys`.
+
+### Xray-core staleness
+
+Xray-core is version-pinned (`v26.x`) and updated on `./deploy.sh` re-runs (no weekly cron because that would force a peak-daytime restart for the in-country user). REALITY active-probing research (e.g. Aparecium May'25, replay detection Feb'26) lands periodically; if `net4people/bbs` flags new detection, run `./deploy.sh` to pull the latest within 30 days. The `_xray-install.sh` helper does the version resolution + SHA-256 check; `setup/travel-vpn.sh` dispatches to it.
 
 ## App-Specific Extensions
 
