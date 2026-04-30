@@ -1,0 +1,15 @@
+# Vision (Path D) bad-key probe fallback.
+#
+# When a client connects to xray's Vision inbound on :8443 with the wrong
+# UUID, xray's `fallbacks` directive forwards the raw stream to this listener
+# instead of TCP-RST-ing the client (a TCP-RST is a fingerprint that says
+# "you hit a proxy"). Serving a benign canned page makes the bad-key probe
+# look like an ordinary misconfigured HTTPS endpoint.
+#
+# Bound to 127.0.0.1 only — the public path is xray on :8443; this listener
+# must NOT be reachable from outside (otherwise a probe that bypasses xray
+# would hit Caddy directly and reveal the discrepancy).
+
+127.0.0.1:8081 {
+    respond "It works." 200
+}

@@ -63,12 +63,17 @@ done
 # --- Deploy keys-init.sh so we can seed state.env ---
 install -m 0755 -o root -g root "$REMOTE_DIR/files/travel/keys-init.sh" "$KEYS_INIT"
 
-# --- Seed keys (idempotent; keys-init.sh exits 0 when state.env exists) ---
+# --- Seed (or backfill) keys ---
+# First-run seeds everything; subsequent runs use --backfill to pick up new
+# keys (e.g. VISION_SNI added for Path D) without rotating credentials in
+# active use.
 if [ -f "$STATE_DIR/state.env" ]; then
-    skip "state.env already seeded"
+    info "Backfilling state.env (preserves existing keys)..."
+    DOMAIN="$DOMAIN" "$KEYS_INIT" --backfill
+    ok "state.env backfilled at $STATE_DIR/state.env"
 else
     info "Generating travel-vpn keys..."
-    "$KEYS_INIT"
+    DOMAIN="$DOMAIN" "$KEYS_INIT"
     ok "state.env seeded at $STATE_DIR/state.env"
 fi
 
@@ -77,6 +82,7 @@ install -m 0755 -o root -g root "$REMOTE_DIR/files/travel/xray-boot-guard"      
 install -m 0755 -o root -g root "$REMOTE_DIR/files/travel/proton-routing.sh"      "$STATE_DIR/proton-routing.sh"
 install -m 0755 -o root -g root "$REMOTE_DIR/files/travel/proton-keepalive-check" /usr/local/bin/proton-keepalive-check
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton.conf.example"    "$STATE_DIR/proton.conf.example"
+install -m 0700 -o root -g root "$REMOTE_DIR/files/travel/vision-cert-init.sh"    "$STATE_DIR/vision-cert-init.sh"
 
 # --- Deploy systemd units ---
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/xray.service"                /etc/systemd/system/xray.service
@@ -84,10 +90,24 @@ install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton-keepalive.servi
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton-keepalive.timer"          /etc/systemd/system/proton-keepalive.timer
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton-routing-ensure.service"   /etc/systemd/system/proton-routing-ensure.service
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton-routing-ensure.timer"     /etc/systemd/system/proton-routing-ensure.timer
+install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/vision-cert-renew.service"       /etc/systemd/system/vision-cert-renew.service
+install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/vision-cert-renew.timer"         /etc/systemd/system/vision-cert-renew.timer
+install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/ntfy-cert-renew@.service"        /etc/systemd/system/ntfy-cert-renew@.service
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/apt-roost-travel.conf"           /etc/apt/apt.conf.d/99-roost-travel.conf
 install -d -m 0755                                                                      /etc/systemd/system/wg-quick@proton.service.d
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/wg-proton.service.d/roost.conf" /etc/systemd/system/wg-quick@proton.service.d/roost.conf
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/xray-logrotate.conf"         /etc/logrotate.d/xray
+
+# --- Vision cert renewal env file (DOMAIN for systemd ExecStartPost --install-cert) ---
+# Written 0600 root since it's read by the system service. DOMAIN itself is
+# not a secret; this just keeps the unit ExecStart line readable.
+install -d -m 0700 -o root -g root "$STATE_DIR"
+printf 'DOMAIN=%s\n' "$DOMAIN" | install -m 0600 -o root -g root /dev/stdin "$STATE_DIR/vision-cert.env"
+
+# --- Caddy fallback for Vision bad-key probes (127.0.0.1:8081) ---
+install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/vision-fallback.caddy" /etc/caddy/sites-enabled/vision-fallback.caddy
+systemctl reload caddy 2>/dev/null || systemctl restart caddy
+ok "Caddy reloaded with vision-fallback site"
 
 # --- Render xray config (envsubst on state.env values) ---
 install -d -m 0755 /etc/xray
@@ -119,3 +139,26 @@ systemctl daemon-reload
 systemctl enable xray
 systemctl restart xray
 ok "xray.service enabled and running"
+
+# --- Vision (Path D) cert: enable renewal timer; init is a manual one-shot ---
+systemctl enable --now vision-cert-renew.timer
+ok "vision-cert-renew.timer enabled (Tue 04:00 UTC)"
+
+# Don't auto-run cert-init: it requires CF_Token in env, which lives on the
+# laptop (not auto-propagated through SSH for security/leak reasons). Print
+# a notice if the cert is missing so the operator runs it manually once.
+if [ ! -f /etc/roost-travel/vision-cert/fullchain.cer ]; then
+    cat <<EONOTICE >&2
+
+  ┌─ ACTION REQUIRED ──────────────────────────────────────────────────────┐
+  │ Vision cert not yet issued at /etc/roost-travel/vision-cert/.          │
+  │ One-shot from the laptop:                                              │
+  │                                                                        │
+  │   ssh ${USERNAME}@${DOMAIN}-server \\                                          │
+  │     "sudo CF_Token=\$CLOUDFLARE_API_TOKEN DOMAIN=$DOMAIN \\           │
+  │       /etc/roost-travel/vision-cert-init.sh"                           │
+  │                                                                        │
+  │ Then 'roost-net travel on' will open ufw 8443/tcp for Path D.          │
+  └────────────────────────────────────────────────────────────────────────┘
+EONOTICE
+fi

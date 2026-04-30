@@ -152,6 +152,11 @@ files/travel/apt-roost-travel.conf|/etc/apt/apt.conf.d/99-roost-travel.conf|plai
 files/travel/wg-proton.service.d/roost.conf|/etc/systemd/system/wg-quick@wg-proton.service.d/roost.conf|plain|daemon-reload
 files/travel/proton.conf.example|/etc/roost-travel/proton.conf.example|plain|
 files/travel/travel-cloudflare.yml.tmpl|/etc/roost-travel/travel-cloudflare.yml|envsubst:DOMAIN|
+files/travel/vision-cert-init.sh|/etc/roost-travel/vision-cert-init.sh|plain+x|
+files/travel/vision-cert-renew.service|/etc/systemd/system/vision-cert-renew.service|plain|daemon-reload
+files/travel/vision-cert-renew.timer|/etc/systemd/system/vision-cert-renew.timer|plain|daemon-reload,restart:vision-cert-renew.timer
+files/travel/ntfy-cert-renew@.service|/etc/systemd/system/ntfy-cert-renew@.service|plain|daemon-reload
+files/travel/vision-fallback.caddy|/etc/caddy/sites-enabled/vision-fallback.caddy|plain|reload-or-restart:caddy
 MANIFEST_B
 }
 

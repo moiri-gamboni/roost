@@ -1,0 +1,11 @@
+[Unit]
+Description=Notify ntfy on cert-renewal failure for %i
+After=network.target
+
+[Service]
+Type=oneshot
+# %i is the URL-decoded instance string (the failed unit's name, passed in via
+# OnFailure=ntfy-cert-renew@%n.service in vision-cert-renew.service). The
+# message includes a journalctl pointer so the operator can investigate.
+ExecStart=/usr/bin/curl -fsS -X POST -H "Title: Cert renewal FAILED" -H "Priority: high" -H "Tags: warning" --data "Unit %i failed; check 'journalctl -u %i' for details." http://localhost:2586/claude-${USER:-roost}
+Environment=USER=root

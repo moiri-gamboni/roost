@@ -1,0 +1,18 @@
+[Unit]
+Description=Weekly check + renewal of Vision (Path D) wildcard cert
+
+[Timer]
+# Tuesday 04:00 UTC. Avoids Sunday 03:00 UTC auto-update.sh run; for an
+# in-country user (UTC+8) this is 12:00 local — cert renewal is quick (<30s)
+# and the atomic-swap on the laptop side means even if rendering hiccups
+# the running cert/tunnel stay up.
+OnCalendar=Tue 04:00:00
+# Make-up missed runs (e.g. server was down at 04:00). Critical for cert
+# expiry — we've configured a 30-day expiry probe in travel-health.sh, so
+# a missed renewal that's caught up within a week is well below the alarm
+# threshold.
+Persistent=true
+RandomizedDelaySec=15min
+
+[Install]
+WantedBy=timers.target
