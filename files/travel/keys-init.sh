@@ -80,11 +80,13 @@ if $backfill && [ -f "$STATE_FILE" ]; then
     reality_public_key="${REALITY_PUBLIC_KEY:-}"
     short_ids_json="${REALITY_SHORT_IDS:-}"
     ss2022_password="${SS2022_PASSWORD:-}"
+    vision_sni="${VISION_SNI:-}"
 else
     # Force or first-run: empty so every block below generates fresh.
     xray_uuid="" xray_path="" grpc_service_name=""
     reality_private_key="" reality_public_key=""
     short_ids_json="" ss2022_password=""
+    vision_sni=""
 fi
 
 # UUID — prefer xray's built-in; fall back to uuidgen for defensive parity.
@@ -148,6 +150,23 @@ fi
 # 2022-blake3-chacha20-poly1305 — the cipher derives its 32-byte key from this).
 [ -n "$ss2022_password" ] || ss2022_password=$(openssl rand -base64 32)
 
+# VISION_SNI: TLS server-name for VLESS-Vision Path D (TCP 8443 direct to
+# Hetzner). The wildcard cert `*.$DOMAIN` covers any subdomain. The operator
+# may edit state.env to pick a different label — but it must resolve to the
+# Hetzner IP via DNS so GFW's SNI-resolves-to-connection-IP heuristic
+# doesn't flag the connection. plans/add-stealth-protocols.md Task 12 adds
+# deploy.sh automation that ensures the DNS A/AAAA records exist for the
+# default label.
+if [ -z "$vision_sni" ]; then
+    if [ -z "${DOMAIN:-}" ]; then
+        echo "Error: DOMAIN not set; cannot generate VISION_SNI." >&2
+        echo "       Set DOMAIN in env (e.g. via _setup-env.sh) or add VISION_SNI to" >&2
+        echo "       state.env manually then re-run with --backfill." >&2
+        exit 1
+    fi
+    vision_sni="static.$DOMAIN"
+fi
+
 tmpfile=$(mktemp)
 trap 'rm -f "$tmpfile"' EXIT
 cat > "$tmpfile" <<EOF
@@ -160,6 +179,7 @@ REALITY_PRIVATE_KEY='$reality_private_key'
 REALITY_PUBLIC_KEY='$reality_public_key'
 REALITY_SHORT_IDS='$short_ids_json'
 SS2022_PASSWORD='$ss2022_password'
+VISION_SNI='$vision_sni'
 EOF
 
 install -m 0600 -o root -g root "$tmpfile" "$STATE_FILE"
