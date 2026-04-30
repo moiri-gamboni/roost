@@ -114,6 +114,7 @@ files/hooks/cloudflare-assemble.sh|$ROOST_DIR/claude/hooks/cloudflare-assemble.s
 files/hooks/reflect.md|$ROOST_DIR/claude/hooks/reflect.md|sed-roost|
 files/hooks/roost-apply.sh|$ROOST_DIR/claude/hooks/roost-apply.sh|plain+x|
 files/hooks/roost-net.sh|$ROOST_DIR/claude/hooks/roost-net.sh|plain+x|
+files/hooks/vision-abuse-watch.sh|$ROOST_DIR/claude/hooks/vision-abuse-watch.sh|plain+x|
 files/travel/travel-health.sh|$ROOST_DIR/claude/hooks/health-check-apps.sh|plain+x|
 files/shell/bashrc.sh|$HOME_DIR/.bashrc.d/roost.sh|plain|
 files/private/code-CLAUDE.md|$ROOST_DIR/code/CLAUDE.md|plain|

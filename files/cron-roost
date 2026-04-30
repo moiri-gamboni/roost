@@ -18,3 +18,7 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 
 # Weekly Travel-VPN audit (Sunday 4am): roost-net test when vpn=on. cmd_test ntfy_sends on failure so no extra wrapper is needed.
 0 4 * * 0 $USERNAME flock -n $HOME_DIR/.locks/travel-audit sh -c 'if [ "$(cat /etc/roost-travel/vpn)" = "on" ]; then $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/roost-net.sh test; fi'
+
+# Daily Vision (Path D) abuse watch: ntfy on novel client IPs hitting the
+# Vision inbound. Skips silently if /var/log/xray/access.log doesn't exist.
+30 5 * * * $USERNAME flock -n $HOME_DIR/.locks/vision-abuse-watch $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/vision-abuse-watch.sh
