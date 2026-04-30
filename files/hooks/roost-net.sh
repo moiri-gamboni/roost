@@ -140,6 +140,11 @@ cmd_travel() {
     local cf_target="$ROOST_DIR/cloudflared/apps/travel.yml"
     local assemble="$ROOST_DIR/claude/hooks/cloudflare-assemble.sh"
 
+    # Path D (VLESS-Vision) listens on TCP 8443 only when the cert is in place;
+    # the firewall rule is conditional so cert-init failures don't expose a port
+    # with no listener behind it.
+    local vision_cert=/etc/roost-travel/vision-cert/fullchain.cer
+
     case "$action" in
         on)
             sudo test -f "$cf_fragment" || die "Source fragment $cf_fragment missing; reinstall travel-vpn setup"
@@ -150,6 +155,7 @@ cmd_travel() {
                 sudo ufw --force delete allow 443/tcp || true
                 sudo ufw --force delete allow 51820/tcp || true
                 sudo ufw --force delete allow 51820/udp || true
+                sudo ufw --force delete allow 8443/tcp || true
                 sudo rm -f "$cf_target"
                 sudo "$assemble" || true
                 sudo systemctl restart cloudflared || true
@@ -163,9 +169,16 @@ cmd_travel() {
             sudo ufw allow 443/tcp comment 'travel-vpn-reality'
             sudo ufw allow 51820/tcp comment 'travel-vpn-ss2022'
             sudo ufw allow 51820/udp comment 'travel-vpn-ss2022'
+            if sudo test -f "$vision_cert"; then
+                sudo ufw allow 8443/tcp comment 'travel-vpn-vision'
+            else
+                logger -t "$_HOOK_TAG" -p user.warning \
+                    "Vision cert absent at $vision_cert; skipping ufw 8443/tcp (Path D will not be reachable until cert-init runs)"
+                echo "  (Vision cert absent; Path D 8443/tcp not opened)" >&2
+            fi
             echo "on" | sudo tee "$STATE_DIR/travel" >/dev/null
             trap - ERR
-            ntfy_send -t "Travel ON" "Path A exposed + UFW open. Run 'roost-net-fw open' on laptop."
+            ntfy_send -t "Travel ON" "Paths A/B/C/D exposed + UFW open. Run 'roost-net-fw open' on laptop."
             echo "Travel mode: ON"
             ;;
         off)
@@ -175,6 +188,7 @@ cmd_travel() {
             sudo ufw --force delete allow 443/tcp || true
             sudo ufw --force delete allow 51820/tcp || true
             sudo ufw --force delete allow 51820/udp || true
+            sudo ufw --force delete allow 8443/tcp || true
             echo "off" | sudo tee "$STATE_DIR/travel" >/dev/null
             ntfy_send -t "Travel OFF" "Close laptop FW via: roost-net-fw close"
             echo "Travel mode: OFF"
@@ -339,8 +353,8 @@ cmd_test() {
         # so external clients see a SYN-ACK from the Hetzner IP they connected to.
         assert "ip rule: fwmark 0x4000/0x4000 lookup main (inbound-reply)" \
             bash -c "ip rule show | grep -q 'fwmark 0x4000/0x4000 lookup main'"
-        assert "mangle PREROUTING connmarks inbound 443/51820" \
-            bash -c "sudo iptables -t mangle -S PREROUTING | grep -qE 'dports 443,51820 .* --set-xmark 0x4000'"
+        assert "mangle PREROUTING connmarks inbound 443/51820/8443" \
+            bash -c "sudo iptables -t mangle -S PREROUTING | grep -qE 'dports 443,51820,8443 .* --set-xmark 0x4000'"
         assert "mangle OUTPUT restores 0x4000 connmark to fwmark" \
             bash -c "sudo iptables -t mangle -S OUTPUT | grep -qE 'restore-mark .* 0x4000'"
         # Mask is required (Tailscale's upper bits would otherwise cause misses);

@@ -90,9 +90,9 @@ case "$ACTION" in
         # carries fwmark 0x4000 and ip rule 140 routes via main table. -A
         # appends so the restore runs after the xray MARK above — otherwise
         # the xray MARK's --set-xmark 0x1337/0xffff would clobber bit 14.
-        iptables  -t mangle -A PREROUTING -p tcp -m multiport --dports 443,51820 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x4000/0x4000
+        iptables  -t mangle -A PREROUTING -p tcp -m multiport --dports 443,51820,8443 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x4000/0x4000
         iptables  -t mangle -A PREROUTING -p udp --dport 51820 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x4000/0x4000
-        ip6tables -t mangle -A PREROUTING -p tcp -m multiport --dports 443,51820 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x4000/0x4000
+        ip6tables -t mangle -A PREROUTING -p tcp -m multiport --dports 443,51820,8443 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x4000/0x4000
         ip6tables -t mangle -A PREROUTING -p udp --dport 51820 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x4000/0x4000
         iptables  -t mangle -A OUTPUT -j CONNMARK --restore-mark --mask 0x4000
         ip6tables -t mangle -A OUTPUT -j CONNMARK --restore-mark --mask 0x4000

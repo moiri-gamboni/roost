@@ -3,9 +3,10 @@
 # Runs on the LAPTOP during travel; complements server-side `roost-net travel on/off`.
 #
 # Rules managed (all inbound, dual-stack: 0.0.0.0/0 + ::/0):
-#   tcp/443    -- travel-vpn-reality   (VLESS+gRPC+REALITY, Path B)
-#   tcp/51820  -- travel-vpn-ss2022-tcp (Shadowsocks-2022 TCP, Path C)
-#   udp/51820  -- travel-vpn-ss2022-udp (Shadowsocks-2022 UDP, Path C)
+#   tcp/443    -- travel-vpn-reality      (VLESS+gRPC+REALITY, Path B)
+#   tcp/51820  -- travel-vpn-ss2022-tcp   (Shadowsocks-2022 TCP, Path C)
+#   udp/51820  -- travel-vpn-ss2022-udp   (Shadowsocks-2022 UDP, Path C)
+#   tcp/8443   -- travel-vpn-vision       (VLESS+XTLS-Vision over TLS, Path D)
 #
 # Firewall identity: ${SERVER_NAME}-fw (same convention as deploy.sh).
 # The hcloud CLI must have a context configured (e.g. `hcloud context create roost`).
@@ -25,7 +26,7 @@ Usage: roost-net-fw {open|close|status} [--help]
 Open or close Hetzner firewall rules for travel-VPN traffic.
 
 Subcommands:
-  open      Add 443/tcp, 51820/tcp, 51820/udp inbound rules (dual-stack).
+  open      Add 443/tcp, 51820/tcp, 51820/udp, 8443/tcp inbound rules (dual-stack).
   close     Remove those rules.
   status    Print the current state of each rule.
 
@@ -71,6 +72,7 @@ RULES=(
     "tcp 443 travel-vpn-reality"
     "tcp 51820 travel-vpn-ss2022-tcp"
     "udp 51820 travel-vpn-ss2022-udp"
+    "tcp 8443 travel-vpn-vision"
 )
 
 SOURCE_IPS_V4="0.0.0.0/0"
