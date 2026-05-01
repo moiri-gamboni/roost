@@ -426,8 +426,8 @@ render_android() {
     server_v4=$(getent ahostsv4 "travel-direct.$DOMAIN" | awk 'NR==1 {print $1}')
     server_v6=$(getent ahostsv6 "travel-direct.$DOMAIN" | awk 'NR==1 {print $1}')
     [ -n "$server_v4" ] || die "could not resolve travel-direct.$DOMAIN A record"
-    # Bake Path A's CF Anycast IP at render time so sing-box doesn't need
-    # runtime DNS to dial it. Without this, cf-doh's bootstrap loop blocks
+    # Bake Path A's CF Anycast IPs at render time so sing-box doesn't need
+    # runtime DNS to dial them. Without this, cf-doh's bootstrap loop blocks
     # all DNS on networks where the underlying interface can't reach 1.1.1.1
     # (the loop: cf-doh -> tun -> urltest -> path-a [hostname] -> cf-doh).
     # SNI stays as the hostname for cert validation.
@@ -438,26 +438,32 @@ render_android() {
     # transport.headers.Host explicitly below — otherwise WS upgrades 403
     # (verified: empty Host = 403, IP Host = 403, hostname Host = 101).
     #
-    # Override priority: /etc/roost-travel/cf-preferred-ip (operator-chosen,
-    # e.g. via CloudflareSpeedTest output) > getent's BGP-default.
-    # CF Anycast routes vary per ISP/network: the BGP-nearest PoP from the
-    # user's network may be far from optimal (FRA from China, etc.). Picking
-    # a CF IP whose Anycast routing happens to land on a faster PoP for the
-    # user's network can shave hundreds of ms off Path A's TLS handshake.
-    # Re-test periodically with CloudflareSpeedTest; the optimal IP changes
-    # with CF's BGP and ISP transit decisions.
-    path_a_ipv4=""
+    # Multi-IP: render one path-a-ipN outbound per CF Anycast IP. urltest
+    # auto-skips ones that fail (TCP SYN dropped, TLS hangs, etc.) and
+    # picks the live one with lowest latency. Different CF Anycast prefixes
+    # (104.21.x.x vs 172.67.x.x) can have radically different reachability
+    # from a given network — observed in China where 104.21/16 was SYN-
+    # dropped while 172.67/16 worked. urltest's 3m re-probe interval also
+    # handles transient blocking changes.
+    #
+    # Override: /etc/roost-travel/cf-preferred-ip pins a single IP (still
+    # supported for operator-forced selection — e.g. CloudflareSpeedTest
+    # winner). When set, only that IP is rendered (no urltest selection
+    # among CF IPs). Remove the file to get auto-selection.
     local _cf_pref_file=/etc/roost-travel/cf-preferred-ip
+    local path_a_ips_raw=""
     if sudo test -r "$_cf_pref_file"; then
-        path_a_ipv4=$(sudo tr -d '[:space:]' < "$_cf_pref_file")
+        path_a_ips_raw=$(sudo tr -d '[:space:]' < "$_cf_pref_file")
+    else
+        path_a_ips_raw=$(getent ahostsv4 "travel.$DOMAIN" | awk '{print $1}' | sort -u)
     fi
-    if [ -z "$path_a_ipv4" ]; then
-        path_a_ipv4=$(getent ahostsv4 "travel.$DOMAIN" | awk 'NR==1 {print $1}')
-    fi
-    if [ -z "$path_a_ipv4" ]; then
+    if [ -z "$path_a_ips_raw" ]; then
         printf 'WARNING: getent failed for travel.%s; Path A will use hostname (DNS-bootstrap-fragile)\n' "$DOMAIN" >&2
-        path_a_ipv4="travel.$DOMAIN"
+        path_a_ips_raw="travel.$DOMAIN"
     fi
+    # JSON array of strings for jq's --argjson.
+    local path_a_ips_json
+    path_a_ips_json=$(printf '%s\n' "$path_a_ips_raw" | jq -R . | jq -sc .)
     jq -n \
         --arg domain "$DOMAIN" \
         --arg uuid "$XRAY_UUID" \
@@ -468,9 +474,31 @@ render_android() {
         --arg ss_password "$SS2022_PASSWORD" \
         --arg server_v4 "$server_v4" \
         --arg server_v6 "$server_v6" \
-        --arg path_a_ipv4 "$path_a_ipv4" \
+        --argjson path_a_ips "$path_a_ips_json" \
         --arg vision_sni "${VISION_SNI:-static.$DOMAIN}" \
-        '{
+        '
+        # path-a-ipN tag list (one per CF IP); referenced by urltest pool.
+        ($path_a_ips | to_entries | map("path-a-ip\(.key + 1)")) as $path_a_tags |
+        # Corresponding outbound objects.
+        ($path_a_ips | to_entries | map({
+            type: "vless",
+            tag: "path-a-ip\(.key + 1)",
+            server: .value,
+            server_port: 443,
+            uuid: $uuid,
+            tls: {
+                enabled: true,
+                server_name: "travel.\($domain)",
+                utls: {enabled: true, fingerprint: "chrome"}
+            },
+            transport: {
+                type: "ws",
+                path: "/\($path)",
+                headers: {Host: "travel.\($domain)"},
+                max_early_data: 0
+            }
+        })) as $path_a_outbounds |
+        {
             log: {level: "info"},
             dns: {
                 servers: [
@@ -497,31 +525,17 @@ render_android() {
                         type: "urltest",
                         tag: "urltest",
                         outbounds: (
-                            ["path-a", "path-b-v4", "path-c-v4", "path-d-v4"]
+                            $path_a_tags
+                            + ["path-b-v4", "path-c-v4", "path-d-v4"]
                             + (if ($server_v6 | length) > 0 then ["path-b-v6", "path-c-v6", "path-d-v6"] else [] end)
                         ),
                         url: "https://www.gstatic.com/generate_204",
                         interval: "3m",
                         tolerance: 200
-                    },
-                    {
-                        type: "vless",
-                        tag: "path-a",
-                        server: $path_a_ipv4,
-                        server_port: 443,
-                        uuid: $uuid,
-                        tls: {
-                            enabled: true,
-                            server_name: "travel.\($domain)",
-                            utls: {enabled: true, fingerprint: "chrome"}
-                        },
-                        transport: {
-                            type: "ws",
-                            path: "/\($path)",
-                            headers: {Host: "travel.\($domain)"},
-                            max_early_data: 0
-                        }
-                    },
+                    }
+                ]
+                + $path_a_outbounds
+                + [
                     {
                         type: "vless",
                         tag: "path-b-v4",
