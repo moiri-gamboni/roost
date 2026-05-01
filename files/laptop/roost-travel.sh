@@ -202,6 +202,21 @@ cmd_ips() {
     local out=/tmp/cfst-result.csv
     [ -r "$ip_list" ] || { echo "$ip_list missing; rerun install-travel.sh" >&2; exit 1; }
 
+    # cfst measures the *underlying network's* reachability to CF Anycast IPs.
+    # If the tunnel is up, sing-box's tun captures cfst's probes and routes
+    # them via urltest -> server -> CF, so we'd measure laptop->server->CF
+    # uniform latency (~800ms) and blocked CF IPs would falsely appear live.
+    # Stop the tunnel before probing, restart after (and if the user's
+    # session is interrupted mid-probe, the EXIT trap still restarts it).
+    local was_active=0
+    if systemctl is-active --quiet "$UNIT" 2>/dev/null; then
+        was_active=1
+        echo "Stopping tunnel temporarily so cfst probes the underlying network..."
+        sudo systemctl stop "$UNIT"
+        # shellcheck disable=SC2064  # capture $was_active by value, intentional
+        trap "[ '$was_active' = 1 ] && sudo systemctl start '$UNIT' >/dev/null 2>&1" EXIT
+    fi
+
     echo "Probing CF Anycast IPs from this network (1-3 min)..."
     # cfst writes log files (ip.txt cache, debug) to CWD; cd to /tmp.
     # -dd disables download speed test (we only need latency for proxy use).
@@ -230,9 +245,28 @@ cmd_ips() {
         || { echo "ssh push failed" >&2; exit 1; }
     echo "Pushed."
 
+    # Fetch the re-rendered sing-box config (now includes path-a-ipN for our
+    # top IPs) BEFORE starting the tunnel, so the start uses the new config
+    # directly — avoids stop->start-old->restart-new (one less restart, less
+    # downtime). Trap stays armed in case fetch_config fails.
     echo
-    echo "Refreshing local sing-box config..."
-    cmd_config
+    echo "Fetching updated sing-box config..."
+    if ! fetch_config; then
+        echo "Config fetch failed; trap will restart tunnel with previous config." >&2
+        exit 1
+    fi
+    echo "Config written to $CONFIG."
+
+    # Clear the trap — we're now responsible for the final tunnel state.
+    trap - EXIT INT TERM
+    if [ "$was_active" = 1 ]; then
+        echo "Starting tunnel with new config..."
+        sudo systemctl start "$UNIT"
+        wait_for_tunnel 30 || true
+    else
+        echo "Tunnel was off; new config saved for next 'roost-travel on'."
+    fi
+    cmd_status
 }
 
 case "${1:-}" in
