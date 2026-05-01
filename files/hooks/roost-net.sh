@@ -589,8 +589,18 @@ render_android() {
                     {protocol: "dns", action: "hijack-dns"},
                     {ip_cidr: ["0.0.0.0/0", "::/0"], action: "route", outbound: "urltest"}
                 ]
+            },
+            experimental: {
+                clash_api: {
+                    external_controller: "127.0.0.1:9090"
+                }
             }
         }'
+    # Loopback-only Clash API. Lets us query per-outbound urltest
+    # probe history (the /proxies endpoint exposes each path's last
+    # delay) so travel-test.sh can show what sing-box itself sees,
+    # not just our external openssl probes. No secret because the
+    # listener is bound to 127.0.0.1.
 }
 
 render_laptop() {

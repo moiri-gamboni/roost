@@ -125,6 +125,20 @@ test_path_a_probe() {
     else
         fail "Path A probe: expected 204, got $code"
     fi
+    # CF colo diagnostic. /cdn-cgi/trace is reflected at the Cloudflare edge
+    # and reports which PoP terminated the TLS. If the user is in Asia and
+    # the colo is FRA/AMS rather than HKG/SIN, CF Anycast routing is
+    # suboptimal — that's the kind of finding that explains why Path A's
+    # latency is closer to direct-Hetzner than to a "nearby CDN".
+    local trace colo client_ip
+    trace=$(curl -s --max-time 5 "https://${TRAVEL_HOST}/cdn-cgi/trace" 2>/dev/null)
+    if [ -n "$trace" ]; then
+        colo=$(echo "$trace" | awk -F= '/^colo=/ {print $2}')
+        client_ip=$(echo "$trace" | awk -F= '/^ip=/ {print $2}')
+        if [ -n "$colo" ]; then
+            log "Path A diagnostic: CF colo=${colo}, client IP at edge=${client_ip}"
+        fi
+    fi
 }
 
 # REALITY masquerade: connecting to HETZNER:443 with SNI=www.samsung.com must
@@ -193,6 +207,48 @@ test_path_c_ss2022() {
     # UDP reachability cannot be probed without a real SS-2022 handshake:
     # a stray datagram is silently dropped by either a closed port or a live service.
     skip "Path C SS-2022 UDP ($label): no passive probe without SS-2022 handshake"
+}
+
+test_urltest_latencies() {
+    # Query sing-box's clash API for each path's last probe latency.
+    # This is what sing-box ITSELF measures (full request through the path
+    # to the urltest URL) — directly drives selection. Skips silently if
+    # the API isn't enabled yet (config refresh needed) or the laptop
+    # tunnel isn't running.
+    local api="http://127.0.0.1:9090"
+    if ! curl -s --max-time 2 "$api/version" >/dev/null 2>&1; then
+        skip "urltest latencies: clash API not reachable at $api (run 'roost-travel config' to refresh)"
+        return
+    fi
+    local proxies tag last_delay last_time
+    proxies=$(curl -s "$api/proxies" 2>/dev/null)
+    if [ -z "$proxies" ]; then
+        fail "urltest latencies: clash API returned no data"
+        return
+    fi
+    for tag in path-a path-b-v4 path-b-v6 path-c-v4 path-c-v6 path-d-v4 path-d-v6; do
+        last_delay=$(echo "$proxies" | jq -r --arg t "$tag" \
+            '.proxies[$t].history | if (. // []) | length > 0 then .[-1].delay else "n/a" end' 2>/dev/null)
+        last_time=$(echo "$proxies" | jq -r --arg t "$tag" \
+            '.proxies[$t].history | if (. // []) | length > 0 then .[-1].time else "" end' 2>/dev/null)
+        case "$last_delay" in
+            n/a|null|"")
+                skip "urltest probe $tag: no data yet (sing-box hasn't probed; wait ~3min)"
+                ;;
+            0)
+                fail "urltest probe $tag: last probe failed (0 = unreachable, at $last_time)"
+                ;;
+            *)
+                pass "urltest probe $tag: ${last_delay}ms (at $last_time)"
+                ;;
+        esac
+    done
+    # Currently selected path
+    local selected
+    selected=$(echo "$proxies" | jq -r '.proxies.urltest.now // empty' 2>/dev/null)
+    if [ -n "$selected" ]; then
+        log "urltest currently selected: $selected"
+    fi
 }
 
 test_path_d_vision() {
@@ -423,6 +479,9 @@ if [ "$QUICK" -eq 0 ]; then
     section "Via-tunnel functional"
     test_via_tunnel
     test_dns_via_tunnel
+
+    section "Sing-box urltest probe latencies (per-path, full request)"
+    test_urltest_latencies
 
     section "SSH ProxyCommand"
     test_ssh_proxy
