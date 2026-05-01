@@ -617,10 +617,14 @@ render_android() {
     # not just our external openssl probes. No secret because the
     # listener is bound to 127.0.0.1.
     #
-    # Port 47200 (not 9090 / 19090): VS Code Remote-SSH and some
-    # extensions auto-bind common 4-5-digit ports for debug/dev
-    # servers, conflicting with the canonical Clash API choices.
-    # sing-box silently fails to bind on conflict on dev laptops.
+    # Port 47200: VS Code Remote-SSH auto-forwards any port mentioned
+    # in remote terminal output and binds it on the laptop. We tried
+    # 9090 (canonical Clash), 19090, 49090 — all grabbed by pid "code"
+    # within seconds. 47200 is even less common; if it gets grabbed
+    # too, the operator's only fix is to disable VS Code's "Auto
+    # Forward Ports" feature (`"remote.autoForwardPorts": "off"` in
+    # settings, or remove individual entries from the Ports panel).
+    # No port choice reliably wins against an opt-in port forwarder.
 }
 
 render_laptop() {
