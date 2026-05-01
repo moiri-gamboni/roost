@@ -170,7 +170,7 @@ test_path_b_reality() {
         fi
     else
         local first_err
-        first_err=$(echo "$raw" | grep -E 'error|CONNECTED|refused|Connection|verify' | head -1)
+        first_err=$(echo "$raw" | grep -E 'error|CONNECTED|refused|Connection|verify' | head -1 || true)
         fail "Path B REALITY ($label): no Samsung cert on $host:443 (${first_err:-no diagnostic})"
     fi
 }
@@ -329,7 +329,7 @@ test_path_d_vision() {
         fi
     else
         local first_err
-        first_err=$(echo "$raw" | grep -E 'error|CONNECTED|refused|Connection|verify' | head -1)
+        first_err=$(echo "$raw" | grep -E 'error|CONNECTED|refused|Connection|verify' | head -1 || true)
         fail "Path D Vision ($label): cert mismatch on $host:8443 (${first_err:-no diagnostic})"
     fi
 }
