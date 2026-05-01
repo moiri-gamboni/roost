@@ -106,6 +106,28 @@ cmd_status() {
     # wait_for_tunnel before invoking cmd_status.
     egress=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || echo unreachable)
     echo "Tunnel: $state"
+    # Selected urltest path + its last-probe latency, when tunnel is up.
+    # Pulled from sing-box's clash API at 127.0.0.1:47200; fails silently if
+    # the API isn't bound (e.g. config without `experimental.clash_api`).
+    # Latency is the most recent /proxies/<tag>/history entry (urltest writes
+    # one per 3-min re-probe), so it can be up to 3min stale — accurate
+    # enough for a status line, no need to force a fresh probe here.
+    if [ "$state" = "ON" ]; then
+        local proxies selected latency
+        proxies=$(curl -s --max-time 2 'http://127.0.0.1:47200/proxies' 2>/dev/null || true)
+        if [ -n "$proxies" ]; then
+            selected=$(printf '%s' "$proxies" | jq -r '.proxies.urltest.now // empty' 2>/dev/null || true)
+            if [ -n "$selected" ]; then
+                latency=$(printf '%s' "$proxies" \
+                    | jq -r --arg s "$selected" '.proxies[$s].history[-1].delay // empty' 2>/dev/null || true)
+                if [ -n "$latency" ] && [ "$latency" != "0" ]; then
+                    echo "Path:   $selected (${latency}ms)"
+                else
+                    echo "Path:   $selected (latency unknown — startup probe pending?)"
+                fi
+            fi
+        fi
+    fi
     echo "Egress: $egress"
     # Server vpn=off → egress is our Hetzner IP. Server vpn=on → egress is
     # whatever Proton profile is active (varies per location). Anything else
