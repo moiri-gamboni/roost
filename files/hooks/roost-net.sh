@@ -432,6 +432,12 @@ render_android() {
     # (the loop: cf-doh -> tun -> urltest -> path-a [hostname] -> cf-doh).
     # SNI stays as the hostname for cert validation.
     #
+    # Consequence of baking IP into `server`: sing-box's ws transport defaults
+    # the HTTP Host header to serverAddr (the IP), not the SNI. CF Tunnel
+    # ingress requires Host=travel.$DOMAIN to match the rule, so we MUST set
+    # transport.headers.Host explicitly below — otherwise WS upgrades 403
+    # (verified: empty Host = 403, IP Host = 403, hostname Host = 101).
+    #
     # Override priority: /etc/roost-travel/cf-preferred-ip (operator-chosen,
     # e.g. via CloudflareSpeedTest output) > getent's BGP-default.
     # CF Anycast routes vary per ISP/network: the BGP-nearest PoP from the
@@ -512,6 +518,7 @@ render_android() {
                         transport: {
                             type: "ws",
                             path: "/\($path)",
+                            headers: {Host: "travel.\($domain)"},
                             max_early_data: 0
                         }
                     },
