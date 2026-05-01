@@ -265,7 +265,18 @@ test_urltest_latencies() {
     # doesn't hang the test.
     local probe_url='https%3A%2F%2Fwww.gstatic.com%2Fgenerate_204'
     local tag http_code body delay err
-    for tag in path-a path-b-v4 path-b-v6 path-c-v4 path-c-v6 path-d-v4 path-d-v6; do
+    # Probe whatever urltest currently has — multi-IP path-a renders one
+    # outbound per CF IP (path-a-ip1, path-a-ip2, ...), so the list isn't
+    # a static set of tags anymore. Falls back to the previous static list
+    # if the urltest group can't be queried (sing-box pre-multi-IP config).
+    local urltest_members
+    urltest_members=$(curl -s --max-time 5 "$api/proxies/urltest" 2>/dev/null \
+        | jq -r '.all[]?' 2>/dev/null)
+    if [ -z "$urltest_members" ]; then
+        urltest_members=$(printf 'path-a\npath-b-v4\npath-b-v6\npath-c-v4\npath-c-v6\npath-d-v4\npath-d-v6')
+    fi
+    while IFS= read -r tag; do
+        [ -n "$tag" ] || continue
         body=$(curl -s --max-time 15 -w '\n%{http_code}' \
             "$api/proxies/$tag/delay?timeout=12000&url=$probe_url" 2>/dev/null || true)
         http_code=$(printf '%s\n' "$body" | tail -1)
@@ -290,7 +301,7 @@ test_urltest_latencies() {
                 fail "urltest probe $tag: unexpected HTTP $http_code: $body"
                 ;;
         esac
-    done
+    done <<< "$urltest_members"
     # Currently selected path (after the probes above may have caused re-selection).
     local selected proxies
     proxies=$(curl -s "$api/proxies" 2>/dev/null || true)

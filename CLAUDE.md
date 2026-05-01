@@ -193,7 +193,7 @@ Caddy has a systemd drop-in that waits for Tailscale before starting. Updates ar
 Toggleable GFW-resistant network with a Proton egress layer. High-level:
 
 **Paths:** four concurrent Xray inbounds on the server, sing-box urltest on clients picks the fastest:
-- **Path A** -- VLESS + WebSocket + TLS behind the existing Cloudflare Tunnel (CF terminates TLS, xray listens on `127.0.0.1:10000`).
+- **Path A** -- VLESS + WebSocket + TLS behind the existing Cloudflare Tunnel (CF terminates TLS, xray listens on `127.0.0.1:10000`). Multi-IP: one outbound per CF Anycast IP returned by DNS for `travel.$DOMAIN` (`path-a-ip1`, `path-a-ip2`, ...), all in the urltest pool. urltest skips IPs that fail (CF Anycast prefixes can have wildly different reachability per network — `104.21/16` was SYN-dropped from China while `172.67/16` worked) and picks the live one with lowest latency. Single-IP pin: `/etc/roost-travel/cf-preferred-ip`.
 - **Path B** -- VLESS + gRPC + REALITY on `:::443` direct to Hetzner (masquerades as `www.samsung.com`).
 - **Path C** -- Shadowsocks-2022 (`chacha20-poly1305`) on `:::51820` direct to Hetzner, TCP + UDP.
 - **Path D** -- VLESS + XTLS-Vision over plain TLS on `:::8443` direct to Hetzner (Let's Encrypt wildcard cert via acme.sh DNS-01; bad-key probes fall back to a Caddy canned page on `127.0.0.1:8081` so the listener doesn't TCP-RST and fingerprint as a proxy).
@@ -251,7 +251,7 @@ acme.sh persists the token into its account config so subsequent `--cron` renewa
 
 ### 30-day post-deploy review
 
-Scrape `journalctl -u roost-travel --since '30 days ago' | grep -iE 'i/o timeout|missing supported outbound|dns'` for any new DNS-related errors. Revisit follow-up work if the symptom returns: multi-IP Path A clone (mirror Paths B/C v4/v6) for CF-IP-throttle resilience; Quad9 secondary DoH for Issue #3792 fallback.
+Scrape `journalctl -u roost-travel --since '30 days ago' | grep -iE 'i/o timeout|missing supported outbound|dns'` for any new DNS-related errors. Revisit follow-up work if the symptom returns: Quad9 secondary DoH for Issue #3792 fallback. (Multi-IP Path A shipped 2026-05-01 — `path-a-ipN` per CF Anycast IP; urltest auto-skips blocked ones.)
 
 ### Path D (Vision) runbook
 
