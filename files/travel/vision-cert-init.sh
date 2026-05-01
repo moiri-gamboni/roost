@@ -73,15 +73,26 @@ fi
 # Issue. Wildcard requires DNS-01 (CF). We pass the bare domain too because
 # `*.example.com` does NOT cover `example.com` itself, and a future use may
 # need the apex SAN (cheap insurance, same TXT-record dance either way).
-: "${CF_Token:?CF_Token env var required (Cloudflare API token, Zone:DNS:Edit)}"
-export CF_Token
-"$ACME_BIN" --issue \
-    --server letsencrypt \
-    --dns dns_cf \
-    -d "$DOMAIN" \
-    -d "*.$DOMAIN" \
-    --config-home "$CONFIG_HOME" \
-    --cert-home "$CERT_HOME"
+# Cert name (acme.sh's term: first -d at issuance) is $DOMAIN — used by
+# --install-cert below.
+#
+# Skip --issue entirely if acme.sh already has a fresh cert in its cert-home.
+# Avoids the LE round-trip on rerun AND avoids acme.sh's exit-code-2-on-skip
+# behaviour tripping `set -e` before we reach --install-cert.
+ACME_CERT_DIR="$CERT_HOME/${DOMAIN}_ecc"
+if [ ! -f "$ACME_CERT_DIR/fullchain.cer" ]; then
+    : "${CF_Token:?CF_Token env var required (Cloudflare API token, Zone:DNS:Edit)}"
+    export CF_Token
+    "$ACME_BIN" --issue \
+        --server letsencrypt \
+        --dns dns_cf \
+        -d "$DOMAIN" \
+        -d "*.$DOMAIN" \
+        --config-home "$CONFIG_HOME" \
+        --cert-home "$CERT_HOME"
+else
+    echo "Existing acme.sh cert at $ACME_CERT_DIR; skipping --issue."
+fi
 
 # Install cert + key to the path xray reads from. install-cert renames/copies;
 # subsequent --cron renewals re-trigger the same paths. The -d here is the
