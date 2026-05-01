@@ -14,7 +14,7 @@ ExecStart=/root/.acme.sh/acme.sh --cron --config-home /etc/roost-travel/acme-con
 # too if the cert has the Le_RealFullChainPath etc. saved. We re-run
 # install-cert defensively so an interrupted previous renewal can't leave
 # the live path stale.
-ExecStartPost=/root/.acme.sh/acme.sh --install-cert -d "*.${DOMAIN}" --config-home /etc/roost-travel/acme-config --cert-home /etc/roost-travel/vision-cert --fullchain-file /etc/roost-travel/vision-cert/fullchain.cer --key-file /etc/roost-travel/vision-cert/private.key
+ExecStartPost=/root/.acme.sh/acme.sh --install-cert -d ${DOMAIN} --config-home /etc/roost-travel/acme-config --cert-home /etc/roost-travel/vision-cert --fullchain-file /etc/roost-travel/vision-cert/fullchain.cer --key-file /etc/roost-travel/vision-cert/private.key
 ExecStartPost=/bin/chgrp xray /etc/roost-travel/vision-cert/fullchain.cer /etc/roost-travel/vision-cert/private.key
 ExecStartPost=/bin/chmod 0640 /etc/roost-travel/vision-cert/fullchain.cer /etc/roost-travel/vision-cert/private.key
 EnvironmentFile=/etc/roost-travel/vision-cert.env
