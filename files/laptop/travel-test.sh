@@ -316,12 +316,13 @@ test_urltest_latencies() {
 test_path_d_vision() {
     local label="$1" host="$2"
     local raw cert_subject latency ms
+    local sni="static.${DOMAIN}"
     # TLS handshake against xray's Vision inbound. Cert must be the LE
-    # wildcard for *.moiri.dev (catching cert-mismatch bugs), and must
+    # wildcard for *.$DOMAIN (catching cert-mismatch bugs), and must
     # verify cleanly against the system trust store — Path B's REALITY
     # serves Samsung's cert instead, so a successful TLS to :8443 with
     # subject Samsung would be a serious misconfig (probably a port mixup).
-    raw=$(openssl s_client -connect "$host:8443" -servername static.${DOMAIN} \
+    raw=$(openssl s_client -connect "$host:8443" -servername "$sni" \
             -CAfile /etc/ssl/certs/ca-certificates.crt -verify_return_error </dev/null 2>&1) \
         || raw="${raw:-openssl exit nonzero}"
     # `|| true` because under set -euo pipefail, grep-with-no-match aborts
@@ -333,7 +334,7 @@ test_path_d_vision() {
         resolve_ip="${resolve_ip%]}"
         # Latency: curl's time_appconnect = time to complete TLS handshake.
         latency=$(curl -k -s -o /dev/null -w '%{time_appconnect}' --max-time 5 \
-            --resolve "static.${DOMAIN}:8443:$resolve_ip" "https://static.${DOMAIN}:8443/" 2>/dev/null || true)
+            --resolve "$sni:8443:$resolve_ip" "https://$sni:8443/" 2>/dev/null || true)
         if [ -n "$latency" ] && [ "$latency" != "0.000000" ]; then
             ms=$(awk -v l="$latency" 'BEGIN { printf "%d", l * 1000 }')
             pass "Path D Vision ($label): cert OK, TLS handshake ${ms}ms"

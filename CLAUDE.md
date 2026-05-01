@@ -258,7 +258,7 @@ Scrape `journalctl -u roost-travel --since '30 days ago' | grep -iE 'i/o timeout
 If Path D fails or sing-box urltest never picks it:
 
 1. Cert health: `sudo openssl x509 -checkend 604800 -noout -in /etc/roost-travel/vision-cert/fullchain.cer && echo OK` — fail = cert renewal stuck; check `journalctl -u vision-cert-renew` for the last run, or rerun manually with `sudo systemctl start vision-cert-renew.service`. If the timer hasn't fired at all, `systemctl list-timers vision-cert-renew.timer`.
-2. Listener health: `sudo /home/moiri/roost/claude/hooks/roost-net.sh test` exercises the loopback + fallback chain. The `[PASS] vision fallback responds` line is end-to-end.
+2. Listener health: `sudo "$ROOST_DIR/claude/hooks/roost-net.sh" test` (or `sudo roost-net test` via the `~/bin` symlink) exercises the loopback + fallback chain. The `[PASS] vision fallback responds` line is end-to-end.
 3. xray-side errors: `journalctl -u xray --since '5 minutes ago' | grep -iE 'vision|tls|cert'`. Cert path mismatch and chmod issues (xray needs read access via group=xray) are the typical first-deploy bugs.
 4. Abuse signals: `sudo cat /var/lib/roost-travel/vision-seen-ips.txt` lists every IP that has ever connected to the Vision inbound. The daily `vision-abuse-watch.sh` ntfys novel IPs; if you see a sudden spike, rotate `XRAY_UUID` via `roost-net rotate-keys`.
 
