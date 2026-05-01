@@ -245,23 +245,26 @@ test_urltest_latencies() {
         fi
         return
     fi
-    # Force a synchronous probe of all urltest members. Per Clash.Meta's
-    # API, /group/{name}/delay waits for every member's probe to complete
-    # and returns their delays. We don't read its response directly
-    # (the format varies across sing-box versions); instead we let it
-    # populate /proxies/{name}/history and read that as before.
+    # Force a probe of every urltest member individually via the Clash
+    # original /proxies/{name}/delay endpoint. The Clash.Meta-style
+    # /group/{name}/delay isn't implemented by sing-box; the call
+    # returns 404 silently and the test reads stale history.
     #
-    # timeout=12000 (per-probe): Path A's full request through CF→server
-    # →server-egress→gstatic can take 5-7s when CF Anycast lands the
-    # client in a far PoP (FRA from China). 12s gives a generous margin
-    # so a slow-but-working path doesn't show up as "no data".
-    # --max-time 30: outer cap for the whole API call (probes run in
-    # parallel, so total ≈ slowest probe + a few hundred ms of overhead).
+    # Run probes in parallel via background subshells so total wait
+    # time ≈ slowest probe (~5-7s for Path A through FRA), not their
+    # sum. timeout=12000 per probe: generous enough for the slowest
+    # path; --max-time 15 caps each individual curl so a hung
+    # endpoint doesn't lock the test forever.
     local probe_url='https%3A%2F%2Fwww.gstatic.com%2Fgenerate_204'
-    if ! curl -s --max-time 30 \
-            "$api/group/urltest/delay?url=$probe_url&timeout=12000" >/dev/null 2>&1; then
-        log "  (group healthcheck failed; reading existing history instead)"
-    fi
+    local pid pids=()
+    for tag in path-a path-b-v4 path-b-v6 path-c-v4 path-c-v6 path-d-v4 path-d-v6; do
+        curl -s --max-time 15 \
+            "$api/proxies/$tag/delay?timeout=12000&url=$probe_url" >/dev/null 2>&1 &
+        pids+=($!)
+    done
+    for pid in "${pids[@]}"; do
+        wait "$pid" 2>/dev/null || true
+    done
 
     local proxies tag last_delay last_time
     proxies=$(curl -s "$api/proxies" 2>/dev/null)
