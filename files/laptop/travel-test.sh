@@ -173,16 +173,17 @@ tcp_reachable() {
 
 test_path_c_ss2022() {
     local label="$1" host="$2"
-    local time_secs latency_ms
+    local start end ms
     if tcp_reachable "$host" 51820 5; then
-        # SS-2022 has no TLS, so use curl's time_connect (TCP connect only —
-        # not handshake-comparable to B/D, but represents the round-trip
-        # before SS-2022 handshake exchange begins).
-        time_secs=$(curl -s -o /dev/null --max-time 5 -w '%{time_connect}' \
-            "telnet://$host:51820" 2>/dev/null)
-        if [ -n "$time_secs" ] && [ "$time_secs" != "0.000000" ]; then
-            latency_ms=$(awk -v l="$time_secs" 'BEGIN { printf "%d", l * 1000 }')
-            pass "Path C SS-2022 TCP ($label): $host:51820 reachable (TCP connect ${latency_ms}ms)"
+        # SS-2022 has no TLS to time, so measure raw TCP connect via bash's
+        # /dev/tcp and $EPOCHREALTIME (microsecond resolution). curl's
+        # telnet:// protocol returns nonzero in unrelated ways under the
+        # script's `set -e` and aborted the whole run.
+        start=$EPOCHREALTIME
+        if timeout 5 bash -c "exec 3<>/dev/tcp/${host}/51820 && exec 3>&- 3<&-" 2>/dev/null; then
+            end=$EPOCHREALTIME
+            ms=$(awk -v s="$start" -v e="$end" 'BEGIN { printf "%d", (e - s) * 1000 }')
+            pass "Path C SS-2022 TCP ($label): $host:51820 reachable (TCP connect ${ms}ms)"
         else
             pass "Path C SS-2022 TCP ($label): $host:51820 reachable"
         fi
