@@ -280,11 +280,16 @@ test_path_d_vision() {
     raw=$(openssl s_client -connect "$host:8443" -servername static.${DOMAIN} \
             -CAfile /etc/ssl/certs/ca-certificates.crt -verify_return_error </dev/null 2>&1) \
         || raw="${raw:-openssl exit nonzero}"
-    cert_subject=$(echo "$raw" | grep -E '^subject=' | head -1)
+    # `|| true` because under set -euo pipefail, grep-with-no-match aborts
+    # the entire pipeline (and thus the test script). Same shape as Path B.
+    cert_subject=$(echo "$raw" | grep -E '^subject=' | head -1 || true)
     if echo "$cert_subject" | grep -qiF "$DOMAIN"; then
+        # curl --resolve wants the bare IPv6 (no brackets); strip if present.
+        local resolve_ip="${host#[}"
+        resolve_ip="${resolve_ip%]}"
         # Latency: curl's time_appconnect = time to complete TLS handshake.
         latency=$(curl -k -s -o /dev/null -w '%{time_appconnect}' --max-time 5 \
-            --resolve "static.${DOMAIN}:8443:$host" https://static.${DOMAIN}:8443/ 2>/dev/null)
+            --resolve "static.${DOMAIN}:8443:$resolve_ip" "https://static.${DOMAIN}:8443/" 2>/dev/null || true)
         if [ -n "$latency" ] && [ "$latency" != "0.000000" ]; then
             ms=$(awk -v l="$latency" 'BEGIN { printf "%d", l * 1000 }')
             pass "Path D Vision ($label): cert OK, TLS handshake ${ms}ms"
