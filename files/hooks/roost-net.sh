@@ -607,7 +607,7 @@ render_android() {
             },
             experimental: {
                 clash_api: {
-                    external_controller: "127.0.0.1:19090"
+                    external_controller: "127.0.0.1:49090"
                 }
             }
         }'
@@ -617,9 +617,10 @@ render_android() {
     # not just our external openssl probes. No secret because the
     # listener is bound to 127.0.0.1.
     #
-    # Port 19090 not 9090: the canonical Clash API port collides with
-    # VS Code (which binds 9090 for some debugger/server features), so
-    # sing-box silently fails to bind there on dev laptops.
+    # Port 49090 (not 9090 / 19090): VS Code Remote-SSH and some
+    # extensions auto-bind common 4-5-digit ports for debug/dev
+    # servers, conflicting with the canonical Clash API choices.
+    # sing-box silently fails to bind on conflict on dev laptops.
 }
 
 render_laptop() {
