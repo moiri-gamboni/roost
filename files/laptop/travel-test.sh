@@ -156,9 +156,12 @@ test_path_b_reality() {
     if echo "$out" | grep -qi 'samsung'; then
         # REALITY masquerades on :443; reuse curl's time_appconnect against
         # the Samsung SNI to measure the TLS handshake (same metric as Path D).
+        # curl --resolve wants the bare IPv6 (no brackets); strip if present.
+        local resolve_ip="${host#[}"
+        resolve_ip="${resolve_ip%]}"
         local time_secs
         time_secs=$(curl -k -s -o /dev/null -w '%{time_appconnect}' --max-time 5 \
-            --resolve "www.samsung.com:443:$host" https://www.samsung.com/ 2>/dev/null)
+            --resolve "www.samsung.com:443:$resolve_ip" https://www.samsung.com/ 2>/dev/null || true)
         if [ -n "$time_secs" ] && [ "$time_secs" != "0.000000" ]; then
             latency_ms=$(awk -v l="$time_secs" 'BEGIN { printf "%d", l * 1000 }')
             pass "Path B REALITY ($label): Samsung cert served on $host:443 (TLS ${latency_ms}ms)"
