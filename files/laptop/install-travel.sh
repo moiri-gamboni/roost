@@ -139,9 +139,8 @@ else
     cfst_tmp=$(mktemp -d)
     trap 'rm -rf "$cfst_tmp"' EXIT
     echo "      downloading $cfst_url"
-    # --progress-bar shows a single line that updates in place; -fL keeps the
-    # error-on-4xx + follow-redirects behavior of the previous -fsSL form.
-    curl -fL --progress-bar "$cfst_url" -o "$cfst_tmp/cfst.tgz"
+    curl -fsSL "$cfst_url" -o "$cfst_tmp/cfst.tgz"
+    echo "      downloaded $(du -h "$cfst_tmp/cfst.tgz" | cut -f1)"
     if [ -n "$cfst_sha" ]; then
         echo "      verifying SHA256"
         actual=$(sha256sum "$cfst_tmp/cfst.tgz" | cut -d' ' -f1)
