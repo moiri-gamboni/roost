@@ -171,6 +171,8 @@ cmd_config() {
         sudo systemctl restart "$UNIT"
         wait_for_tunnel 30 || true
         cmd_status
+    else
+        echo "Service is not running; not starting automatically (use 'roost-travel on' to start)."
     fi
 }
 

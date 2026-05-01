@@ -216,10 +216,13 @@ test_urltest_latencies() {
     local api="http://127.0.0.1:19090"
     if ! curl -s --max-time 5 "$api/version" >/dev/null 2>&1; then
         # Diagnostic dump so the user doesn't have to grep journalctl by hand.
+        # All sub-pipelines are wrapped with `|| true` because under
+        # `set -euo pipefail` a failed `sudo -n` (no cached creds) or a
+        # zero-match grep would abort the entire test script.
         local listening recent_log
-        listening=$(ss -tlnp 2>/dev/null | awk '$4 ~ /:19090$/ {print $4 " " $6}' | head -1)
-        recent_log=$(sudo -n journalctl -u roost-travel --since '2 minutes ago' --no-pager 2>/dev/null \
-            | grep -iE 'clash|api|experimental' | tail -3)
+        listening=$( (ss -tlnp 2>/dev/null | awk '$4 ~ /:19090$/ {print $4 " " $6}' | head -1) || true )
+        recent_log=$( (sudo -n journalctl -u roost-travel --since '2 minutes ago' --no-pager 2>/dev/null \
+            | grep -iE 'clash|api|experimental' | tail -3) || true )
         if [ -n "$listening" ]; then
             fail "urltest latencies: 19090 has a listener ($listening) but /version didn't respond"
         else
