@@ -533,8 +533,8 @@ render_android() {
                             + (if ($server_v6 | length) > 0 then ["path-b-v6", "path-c-v6", "path-d-v6"] else [] end)
                         ),
                         url: "https://www.gstatic.com/generate_204",
-                        interval: "3m",
-                        tolerance: 200
+                        interval: "1m",
+                        tolerance: 100
                     }
                 ]
                 + $path_a_outbounds
