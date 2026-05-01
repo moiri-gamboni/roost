@@ -65,23 +65,37 @@ fetch_config() {
     mv "${CONFIG}.new" "$CONFIG"
 }
 
+# Wait for the tunnel to come up post-restart: poll api.ipify.org through
+# the system network (which sing-box's tun captures) until DNS bootstrap
+# completes and the egress is actually reachable. Used by cmd_config /
+# cmd_on after a sing-box restart so the subsequent cmd_status print
+# isn't a misleading "unreachable" snapshot of the cold-start window.
+wait_for_tunnel() {
+    local timeout="${1:-30}" deadline=$(( $(date +%s) + timeout ))
+    printf 'Waiting for tunnel...'
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if curl -s --max-time 3 https://api.ipify.org >/dev/null 2>&1; then
+            printf ' ready\n'
+            return 0
+        fi
+        printf '.'
+        sleep 1
+    done
+    printf ' timed out (%ds)\n' "$timeout" >&2
+    return 1
+}
+
 cmd_status() {
-    local state egress attempt
+    local state egress
     if systemctl is-active --quiet "$UNIT" 2>/dev/null; then
         state="ON"
     else
         state="OFF"
     fi
-    # Two attempts at 5s each. After a sing-box restart, DNS bootstrap
-    # via cf-doh detour through urltest takes a few seconds for the first
-    # query, so a single 5s attempt would misleadingly report "unreachable"
-    # when the tunnel is just warming up. Subsequent calls hit the cache
-    # and succeed on attempt 1.
-    egress=unreachable
-    for attempt in 1 2; do
-        egress=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null) && break
-        egress=unreachable
-    done
+    # Single attempt — fast for standalone `roost-travel status`. Callers
+    # that want to wait for the tunnel to come up after restart use
+    # wait_for_tunnel before invoking cmd_status.
+    egress=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || echo unreachable)
     echo "Tunnel: $state"
     echo "Egress: $egress"
     # Server vpn=off → egress is our Hetzner IP. Server vpn=on → egress is
@@ -118,10 +132,11 @@ cmd_on() {
     if [ "$was_active" = 1 ] && [ "$fetched" = 1 ]; then
         echo "Restarting to load new config..."
         sudo systemctl restart "$UNIT"
+        wait_for_tunnel 30 || true
     elif [ "$was_active" = 0 ]; then
         sudo systemctl start "$UNIT"
+        wait_for_tunnel 30 || true
     fi
-    sleep 1
     cmd_status
 }
 
@@ -154,7 +169,7 @@ cmd_config() {
     if systemctl is-active --quiet "$UNIT" 2>/dev/null; then
         echo "Service is running; restarting to load new config..."
         sudo systemctl restart "$UNIT"
-        sleep 1
+        wait_for_tunnel 30 || true
         cmd_status
     fi
 }
