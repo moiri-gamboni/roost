@@ -446,14 +446,17 @@ render_android() {
     # dropped while 172.67/16 worked. urltest's 3m re-probe interval also
     # handles transient blocking changes.
     #
-    # Override: /etc/roost-travel/cf-preferred-ip pins a single IP (still
-    # supported for operator-forced selection — e.g. CloudflareSpeedTest
-    # winner). When set, only that IP is rendered (no urltest selection
-    # among CF IPs). Remove the file to get auto-selection.
-    local _cf_pref_file=/etc/roost-travel/cf-preferred-ip
+    # Override: $ROOST_DIR/travel/cf-preferred-ip — one IP per line; blank
+    # lines and `#` comments ignored. Each IP becomes its own path-a-ipN
+    # outbound and joins the urltest pool. Populated by `roost-travel ips`
+    # (laptop-side cfst probe pushes top N via ssh+tee — user-writable so
+    # no sudo round-trip needed). Remove the file to get DNS defaults
+    # (~2 IPs from `getent`, CF's BGP-nearest pair).
+    local _cf_pref_file="$ROOST_DIR/travel/cf-preferred-ip"
     local path_a_ips_raw=""
-    if sudo test -r "$_cf_pref_file"; then
-        path_a_ips_raw=$(sudo tr -d '[:space:]' < "$_cf_pref_file")
+    if [ -r "$_cf_pref_file" ]; then
+        path_a_ips_raw=$(grep -vE '^[[:space:]]*(#|$)' "$_cf_pref_file" \
+            | tr -d '[:blank:]' | sort -u)
     else
         path_a_ips_raw=$(getent ahostsv4 "travel.$DOMAIN" | awk '{print $1}' | sort -u)
     fi

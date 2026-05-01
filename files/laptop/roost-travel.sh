@@ -18,7 +18,7 @@ fi
 
 usage() {
     cat <<EOF
-Usage: roost-travel {on|off|status|logs|config}
+Usage: roost-travel {on|off|status|logs|config|ips}
 
   on       Start the tunnel (systemd). Best-effort config refresh first:
            falls back to the existing config if the server is unreachable.
@@ -27,6 +27,10 @@ Usage: roost-travel {on|off|status|logs|config}
   logs     Tail journald output for the service.
   config   Explicit config refresh from the server; restarts the tunnel if
            it's already running. Fails loudly if the server is unreachable.
+  ips      Probe CF Anycast IPs from the laptop's network with cfst, push
+           the top N (latency-ranked) to the server's cf-preferred-ip, then
+           refresh sing-box config. Run when CF reachability changes (new
+           network, IPs blocked, etc.). Takes 1-3 minutes.
 EOF
 }
 
@@ -181,12 +185,63 @@ cmd_config() {
     fi
 }
 
+# Probe CF Anycast IPs from the laptop's actual network (cfst's TCP-443 ping
+# against ~5000 sampled /24s in CF's published prefixes), pick the top N by
+# latency, push to the server's cf-preferred-ip. The server's render then
+# bakes those IPs as path-a-ipN outbounds and sing-box's urltest auto-selects
+# the live one with lowest latency. Re-run when reachability changes (new
+# network, IPs blocked, etc.).
+cmd_ips() {
+    local target="${ROOST_SSH_TARGET:-}"
+    [ -n "$target" ] || { echo "ROOST_SSH_TARGET not set in $ENV_FILE" >&2; exit 1; }
+    command -v cfst >/dev/null \
+        || { echo "cfst not installed; rerun install-travel.sh" >&2; exit 1; }
+
+    local n_top=5
+    local ip_list=/usr/local/share/cfst/ip.txt
+    local out=/tmp/cfst-result.csv
+    [ -r "$ip_list" ] || { echo "$ip_list missing; rerun install-travel.sh" >&2; exit 1; }
+
+    echo "Probing CF Anycast IPs from this network (1-3 min)..."
+    # cfst writes log files (ip.txt cache, debug) to CWD; cd to /tmp.
+    # -dd disables download speed test (we only need latency for proxy use).
+    # -p 0 suppresses cfst's own stdout summary (we parse the CSV ourselves).
+    # -dn $n_top keeps top N by latency in the CSV.
+    ( cd /tmp && cfst -tp 443 -dd -p 0 -dn "$n_top" -f "$ip_list" -o "$out" )
+
+    if [ ! -s "$out" ]; then
+        echo "cfst returned no working IPs (full CF block on this network?)." >&2
+        exit 1
+    fi
+
+    # CSV header: 'IP 地址,已发送,...'; data rows start at line 2. Column 1 = IP.
+    local top_ips
+    top_ips=$(tail -n +2 "$out" | cut -d, -f1 | head -"$n_top")
+    [ -n "$top_ips" ] || { echo "cfst CSV had header but no rows" >&2; exit 1; }
+
+    echo
+    echo "Top $n_top CF IPs by latency:"
+    tail -n +2 "$out" | head -"$n_top" | awk -F, '{printf "  %-15s  %s ms (loss %s)\n", $1, $5, $4}'
+
+    echo
+    echo "Pushing to $target:~/roost/travel/cf-preferred-ip..."
+    printf '%s\n' "$top_ips" \
+        | ssh -q "$target" 'mkdir -p ~/roost/travel && tee ~/roost/travel/cf-preferred-ip > /dev/null' \
+        || { echo "ssh push failed" >&2; exit 1; }
+    echo "Pushed."
+
+    echo
+    echo "Refreshing local sing-box config..."
+    cmd_config
+}
+
 case "${1:-}" in
     on|up|start)       cmd_on ;;
     off|down|stop)     cmd_off ;;
     status)            cmd_status ;;
     logs)              cmd_logs ;;
     config)            cmd_config ;;
+    ips)               cmd_ips ;;
     help|-h|--help|'') usage ;;
     *)                 usage; exit 2 ;;
 esac
