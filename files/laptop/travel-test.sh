@@ -212,12 +212,23 @@ test_path_c_ss2022() {
 test_urltest_latencies() {
     # Query sing-box's clash API for each path's last probe latency.
     # This is what sing-box ITSELF measures (full request through the path
-    # to the urltest URL) — directly drives selection. Skips silently if
-    # the API isn't enabled yet (config refresh needed) or the laptop
-    # tunnel isn't running.
+    # to the urltest URL) — directly drives selection.
     local api="http://127.0.0.1:9090"
-    if ! curl -s --max-time 2 "$api/version" >/dev/null 2>&1; then
-        skip "urltest latencies: clash API not reachable at $api (run 'roost-travel config' to refresh)"
+    if ! curl -s --max-time 5 "$api/version" >/dev/null 2>&1; then
+        # Diagnostic dump so the user doesn't have to grep journalctl by hand.
+        local listening recent_log
+        listening=$(ss -tlnp 2>/dev/null | awk '$4 ~ /:9090$/ {print $4 " " $6}' | head -1)
+        recent_log=$(sudo -n journalctl -u roost-travel --since '2 minutes ago' --no-pager 2>/dev/null \
+            | grep -iE 'clash|api|experimental' | tail -3)
+        if [ -n "$listening" ]; then
+            fail "urltest latencies: 9090 has a listener ($listening) but /version didn't respond"
+        else
+            fail "urltest latencies: nothing listening on 127.0.0.1:9090. Sing-box may not have applied the experimental block."
+        fi
+        if [ -n "$recent_log" ]; then
+            log "  recent sing-box clash-related logs:"
+            echo "$recent_log" | sed 's/^/    /'
+        fi
         return
     fi
     local proxies tag last_delay last_time
