@@ -230,13 +230,17 @@ cmd_ips() {
     fi
 
     # CSV header: 'IP 地址,已发送,...'; data rows start at line 2. Column 1 = IP.
+    # Single awk pass instead of `tail | cut | head -N` — head closes its stdin
+    # after N lines, which gives the upstream `cut` SIGPIPE; combined with
+    # `set -o pipefail` that kills the script. awk reads to EOF (or its own
+    # exit), so no broken-pipe failures.
     local top_ips
-    top_ips=$(tail -n +2 "$out" | cut -d, -f1 | head -"$n_top")
+    top_ips=$(awk -F, -v n="$n_top" 'NR > 1 && NR <= n+1 {print $1}' "$out")
     [ -n "$top_ips" ] || { echo "cfst CSV had header but no rows" >&2; exit 1; }
 
     echo
     echo "Top $n_top CF IPs by latency:"
-    tail -n +2 "$out" | head -"$n_top" | awk -F, '{printf "  %-15s  %s ms (loss %s)\n", $1, $5, $4}'
+    awk -F, -v n="$n_top" 'NR > 1 && NR <= n+1 {printf "  %-15s  %s ms (loss %s)\n", $1, $5, $4}' "$out"
 
     echo
     echo "Pushing to $target:~/roost/travel/cf-preferred-ip..."
