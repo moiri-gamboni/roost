@@ -84,9 +84,11 @@ export CF_Token
     --cert-home "$CERT_HOME"
 
 # Install cert + key to the path xray reads from. install-cert renames/copies;
-# subsequent --cron renewals re-trigger the same paths.
+# subsequent --cron renewals re-trigger the same paths. The -d here is the
+# CERT NAME (acme.sh's term: first -d at issuance), not a per-SAN identifier.
+# We issued with `-d $DOMAIN -d *.$DOMAIN` so the cert name is $DOMAIN.
 "$ACME_BIN" --install-cert \
-    -d "*.$DOMAIN" \
+    -d "$DOMAIN" \
     --config-home "$CONFIG_HOME" \
     --cert-home "$CERT_HOME" \
     --fullchain-file "$INSTALL_FULLCHAIN" \
