@@ -115,9 +115,53 @@ else
     skip "env file not written"
 fi
 
+step "Installing CloudflareSpeedTest (cfst)"
+# Pinned version. cfst doesn't publish per-arch SHA256SUMS files so we
+# verify amd64 against an empirically-observed digest. Other archs
+# install without SHA verification (HTTPS + tag-immutability of GitHub
+# release assets gives reasonable assurance). Update CFST_VERSION + the
+# SHA below to refresh; rerun install-travel.sh applies it.
+CFST_VERSION=v2.3.5
+CFST_SHA256_AMD64=1b1a2caa09246da589e1555a4a0aa7e4d84958dcb76d46e27b7f1216a4607e39
+case "$(uname -m)" in
+    x86_64)  cfst_arch=amd64; cfst_sha=$CFST_SHA256_AMD64 ;;
+    aarch64) cfst_arch=arm64; cfst_sha="" ;;
+    armv7l)  cfst_arch=armv7; cfst_sha="" ;;
+    *)       cfst_arch=""; cfst_sha="" ;;
+esac
+if [ -z "$cfst_arch" ]; then
+    skip "unsupported arch $(uname -m); skipping cfst (path-a-IP probing disabled)"
+elif [ -x /usr/local/bin/cfst ] \
+        && /usr/local/bin/cfst -v 2>&1 | head -1 | grep -qF "${CFST_VERSION#v}"; then
+    skip "cfst $CFST_VERSION already installed"
+else
+    cfst_url="https://github.com/XIU2/CloudflareSpeedTest/releases/download/$CFST_VERSION/cfst_linux_$cfst_arch.tar.gz"
+    cfst_tmp=$(mktemp -d)
+    trap 'rm -rf "$cfst_tmp"' EXIT
+    curl -fsSL "$cfst_url" -o "$cfst_tmp/cfst.tgz"
+    if [ -n "$cfst_sha" ]; then
+        actual=$(sha256sum "$cfst_tmp/cfst.tgz" | cut -d' ' -f1)
+        if [ "$actual" != "$cfst_sha" ]; then
+            echo "  [!] cfst SHA256 mismatch — expected $cfst_sha, got $actual" >&2
+            exit 1
+        fi
+    fi
+    sudo install -d -m 0755 /usr/local/share/cfst
+    # Extract just the binary + ip.txt; skip the bundled shell helper, ipv6.txt
+    # (we don't probe v6 yet), and the Chinese docs.
+    sudo tar -xzC /usr/local/share/cfst/ -f "$cfst_tmp/cfst.tgz" cfst ip.txt
+    sudo chmod 0755 /usr/local/share/cfst/cfst
+    sudo chmod 0644 /usr/local/share/cfst/ip.txt
+    sudo ln -sfT /usr/local/share/cfst/cfst /usr/local/bin/cfst
+    rm -rf "$cfst_tmp"
+    trap - EXIT
+    ok "cfst $CFST_VERSION installed (binary: /usr/local/bin/cfst, ip list: /usr/local/share/cfst/ip.txt)"
+fi
+
 step "Fetching sing-box config from the server (roost-travel config)"
 /usr/local/bin/roost-travel config
 ok "config at $HOME/.config/sing-box/travel.json"
 
 echo
-echo "Done. Usage: roost-travel {on|off|status|logs|config}"
+echo "Done. Usage: roost-travel {on|off|status|logs|config|ips}"
+echo "Tip: run 'roost-travel ips' to probe the best CF IPs for this network."
