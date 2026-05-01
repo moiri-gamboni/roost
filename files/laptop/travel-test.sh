@@ -248,55 +248,57 @@ test_urltest_latencies() {
         fi
         return
     fi
-    # Force a probe of every urltest member individually via the Clash
-    # original /proxies/{name}/delay endpoint. The Clash.Meta-style
-    # /group/{name}/delay isn't implemented by sing-box; the call
-    # returns 404 silently and the test reads stale history.
+    # Probe each urltest member synchronously via the Clash original
+    # /proxies/{name}/delay endpoint. Sing-box doesn't implement
+    # Clash.Meta's /group/{name}/delay (404). Reading history alone
+    # was lossy: failed probes don't leave a history entry, so the
+    # test couldn't distinguish "never probed" from "probed but
+    # failed". Reading the /delay response directly captures both.
     #
-    # Run probes in parallel via background subshells so total wait
-    # time ≈ slowest probe (~5-7s for Path A through FRA), not their
-    # sum. timeout=12000 per probe: generous enough for the slowest
-    # path; --max-time 15 caps each individual curl so a hung
-    # endpoint doesn't lock the test forever.
+    # Probes are sequential here so we get one tmpfile per response,
+    # in order. Total wait ≈ sum of slowest paths (~10-15s); fine
+    # for an interactive test. Move to parallel + jq merge if it
+    # becomes painful.
+    #
+    # timeout=12000 per probe is the sing-box internal probe budget;
+    # --max-time 15 caps the curl-to-API call so a stuck endpoint
+    # doesn't hang the test.
     local probe_url='https%3A%2F%2Fwww.gstatic.com%2Fgenerate_204'
-    local pid pids=()
+    local tag http_code body delay err
     for tag in path-a path-b-v4 path-b-v6 path-c-v4 path-c-v6 path-d-v4 path-d-v6; do
-        curl -s --max-time 15 \
-            "$api/proxies/$tag/delay?timeout=12000&url=$probe_url" >/dev/null 2>&1 &
-        pids+=($!)
-    done
-    for pid in "${pids[@]}"; do
-        wait "$pid" 2>/dev/null || true
-    done
-
-    local proxies tag last_delay last_time
-    proxies=$(curl -s "$api/proxies" 2>/dev/null)
-    if [ -z "$proxies" ]; then
-        fail "urltest latencies: clash API returned no data"
-        return
-    fi
-    for tag in path-a path-b-v4 path-b-v6 path-c-v4 path-c-v6 path-d-v4 path-d-v6; do
-        last_delay=$(echo "$proxies" | jq -r --arg t "$tag" \
-            '.proxies[$t].history | if (. // []) | length > 0 then .[-1].delay else "n/a" end' 2>/dev/null)
-        last_time=$(echo "$proxies" | jq -r --arg t "$tag" \
-            '.proxies[$t].history | if (. // []) | length > 0 then .[-1].time else "" end' 2>/dev/null)
-        case "$last_delay" in
-            n/a|null|"")
-                skip "urltest probe $tag: no data yet (sing-box hasn't probed; wait ~3min)"
+        body=$(curl -s --max-time 15 -w '\n%{http_code}' \
+            "$api/proxies/$tag/delay?timeout=12000&url=$probe_url" 2>/dev/null || true)
+        http_code=$(printf '%s\n' "$body" | tail -1)
+        body=$(printf '%s\n' "$body" | sed '$d')
+        case "$http_code" in
+            200)
+                delay=$(printf '%s' "$body" | jq -r '.delay // 0' 2>/dev/null)
+                if [ -n "$delay" ] && [ "$delay" != "0" ]; then
+                    pass "urltest probe $tag: ${delay}ms"
+                else
+                    fail "urltest probe $tag: 200 but body unparseable: $body"
+                fi
                 ;;
-            0)
-                fail "urltest probe $tag: last probe failed (0 = unreachable, at $last_time)"
+            503)
+                err=$(printf '%s' "$body" | jq -r '.message // empty' 2>/dev/null)
+                fail "urltest probe $tag: probe failed (${err:-unknown})"
+                ;;
+            "")
+                fail "urltest probe $tag: curl returned no response (timeout?)"
                 ;;
             *)
-                pass "urltest probe $tag: ${last_delay}ms (at $last_time)"
+                fail "urltest probe $tag: unexpected HTTP $http_code: $body"
                 ;;
         esac
     done
-    # Currently selected path
-    local selected
-    selected=$(echo "$proxies" | jq -r '.proxies.urltest.now // empty' 2>/dev/null)
-    if [ -n "$selected" ]; then
-        log "urltest currently selected: $selected"
+    # Currently selected path (after the probes above may have caused re-selection).
+    local selected proxies
+    proxies=$(curl -s "$api/proxies" 2>/dev/null || true)
+    if [ -n "$proxies" ]; then
+        selected=$(printf '%s' "$proxies" | jq -r '.proxies.urltest.now // empty' 2>/dev/null || true)
+        if [ -n "$selected" ]; then
+            log "urltest currently selected: $selected"
+        fi
     fi
 }
 
