@@ -108,12 +108,20 @@ skip() { echo "  SKIP: $*"; SKIP=$((SKIP + 1)); }
 section() { printf '\n=== %s ===\n' "$*"; }
 
 test_path_a_probe() {
-    local code
-    code=$(curl -sS -o /dev/null --max-time 10 -w '%{http_code}' \
+    local out code appconnect_ms total_ms
+    # %{http_code} %{time_appconnect} %{time_total} — TLS-handshake time
+    # is the apples-to-apples comparison with Paths B/D (also TLS-only);
+    # total includes the round-trip to /probe through CF tunnel + xray-WS,
+    # which is what sing-box's urltest URL probe actually measures.
+    out=$(curl -sS -o /dev/null --max-time 10 \
+            -w '%{http_code} %{time_appconnect} %{time_total}' \
             "https://${TRAVEL_HOST}/probe" 2>&1) \
-        || code="curl-failed:$code"
+        || { fail "Path A probe: curl failed (${out})"; return; }
+    code=$(echo "$out" | awk '{print $1}')
+    appconnect_ms=$(echo "$out" | awk '{printf "%d", $2 * 1000}')
+    total_ms=$(echo "$out" | awk '{printf "%d", $3 * 1000}')
     if [ "$code" = "204" ]; then
-        pass "Path A probe: https://${TRAVEL_HOST}/probe -> 204"
+        pass "Path A probe: https://${TRAVEL_HOST}/probe -> 204 (TLS ${appconnect_ms}ms, total ${total_ms}ms)"
     else
         fail "Path A probe: expected 204, got $code"
     fi
@@ -126,13 +134,23 @@ test_path_a_probe() {
 # rejected cert chain" from "middlebox TLS interception".
 test_path_b_reality() {
     local label="$1" host="$2"
-    local raw out
+    local raw out latency_ms
     raw=$(openssl s_client -connect "$host:443" -servername www.samsung.com \
             -CAfile /etc/ssl/certs/ca-certificates.crt </dev/null 2>&1) \
         || raw="${raw:-openssl exit nonzero}"
     out=$(echo "$raw" | grep -E 'subject=|issuer=' || true)
     if echo "$out" | grep -qi 'samsung'; then
-        pass "Path B REALITY ($label): Samsung cert served on $host:443"
+        # REALITY masquerades on :443; reuse curl's time_appconnect against
+        # the Samsung SNI to measure the TLS handshake (same metric as Path D).
+        local time_secs
+        time_secs=$(curl -k -s -o /dev/null -w '%{time_appconnect}' --max-time 5 \
+            --resolve "www.samsung.com:443:$host" https://www.samsung.com/ 2>/dev/null)
+        if [ -n "$time_secs" ] && [ "$time_secs" != "0.000000" ]; then
+            latency_ms=$(awk -v l="$time_secs" 'BEGIN { printf "%d", l * 1000 }')
+            pass "Path B REALITY ($label): Samsung cert served on $host:443 (TLS ${latency_ms}ms)"
+        else
+            pass "Path B REALITY ($label): Samsung cert served on $host:443"
+        fi
     else
         local first_err
         first_err=$(echo "$raw" | grep -E 'error|CONNECTED|refused|Connection|verify' | head -1)
@@ -155,8 +173,19 @@ tcp_reachable() {
 
 test_path_c_ss2022() {
     local label="$1" host="$2"
+    local time_secs latency_ms
     if tcp_reachable "$host" 51820 5; then
-        pass "Path C SS-2022 TCP ($label): $host:51820 reachable"
+        # SS-2022 has no TLS, so use curl's time_connect (TCP connect only —
+        # not handshake-comparable to B/D, but represents the round-trip
+        # before SS-2022 handshake exchange begins).
+        time_secs=$(curl -s -o /dev/null --max-time 5 -w '%{time_connect}' \
+            "telnet://$host:51820" 2>/dev/null)
+        if [ -n "$time_secs" ] && [ "$time_secs" != "0.000000" ]; then
+            latency_ms=$(awk -v l="$time_secs" 'BEGIN { printf "%d", l * 1000 }')
+            pass "Path C SS-2022 TCP ($label): $host:51820 reachable (TCP connect ${latency_ms}ms)"
+        else
+            pass "Path C SS-2022 TCP ($label): $host:51820 reachable"
+        fi
     else
         fail "Path C SS-2022 TCP ($label): $host:51820 unreachable"
     fi
