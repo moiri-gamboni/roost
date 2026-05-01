@@ -6,15 +6,19 @@ set -euo pipefail
 UNIT=roost-travel.service
 CONFIG="$HOME/.config/sing-box/travel.json"
 ENV_FILE="$HOME/.config/roost-travel/env"
-# HETZNER_PUBLIC_IPV4 from the env file flags whether `status` shows
-# "egress is going through the tunnel". Set HETZNER_PUBLIC_IPV4 (env file or shell).
-HETZNER_IPV4="${HETZNER_PUBLIC_IPV4:-}"
 
-# ROOST_SSH_TARGET is written by install-travel.sh from .env. Env var overrides.
+# ROOST_SSH_TARGET + DOMAIN are written by install-travel.sh from .env.
 if [ -f "$ENV_FILE" ]; then
     # shellcheck disable=SC1090,SC1091
     . "$ENV_FILE"
 fi
+
+# Hetzner public IPv4: derive from `travel-direct.$DOMAIN` at runtime so the
+# code is fork-portable. HETZNER_PUBLIC_IPV4 env var (or .env override sourced
+# above) wins if explicitly set; otherwise resolve via DNS. Used by `status`
+# to flag "egress is going through the tunnel" vs Proton; missing/empty just
+# means the annotation falls through to the generic "external" message.
+HETZNER_IPV4="${HETZNER_PUBLIC_IPV4:-$(getent ahostsv4 "travel-direct.${DOMAIN:-}" 2>/dev/null | awk 'NR==1 {print $1}')}"
 
 usage() {
     cat <<EOF

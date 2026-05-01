@@ -93,25 +93,27 @@ sudo systemctl reset-failed roost-travel.service 2>/dev/null || true
 # so the operator starts fresh with `roost-travel on`.
 sudo systemctl stop roost-travel.service 2>/dev/null || true
 
-step "Writing $HOME/.config/roost-travel/env (SSH target for roost-travel on/config)"
+step "Writing $HOME/.config/roost-travel/env (SSH target + DOMAIN for roost-travel)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 if [ -f "$REPO_ROOT/.env" ]; then
     # Subshell so sourcing .env doesn't clobber install-script-local USERNAME.
-    ssh_target=$(
+    env_lines=$(
         set -a
         # shellcheck disable=SC1090,SC1091
         . "$REPO_ROOT/.env"
         set +a
         : "${USERNAME:?USERNAME missing from .env}"
         : "${SERVER_NAME:?SERVER_NAME missing from .env}"
-        printf '%s@%s' "$USERNAME" "$SERVER_NAME"
+        : "${DOMAIN:?DOMAIN missing from .env}"
+        # %q keeps sourcing safe even if any value contains shell metachars.
+        printf 'ROOST_SSH_TARGET=%q\nDOMAIN=%q\n' "$USERNAME@$SERVER_NAME" "$DOMAIN"
     )
     install -d -m 0700 "$HOME/.config/roost-travel"
-    printf 'ROOST_SSH_TARGET=%q\n' "$ssh_target" > "$HOME/.config/roost-travel/env"
+    printf '%s' "$env_lines" > "$HOME/.config/roost-travel/env"
     chmod 0600 "$HOME/.config/roost-travel/env"
-    ok "wrote ROOST_SSH_TARGET=$ssh_target"
+    ok "wrote env (ROOST_SSH_TARGET, DOMAIN)"
 else
-    echo "  [!] no .env at $REPO_ROOT/.env; skip and set ROOST_SSH_TARGET manually" >&2
+    echo "  [!] no .env at $REPO_ROOT/.env; skip and set ROOST_SSH_TARGET + DOMAIN manually" >&2
     skip "env file not written"
 fi
 
