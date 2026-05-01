@@ -65,8 +65,12 @@ else
 fi
 
 step "Installing /usr/local/bin/roost-travel wrapper"
-sudo install -Dm755 "$SCRIPT_DIR/roost-travel.sh" /usr/local/bin/roost-travel
-ok "wrapper installed"
+# Symlink (not copy) so `git pull` in the repo immediately updates the
+# installed binary. Otherwise a fix to roost-travel.sh requires re-running
+# install-travel.sh (easy to forget — the user just sees stale behaviour).
+# `ln -sf` overwrites both symlinks and prior plain-file installs.
+sudo ln -sfT "$SCRIPT_DIR/roost-travel.sh" /usr/local/bin/roost-travel
+ok "wrapper installed (symlink → $SCRIPT_DIR/roost-travel.sh)"
 
 step "Rendering /etc/systemd/system/roost-travel.service"
 USERNAME=$(id -un)

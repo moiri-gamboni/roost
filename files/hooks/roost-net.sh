@@ -430,9 +430,24 @@ render_android() {
     # runtime DNS to dial it. Without this, cf-doh's bootstrap loop blocks
     # all DNS on networks where the underlying interface can't reach 1.1.1.1
     # (the loop: cf-doh -> tun -> urltest -> path-a [hostname] -> cf-doh).
-    # SNI stays as the hostname for cert validation. Soft-fallback to hostname
-    # if getent fails so transient resolver issues don't kill the render.
-    path_a_ipv4=$(getent ahostsv4 "travel.$DOMAIN" | awk 'NR==1 {print $1}')
+    # SNI stays as the hostname for cert validation.
+    #
+    # Override priority: /etc/roost-travel/cf-preferred-ip (operator-chosen,
+    # e.g. via CloudflareSpeedTest output) > getent's BGP-default.
+    # CF Anycast routes vary per ISP/network: the BGP-nearest PoP from the
+    # user's network may be far from optimal (FRA from China, etc.). Picking
+    # a CF IP whose Anycast routing happens to land on a faster PoP for the
+    # user's network can shave hundreds of ms off Path A's TLS handshake.
+    # Re-test periodically with CloudflareSpeedTest; the optimal IP changes
+    # with CF's BGP and ISP transit decisions.
+    path_a_ipv4=""
+    local _cf_pref_file=/etc/roost-travel/cf-preferred-ip
+    if sudo test -r "$_cf_pref_file"; then
+        path_a_ipv4=$(sudo tr -d '[:space:]' < "$_cf_pref_file")
+    fi
+    if [ -z "$path_a_ipv4" ]; then
+        path_a_ipv4=$(getent ahostsv4 "travel.$DOMAIN" | awk 'NR==1 {print $1}')
+    fi
     if [ -z "$path_a_ipv4" ]; then
         printf 'WARNING: getent failed for travel.%s; Path A will use hostname (DNS-bootstrap-fragile)\n' "$DOMAIN" >&2
         path_a_ipv4="travel.$DOMAIN"
@@ -592,7 +607,7 @@ render_android() {
             },
             experimental: {
                 clash_api: {
-                    external_controller: "127.0.0.1:9090"
+                    external_controller: "127.0.0.1:19090"
                 }
             }
         }'
@@ -601,6 +616,10 @@ render_android() {
     # delay) so travel-test.sh can show what sing-box itself sees,
     # not just our external openssl probes. No secret because the
     # listener is bound to 127.0.0.1.
+    #
+    # Port 19090 not 9090: the canonical Clash API port collides with
+    # VS Code (which binds 9090 for some debugger/server features), so
+    # sing-box silently fails to bind there on dev laptops.
 }
 
 render_laptop() {
