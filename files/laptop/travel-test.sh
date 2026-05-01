@@ -213,20 +213,20 @@ test_urltest_latencies() {
     # Query sing-box's clash API for each path's last probe latency.
     # This is what sing-box ITSELF measures (full request through the path
     # to the urltest URL) — directly drives selection.
-    local api="http://127.0.0.1:19090"
+    local api="http://127.0.0.1:49090"
     if ! curl -s --max-time 5 "$api/version" >/dev/null 2>&1; then
         # Diagnostic dump so the user doesn't have to grep journalctl by hand.
         # All sub-pipelines are wrapped with `|| true` because under
         # `set -euo pipefail` a failed `sudo -n` (no cached creds) or a
         # zero-match grep would abort the entire test script.
         local listening recent_log
-        listening=$( (ss -tlnp 2>/dev/null | awk '$4 ~ /:19090$/ {print $4 " " $6}' | head -1) || true )
+        listening=$( (ss -tlnp 2>/dev/null | awk '$4 ~ /:49090$/ {print $4 " " $6}' | head -1) || true )
         recent_log=$( (sudo -n journalctl -u roost-travel --since '2 minutes ago' --no-pager 2>/dev/null \
             | grep -iE 'clash|api|experimental' | tail -3) || true )
         if [ -n "$listening" ]; then
-            fail "urltest latencies: 19090 has a listener ($listening) but /version didn't respond"
+            fail "urltest latencies: 49090 has a listener ($listening) but /version didn't respond"
         else
-            fail "urltest latencies: nothing listening on 127.0.0.1:19090. Sing-box may not have applied the experimental block."
+            fail "urltest latencies: nothing listening on 127.0.0.1:49090. Sing-box may not have applied the experimental block."
         fi
         if [ -n "$recent_log" ]; then
             log "  recent sing-box clash-related logs:"

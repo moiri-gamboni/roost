@@ -71,7 +71,12 @@ fetch_config() {
 # cmd_on after a sing-box restart so the subsequent cmd_status print
 # isn't a misleading "unreachable" snapshot of the cold-start window.
 wait_for_tunnel() {
-    local timeout="${1:-30}" deadline=$(( $(date +%s) + timeout ))
+    # Two `local` statements: bash evaluates ALL right-hand-sides on a
+    # single-line `local a=... b=...` before any of them get assigned, so
+    # referencing `timeout` in the deadline expression on the same line
+    # tripped `set -u` ("unbound variable").
+    local timeout="${1:-30}"
+    local deadline=$(( $(date +%s) + timeout ))
     printf 'Waiting for tunnel...'
     while [ "$(date +%s)" -lt "$deadline" ]; do
         if curl -s --max-time 3 https://api.ipify.org >/dev/null 2>&1; then
