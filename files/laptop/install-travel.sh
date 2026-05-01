@@ -139,8 +139,14 @@ else
     cfst_tmp=$(mktemp -d)
     trap 'rm -rf "$cfst_tmp"' EXIT
     echo "      downloading $cfst_url"
-    curl -fsSL "$cfst_url" -o "$cfst_tmp/cfst.tgz"
-    echo "      downloaded $(du -h "$cfst_tmp/cfst.tgz" | cut -f1)"
+    # Default curl meter (no -s, no --progress-bar). The standard meter
+    # shows total/received/speed/ETA on a single \r-overwritten line and
+    # works correctly across redirects (GitHub release URL → CDN); curl's
+    # --progress-bar falls back to a "-=O=-" spaceship while the size is
+    # unknown during redirect resolution and renders garbled if \r doesn't
+    # cleanly overwrite. -fLS = fail-on-HTTP-error + follow-redirects +
+    # show-errors-when-not-silent.
+    curl -fLS "$cfst_url" -o "$cfst_tmp/cfst.tgz"
     if [ -n "$cfst_sha" ]; then
         echo "      verifying SHA256"
         actual=$(sha256sum "$cfst_tmp/cfst.tgz" | cut -d' ' -f1)
