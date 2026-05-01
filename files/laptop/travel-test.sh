@@ -165,6 +165,35 @@ test_path_c_ss2022() {
     skip "Path C SS-2022 UDP ($label): no passive probe without SS-2022 handshake"
 }
 
+test_path_d_vision() {
+    local label="$1" host="$2"
+    local raw cert_subject latency ms
+    # TLS handshake against xray's Vision inbound. Cert must be the LE
+    # wildcard for *.moiri.dev (catching cert-mismatch bugs), and must
+    # verify cleanly against the system trust store — Path B's REALITY
+    # serves Samsung's cert instead, so a successful TLS to :8443 with
+    # subject Samsung would be a serious misconfig (probably a port mixup).
+    raw=$(openssl s_client -connect "$host:8443" -servername static.${DOMAIN} \
+            -CAfile /etc/ssl/certs/ca-certificates.crt -verify_return_error </dev/null 2>&1) \
+        || raw="${raw:-openssl exit nonzero}"
+    cert_subject=$(echo "$raw" | grep -E '^subject=' | head -1)
+    if echo "$cert_subject" | grep -qiF "$DOMAIN"; then
+        # Latency: curl's time_appconnect = time to complete TLS handshake.
+        latency=$(curl -k -s -o /dev/null -w '%{time_appconnect}' --max-time 5 \
+            --resolve "static.${DOMAIN}:8443:$host" https://static.${DOMAIN}:8443/ 2>/dev/null)
+        if [ -n "$latency" ] && [ "$latency" != "0.000000" ]; then
+            ms=$(awk -v l="$latency" 'BEGIN { printf "%d", l * 1000 }')
+            pass "Path D Vision ($label): cert OK, TLS handshake ${ms}ms"
+        else
+            pass "Path D Vision ($label): cert OK on $host:8443 (latency probe failed)"
+        fi
+    else
+        local first_err
+        first_err=$(echo "$raw" | grep -E 'error|CONNECTED|refused|Connection|verify' | head -1)
+        fail "Path D Vision ($label): cert mismatch on $host:8443 (${first_err:-no diagnostic})"
+    fi
+}
+
 test_dns() {
     # getent | awk under `set -o pipefail` aborts the entire script if getent
     # fails. Capture the pipeline result as a test-local failure instead so
@@ -337,6 +366,9 @@ test_path_b_reality "v4" "$HETZNER_PUBLIC_IPV4"
 section "Path C (SS-2022) IPv4"
 test_path_c_ss2022 "v4" "$HETZNER_PUBLIC_IPV4"
 
+section "Path D (Vision) IPv4"
+test_path_d_vision "v4" "$HETZNER_PUBLIC_IPV4"
+
 if [ "$QUICK" -eq 0 ]; then
     # Skip v6 sections when the laptop has no IPv6 default route (common on
     # v4-only networks e.g. coworking/hotel Wi-Fi). The v6 assertions would
@@ -348,10 +380,14 @@ if [ "$QUICK" -eq 0 ]; then
 
         section "Path C (SS-2022) IPv6"
         test_path_c_ss2022 "v6" "$HETZNER_PUBLIC_IPV6"
+
+        section "Path D (Vision) IPv6"
+        test_path_d_vision "v6" "[$HETZNER_PUBLIC_IPV6]"
     else
         section "IPv6 paths"
         skip "Path B (REALITY) IPv6: laptop has no IPv6 default route"
         skip "Path C (SS-2022) IPv6: laptop has no IPv6 default route"
+        skip "Path D (Vision) IPv6: laptop has no IPv6 default route"
     fi
 
     section "Via-tunnel functional"

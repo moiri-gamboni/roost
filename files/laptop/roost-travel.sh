@@ -66,13 +66,22 @@ fetch_config() {
 }
 
 cmd_status() {
-    local state egress
+    local state egress attempt
     if systemctl is-active --quiet "$UNIT" 2>/dev/null; then
         state="ON"
     else
         state="OFF"
     fi
-    egress=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || echo unreachable)
+    # Two attempts at 5s each. After a sing-box restart, DNS bootstrap
+    # via cf-doh detour through urltest takes a few seconds for the first
+    # query, so a single 5s attempt would misleadingly report "unreachable"
+    # when the tunnel is just warming up. Subsequent calls hit the cache
+    # and succeed on attempt 1.
+    egress=unreachable
+    for attempt in 1 2; do
+        egress=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null) && break
+        egress=unreachable
+    done
     echo "Tunnel: $state"
     echo "Egress: $egress"
     # Server vpn=off → egress is our Hetzner IP. Server vpn=on → egress is
