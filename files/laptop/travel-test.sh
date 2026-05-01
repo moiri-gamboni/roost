@@ -213,6 +213,13 @@ test_urltest_latencies() {
     # Query sing-box's clash API for each path's last probe latency.
     # This is what sing-box ITSELF measures (full request through the path
     # to the urltest URL) — directly drives selection.
+    #
+    # First force a group healthcheck so the history is fresh and every
+    # member has data. Sing-box's urltest is sticky by design: failed
+    # initial probes never get retried on their own. The healthcheck
+    # also triggers re-evaluation of the selection against fresh
+    # latencies, which is the same effect a `roost-travel config`
+    # restart would have.
     local api="http://127.0.0.1:47200"
     if ! curl -s --max-time 5 "$api/version" >/dev/null 2>&1; then
         # Diagnostic dump so the user doesn't have to grep journalctl by hand.
@@ -238,6 +245,17 @@ test_urltest_latencies() {
         fi
         return
     fi
+    # Force a synchronous probe of all urltest members. Per Clash.Meta's
+    # API, /group/{name}/delay waits for every member's probe to complete
+    # and returns their delays. We don't read its response directly
+    # (the format varies across sing-box versions); instead we let it
+    # populate /proxies/{name}/history and read that as before.
+    local probe_url='https%3A%2F%2Fwww.gstatic.com%2Fgenerate_204'
+    if ! curl -s --max-time 15 \
+            "$api/group/urltest/delay?url=$probe_url&timeout=5000" >/dev/null 2>&1; then
+        log "  (group healthcheck failed; reading existing history instead)"
+    fi
+
     local proxies tag last_delay last_time
     proxies=$(curl -s "$api/proxies" 2>/dev/null)
     if [ -z "$proxies" ]; then
