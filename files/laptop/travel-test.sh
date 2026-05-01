@@ -250,9 +250,16 @@ test_urltest_latencies() {
     # and returns their delays. We don't read its response directly
     # (the format varies across sing-box versions); instead we let it
     # populate /proxies/{name}/history and read that as before.
+    #
+    # timeout=12000 (per-probe): Path A's full request through CF→server
+    # →server-egress→gstatic can take 5-7s when CF Anycast lands the
+    # client in a far PoP (FRA from China). 12s gives a generous margin
+    # so a slow-but-working path doesn't show up as "no data".
+    # --max-time 30: outer cap for the whole API call (probes run in
+    # parallel, so total ≈ slowest probe + a few hundred ms of overhead).
     local probe_url='https%3A%2F%2Fwww.gstatic.com%2Fgenerate_204'
-    if ! curl -s --max-time 15 \
-            "$api/group/urltest/delay?url=$probe_url&timeout=5000" >/dev/null 2>&1; then
+    if ! curl -s --max-time 30 \
+            "$api/group/urltest/delay?url=$probe_url&timeout=12000" >/dev/null 2>&1; then
         log "  (group healthcheck failed; reading existing history instead)"
     fi
 
