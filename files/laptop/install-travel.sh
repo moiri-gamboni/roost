@@ -138,14 +138,22 @@ else
     cfst_url="https://github.com/XIU2/CloudflareSpeedTest/releases/download/$CFST_VERSION/cfst_linux_$cfst_arch.tar.gz"
     cfst_tmp=$(mktemp -d)
     trap 'rm -rf "$cfst_tmp"' EXIT
-    curl -fsSL "$cfst_url" -o "$cfst_tmp/cfst.tgz"
+    echo "      downloading $cfst_url"
+    # --progress-bar shows a single line that updates in place; -fL keeps the
+    # error-on-4xx + follow-redirects behavior of the previous -fsSL form.
+    curl -fL --progress-bar "$cfst_url" -o "$cfst_tmp/cfst.tgz"
     if [ -n "$cfst_sha" ]; then
+        echo "      verifying SHA256"
         actual=$(sha256sum "$cfst_tmp/cfst.tgz" | cut -d' ' -f1)
         if [ "$actual" != "$cfst_sha" ]; then
             echo "  [!] cfst SHA256 mismatch — expected $cfst_sha, got $actual" >&2
             exit 1
         fi
+        echo "      SHA256 OK"
+    else
+        echo "      no pinned SHA256 for $cfst_arch (HTTPS-only verification)"
     fi
+    echo "      extracting binary + ip.txt to /usr/local/share/cfst/"
     sudo install -d -m 0755 /usr/local/share/cfst
     # Extract just the binary + ip.txt; skip the bundled shell helper, ipv6.txt
     # (we don't probe v6 yet), and the Chinese docs.
