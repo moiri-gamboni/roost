@@ -10,6 +10,17 @@
 # must NOT be reachable from outside (otherwise a probe that bypasses xray
 # would hit Caddy directly and reveal the discrepancy).
 
-127.0.0.1:8081 {
+http://:8081 {
+    # `bind 127.0.0.1` overrides the Caddyfile-global `default_bind
+    # $TAILSCALE_IP`, otherwise the listener would land on the Tailscale
+    # IP and xray's fallback dial-target (127.0.0.1:8081) would have
+    # nothing to talk to.
+    bind 127.0.0.1
+    # Site address `http://:8081` (port-only, no host) matches ANY Host
+    # header. xray's fallback forwards the post-TLS stream verbatim, so
+    # the request lands here with Host: <whatever-the-client-sent> (e.g.
+    # static.<DOMAIN>). Without the wildcard host, Caddy returns 200
+    # with empty body for non-matching hosts. http:// prefix also
+    # disables Caddy's auto-HTTPS (cert is served by xray, not here).
     respond "It works." 200
 }

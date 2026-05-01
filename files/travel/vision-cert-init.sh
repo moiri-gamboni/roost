@@ -57,7 +57,16 @@ fi
 # + GitHub-release-tracked update discipline of the rest of the stack).
 "$ACME_BIN" --upgrade --auto-upgrade 0 >/dev/null
 
-install -d -m 0700 -o root -g root "$CERT_HOME" "$CONFIG_HOME"
+# 0750 group=xray so the xray service user can traverse the cert dir to
+# read fullchain.cer + private.key (cert files themselves are 0640 group=xray).
+# acme.sh's --config-home contains account creds + the CF token; keep that
+# 0700 root. install -d only sets perms on initial creation; explicit chmod
+# + chgrp afterward make it idempotent for pre-existing dirs (matters when
+# upgrading from earlier versions of this script that created CERT_HOME 0700).
+install -d -m 0750 -o root -g xray "$CERT_HOME"
+chgrp xray "$CERT_HOME"
+chmod 0750 "$CERT_HOME"
+install -d -m 0700 -o root -g root "$CONFIG_HOME"
 
 # Register the LE account if not already done. acme.sh defaults to ZeroSSL;
 # pin --server letsencrypt to keep the CA explicit (and to comply with the
