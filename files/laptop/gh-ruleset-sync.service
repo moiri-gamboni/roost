@@ -6,5 +6,8 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=${USERNAME}
+# ROOST_NTFY_URL + ROOST_NTFY_TOKEN populated by install-gh-ruleset-sync.sh
+# (token from server's ~/services/.ntfy-token; ntfy denies anonymous posts).
+# 0600 root file so the admin-scoped token isn't visible to non-root.
+EnvironmentFile=/etc/gh-ruleset-sync.env
 ExecStart=/usr/local/bin/gh-ruleset-sync
-Environment=ROOST_NTFY_URL=${NTFY_URL}
