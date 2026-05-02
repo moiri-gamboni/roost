@@ -59,10 +59,27 @@ fetch_config() {
         "bash -lc 'roost-net client laptop'") || return 1
     [ -n "$new_config" ] || return 1
     install -d -m 0700 "$(dirname "$CONFIG")"
-    # Write to .new with mode 0600 (preserves the secrecy of the SS-2022
-    # password and UUID baked into the config).
+    # Write to .new with mode 0600 — umask 077 in the subshell sets it; the
+    # SS-2022 password and UUID baked into the config are sensitive.
     ( umask 077 && printf '%s\n' "$new_config" > "${CONFIG}.new" )
-    chmod 0600 "${CONFIG}.new"
+    # Inject tun.exclude_uid so cfst-probe's traffic bypasses the tun and
+    # exits via the underlying interface — needed by 'roost-travel ips' to
+    # measure laptop->CF latency directly. Sing-box's exclude_uid rules
+    # outrank strict_route's blocking rules, so the bypass works under
+    # strict_route. No-op for legacy installs pre-dating install-travel.sh
+    # adding the cfst-probe user.
+    if getent passwd cfst-probe >/dev/null && command -v jq >/dev/null; then
+        local cfst_uid
+        cfst_uid=$(id -u cfst-probe)
+        if ( umask 077 && jq --argjson uid "$cfst_uid" \
+                '.inbounds[0].exclude_uid = [$uid]' \
+                "${CONFIG}.new" > "${CONFIG}.new.tmp" ); then
+            mv "${CONFIG}.new.tmp" "${CONFIG}.new"
+        else
+            rm -f "${CONFIG}.new.tmp"
+            echo "WARNING: jq exclude_uid injection failed; 'roost-travel ips' will refuse until config is regenerated." >&2
+        fi
+    fi
     # Validate before swap. Failure = leave old config alone, no orphan.
     if ! sing-box check -c "${CONFIG}.new" >&2; then
         echo "Rendered config failed sing-box check; keeping previous config." >&2
@@ -79,10 +96,6 @@ fetch_config() {
 # cmd_on after a sing-box restart so the subsequent cmd_status print
 # isn't a misleading "unreachable" snapshot of the cold-start window.
 wait_for_tunnel() {
-    # Two `local` statements: bash evaluates ALL right-hand-sides on a
-    # single-line `local a=... b=...` before any of them get assigned, so
-    # referencing `timeout` in the deadline expression on the same line
-    # tripped `set -u` ("unbound variable").
     local timeout="${1:-30}"
     local deadline=$(( $(date +%s) + timeout ))
     printf 'Waiting for tunnel...'
@@ -222,44 +235,61 @@ cmd_ips() {
     [ -n "$target" ] || { echo "ROOST_SSH_TARGET not set in $ENV_FILE" >&2; exit 1; }
     command -v cfst >/dev/null \
         || { echo "cfst not installed; rerun install-travel.sh" >&2; exit 1; }
+    command -v jq >/dev/null \
+        || { echo "jq not installed; rerun install-travel.sh" >&2; exit 1; }
+    getent passwd cfst-probe >/dev/null \
+        || { echo "cfst-probe user missing; rerun install-travel.sh" >&2; exit 1; }
+
+    # cfst-probe's UID is in tun.exclude_uid (injected by fetch_config), so
+    # `sudo -u cfst-probe cfst` probes the underlying network directly.
+    # Without the bypass, all CF IPs would report uniform tunnel latency.
+    local cfst_uid
+    cfst_uid=$(id -u cfst-probe)
+
+    # Confirm the live config carries the bypass — guards the case where
+    # fetch_config ran before cfst-probe existed (or jq injection failed).
+    if ! jq -e --argjson uid "$cfst_uid" \
+            '(.inbounds[0].exclude_uid // []) | index($uid) != null' \
+            "$CONFIG" >/dev/null; then
+        echo "Config $CONFIG doesn't exclude cfst-probe (uid $cfst_uid) from tun." >&2
+        echo "Run 'roost-travel config' to refresh, then retry." >&2
+        exit 1
+    fi
 
     local n_top=5
     local ip_list=/usr/local/share/cfst/ip.txt
-    local out=/tmp/cfst-result.csv
     [ -r "$ip_list" ] || { echo "$ip_list missing; rerun install-travel.sh" >&2; exit 1; }
+    # Per-run unique name avoids racing a stale cfst-probe-owned file in
+    # sticky /tmp. cfst creates the file with the system-default umask
+    # (0644 from /etc/login.defs); we read it then leave it for
+    # systemd-tmpfiles to clean (the laptop user can't unlink files owned
+    # by cfst-probe in /tmp's sticky dir).
+    local out
+    out=$(mktemp -u --suffix=.csv /tmp/cfst-result-XXXXXX)
 
-    # cfst measures the *underlying network's* reachability to CF Anycast IPs.
-    # If the tunnel is up, sing-box's tun captures cfst's probes and routes
-    # them via urltest -> server -> CF, so we'd measure laptop->server->CF
-    # uniform latency (~800ms) and blocked CF IPs would falsely appear live.
-    # Stop the tunnel before probing, restart after (and if the user's
-    # session is interrupted mid-probe, the EXIT trap still restarts it).
-    local was_active=0
-    if systemctl is-active --quiet "$UNIT" 2>/dev/null; then
-        was_active=1
-        echo "Stopping tunnel temporarily so cfst probes the underlying network..."
-        sudo systemctl stop "$UNIT"
-        # shellcheck disable=SC2064  # capture $was_active by value, intentional
-        trap "[ '$was_active' = 1 ] && sudo systemctl start '$UNIT' >/dev/null 2>&1" EXIT
+    echo "Probing CF Anycast IPs via underlying network (1-3 min, tunnel stays up)..."
+    # cfst writes log files (ip.txt cache, debug) to CWD; cd to /tmp.
+    # -dd disables download speed test (latency-only is enough for proxy use).
+    # -p 0 suppresses cfst's own stdout summary; we parse the CSV ourselves.
+    # -dn keeps top N by latency.
+    if ! ( cd /tmp && sudo -u cfst-probe cfst -tp 443 -dd -p 0 -dn "$n_top" -f "$ip_list" -o "$out" ); then
+        echo "cfst probe failed (binary error or interrupt)." >&2
+        exit 1
     fi
 
-    echo "Probing CF Anycast IPs from this network (1-3 min)..."
-    # cfst writes log files (ip.txt cache, debug) to CWD; cd to /tmp.
-    # -dd disables download speed test (we only need latency for proxy use).
-    # -p 0 suppresses cfst's own stdout summary (we parse the CSV ourselves).
-    # -dn $n_top keeps top N by latency in the CSV.
-    ( cd /tmp && cfst -tp 443 -dd -p 0 -dn "$n_top" -f "$ip_list" -o "$out" )
-
     if [ ! -s "$out" ]; then
-        echo "cfst returned no working IPs (full CF block on this network?)." >&2
-        exit 1
+        # Hostile-network case: cfst couldn't reach any CF IP. Existing
+        # cf-preferred-ip stays in place; urltest already routes around
+        # dead IPs at 1m granularity. Exit 0 so the timer's OnFailure
+        # doesn't fire for an expected condition.
+        echo "cfst returned no working IPs (full CF block on this network?); keeping existing cf-preferred-ip." >&2
+        exit 0
     fi
 
     # CSV header: 'IP 地址,已发送,...'; data rows start at line 2. Column 1 = IP.
     # Single awk pass instead of `tail | cut | head -N` — head closes its stdin
-    # after N lines, which gives the upstream `cut` SIGPIPE; combined with
-    # `set -o pipefail` that kills the script. awk reads to EOF (or its own
-    # exit), so no broken-pipe failures.
+    # after N lines, which SIGPIPEs the upstream `cut`; with `set -o pipefail`
+    # that kills the script. awk reads to EOF, no broken-pipe failures.
     local top_ips
     top_ips=$(awk -F, -v n="$n_top" 'NR > 1 && NR <= n+1 {print $1}' "$out")
     [ -n "$top_ips" ] || { echo "cfst CSV had header but no rows" >&2; exit 1; }
@@ -275,23 +305,20 @@ cmd_ips() {
         || { echo "ssh push failed" >&2; exit 1; }
     echo "Pushed."
 
-    # Fetch the re-rendered sing-box config (now includes path-a-ipN for our
-    # top IPs) BEFORE starting the tunnel, so the start uses the new config
-    # directly — avoids stop->start-old->restart-new (one less restart, less
-    # downtime). Trap stays armed in case fetch_config fails.
     echo
     echo "Fetching updated sing-box config..."
     if ! fetch_config; then
-        echo "Config fetch failed; trap will restart tunnel with previous config." >&2
+        echo "Config fetch failed; cf-preferred-ip on server is updated but laptop config is stale." >&2
         exit 1
     fi
     echo "Config written to $CONFIG."
 
-    # Clear the trap — we're now responsible for the final tunnel state.
-    trap - EXIT INT TERM
-    if [ "$was_active" = 1 ]; then
-        echo "Starting tunnel with new config..."
-        sudo systemctl start "$UNIT"
+    # sing-box has no in-process config reload, so a brief restart (~3-15s)
+    # is needed to pick up the new path-a-ipN outbounds. Passwordless via
+    # /etc/sudoers.d/roost-travel-cfst.
+    if systemctl is-active --quiet "$UNIT" 2>/dev/null; then
+        echo "Restarting tunnel to load new IPs..."
+        sudo systemctl restart "$UNIT"
         wait_for_tunnel 30 || true
     else
         echo "Tunnel was off; new config saved for next 'roost-travel on'."

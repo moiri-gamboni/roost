@@ -52,9 +52,7 @@ SOURCES
     ok "sing-box installed"
 fi
 
-# `hash -r` clears bash's PATH cache so the next `command -v` sees the freshly
-# installed binary (otherwise a previously-cached missing entry sticks).
-hash -r
+hash -r  # invalidate cached PATH lookups
 
 step "Disabling the package's default sing-box.service (we use our own)"
 if systemctl list-unit-files sing-box.service 2>/dev/null | grep -q sing-box.service; then
@@ -65,10 +63,7 @@ else
 fi
 
 step "Installing /usr/local/bin/roost-travel wrapper"
-# Symlink (not copy) so `git pull` in the repo immediately updates the
-# installed binary. Otherwise a fix to roost-travel.sh requires re-running
-# install-travel.sh (easy to forget — the user just sees stale behaviour).
-# `ln -sf` overwrites both symlinks and prior plain-file installs.
+# Symlink so `git pull` immediately updates the installed wrapper.
 sudo ln -sfT "$SCRIPT_DIR/roost-travel.sh" /usr/local/bin/roost-travel
 ok "wrapper installed (symlink → $SCRIPT_DIR/roost-travel.sh)"
 
@@ -172,6 +167,48 @@ else
     trap - EXIT
     ok "cfst $CFST_VERSION installed (binary: /usr/local/bin/cfst, ip list: /usr/local/share/cfst/ip.txt)"
 fi
+
+step "Installing jq (required by 'roost-travel ips' for exclude_uid injection)"
+if command -v jq >/dev/null 2>&1; then
+    skip "jq already installed"
+else
+    sudo apt-get install -y jq
+    ok "jq installed"
+fi
+
+step "Creating cfst-probe system user (cfst runs as this user; tun excludes it)"
+# Dedicated UID for the cfst probe runs. 'roost-travel ips' invokes
+# 'sudo -u cfst-probe cfst ...'; sing-box's tun.exclude_uid (injected into
+# the rendered config by fetch_config) sends this UID's traffic via the
+# underlying network instead of the tunnel. End result: cfst can probe
+# CF Anycast latency without the tunnel needing to be down.
+if id cfst-probe >/dev/null 2>&1; then
+    skip "cfst-probe user already exists (uid: $(id -u cfst-probe))"
+else
+    sudo useradd --system --no-create-home --shell /usr/sbin/nologin cfst-probe
+    ok "created cfst-probe (uid: $(id -u cfst-probe))"
+fi
+
+step "Installing /etc/sudoers.d/roost-travel-cfst (NOPASSWD for cfst + tunnel restart)"
+# Two narrow rules: run cfst as cfst-probe (needed for both interactive and
+# headless invocation), and restart roost-travel.service (sing-box has no
+# in-process reload, so post-probe needs a bounce). visudo -cf validates
+# BEFORE install — a malformed drop-in breaks ALL sudo.
+sudoers_tmp=$(mktemp)
+cat > "$sudoers_tmp" <<EOF
+# Installed by install-travel.sh. Lets 'roost-travel ips' run cfst as
+# cfst-probe and restart the tunnel without a sudo prompt.
+$USERNAME ALL=(cfst-probe) NOPASSWD: /usr/local/bin/cfst
+$USERNAME ALL=(root) NOPASSWD: /usr/bin/systemctl restart roost-travel.service
+EOF
+if ! sudo visudo -cf "$sudoers_tmp" >/dev/null; then
+    echo "  [!] sudoers drop-in failed visudo validation; not installing" >&2
+    rm -f "$sudoers_tmp"
+    exit 1
+fi
+sudo install -Dm0440 -o root -g root "$sudoers_tmp" /etc/sudoers.d/roost-travel-cfst
+rm -f "$sudoers_tmp"
+ok "sudoers drop-in installed (validated)"
 
 step "Fetching sing-box config from the server (roost-travel config)"
 /usr/local/bin/roost-travel config
