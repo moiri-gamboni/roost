@@ -1,0 +1,15 @@
+[Unit]
+Description=Daily refresh of Cloudflare preferred IPs for roost-travel
+
+[Timer]
+# 04:00 local + up to 1h random delay = 04:00-05:00. Pre-dawn so the brief
+# (~5s) tunnel restart at the end of the run lands while nobody on this
+# laptop is using it. Friends connected to the server's xray are unaffected
+# either way (the restart is the LAPTOP's sing-box, not the server's xray).
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=1h
+# Catches missed runs (laptop asleep at 04:00, etc.) on next wake.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

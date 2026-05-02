@@ -1,0 +1,9 @@
+[Unit]
+Description=Notify ntfy on cf-ip-refresh failure for %i
+
+[Service]
+Type=oneshot
+# %i is the failed unit's name (passed via OnFailure=ntfy-cf-ip-refresh@%n
+# in cf-ip-refresh.service). NTFY_URL is baked in at install time by
+# install-cf-ip-refresh.sh from the server's Tailscale IP.
+ExecStart=/usr/bin/curl -fsS -X POST -H "Title: cf-ip-refresh FAILED" -H "Priority: high" -H "Tags: warning" --data "Unit %i failed; check 'journalctl -u %i' for details." ${NTFY_URL}

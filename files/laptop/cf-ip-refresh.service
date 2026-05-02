@@ -1,0 +1,23 @@
+[Unit]
+Description=Refresh Cloudflare preferred IPs for roost-travel (cfst probe)
+Documentation=https://github.com/moiri-gamboni/roost
+# Need general internet for cfst's TCP-443 probes against CF Anycast IPs.
+After=network-online.target
+Wants=network-online.target
+# Real failures (cfst binary error, ssh push, sing-box restart) exit non-zero
+# and trigger this. The "no working IPs" hostile-network case is treated as
+# exit 0 by cmd_ips so it doesn't ntfy on every run from a blocked network.
+OnFailure=ntfy-cf-ip-refresh@%n.service
+
+[Service]
+Type=oneshot
+User=${USERNAME}
+# cmd_ips reads $HOME/.config/roost-travel/env (ROOST_SSH_TARGET, DOMAIN) and
+# writes $HOME/.config/sing-box/travel.json. systemd doesn't set HOME for non-
+# login services even with User=, so set it explicitly. (%h would expand to
+# /root for system units, not the User='s home — don't use it here.)
+Environment=HOME=/home/${USERNAME}
+# 'roost-travel ips' runs in bypass mode (cfst-probe's UID is excluded from
+# the tun). NOPASSWD sudo for cfst + the post-probe restart comes from
+# /etc/sudoers.d/roost-travel-cfst (install-travel.sh).
+ExecStart=/usr/local/bin/roost-travel ips
