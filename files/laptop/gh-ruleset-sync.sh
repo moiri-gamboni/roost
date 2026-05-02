@@ -15,7 +15,14 @@ err()  { logger -t "$LOG_TAG" -p user.err "$*"; echo "ERROR: $*" >&2; }
 
 alert() {
     [ -z "$NTFY_URL" ] && return 0
+    # ntfy server runs auth-default-access=deny-all; without the token,
+    # posts get 403'd and curl swallows it via `|| true`. install-gh-
+    # ruleset-sync.sh fetches the token from server's ~/services/.ntfy-
+    # token and writes it to /etc/gh-ruleset-sync.env (EnvironmentFile=).
+    local -a auth=()
+    [ -n "${ROOST_NTFY_TOKEN:-}" ] && auth=(-H "Authorization: Bearer $ROOST_NTFY_TOKEN")
     curl -sS -o /dev/null --max-time 10 \
+        "${auth[@]}" \
         -H "Title: gh-ruleset-sync" \
         -H "Tags: shield" \
         -d "$1" "$NTFY_URL" || true
@@ -31,6 +38,7 @@ Skips forks and archived repos. Idempotent.
 Environment:
   ROOST_RULESET_FILE  Path to ruleset JSON (default: /etc/roost/rulesets/protect-main.json)
   ROOST_NTFY_URL      ntfy endpoint for failure alerts (default: unset, no alerts)
+  ROOST_NTFY_TOKEN    Bearer token for ntfy auth (required; server denies anonymous posts)
 EOF
 }
 
