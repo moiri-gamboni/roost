@@ -1,5 +1,6 @@
 #!/bin/bash
 # Health check: services, disk, swap, memory, Tailscale, Cloudflare.
+HOOK_DROP_TO_SUDO_USER=1
 source "$(dirname "$0")/_hook-env.sh"
 
 FAILURES=""

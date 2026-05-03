@@ -15,6 +15,7 @@
 #   2026/04/30 00:00:39.346870 from <SRC_IP>:<PORT> accepted <DST>:<PORT> [<INBOUND> -> <OUTBOUND>]
 # We grep for "[vision -> " to filter Vision-tagged lines and pull the SRC_IP.
 set -uo pipefail
+HOOK_DROP_TO_SUDO_USER=1
 source "$(dirname "$0")/_hook-env.sh"
 
 ACCESS_LOG=/var/log/xray/access.log
