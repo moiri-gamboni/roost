@@ -2,6 +2,20 @@
 # Source this at the top of every hook that needs ntfy, JSON input, or logging.
 set -uo pipefail
 
+# --- Drop privileges if invoked via sudo as root (opt-in) ---
+# Hooks designed to run as the cron user (health-check, auto-update, etc.) can
+# set HOOK_DROP_TO_SUDO_USER=1 *before* sourcing this file. If they get invoked
+# via `sudo` for ad-hoc testing, re-exec under the original user so $HOME, the
+# ntfy URL/topic ($whoami), the token path, and the dedup runtime dir
+# (/tmp/.ntfy-$UID) all match the cron-context state. Without this, a sudo
+# invocation talks to claude-root (no ACL, 401 fails ntfy_send) and writes
+# dedup state under /tmp/.ntfy-0 (root-owned, breaks next cron write under
+# /tmp/.ntfy-1000). Scripts that legitimately need root context (roost-net.sh,
+# ram-monitor.sh, cloudflare-assemble.sh) leave the flag unset and run as-is.
+if [ "${HOOK_DROP_TO_SUDO_USER:-0}" = "1" ] && [ "$EUID" = "0" ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+    exec sudo -u "$SUDO_USER" -E -- "$0" "$@"
+fi
+
 # --- Hook name (used as journald tag: roost/<name>) ---
 _HOOK_NAME="$(basename "${BASH_SOURCE[1]:-unknown}" .sh)"
 _HOOK_TAG="roost/$_HOOK_NAME"

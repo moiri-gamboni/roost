@@ -1,5 +1,6 @@
 #!/bin/bash
 # Run a Claude Code task in the current directory. Called by scheduled-task.sh.
+HOOK_DROP_TO_SUDO_USER=1
 source "$(dirname "$0")/_hook-env.sh"
 
 TASKFILE="$1"; PROJECT="$2"
