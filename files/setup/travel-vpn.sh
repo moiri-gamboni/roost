@@ -90,6 +90,7 @@ install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton-keepalive.servi
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton-keepalive.timer"          /etc/systemd/system/proton-keepalive.timer
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton-routing-ensure.service"   /etc/systemd/system/proton-routing-ensure.service
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton-routing-ensure.timer"     /etc/systemd/system/proton-routing-ensure.timer
+install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/proton-routing-after-networkd.service" /etc/systemd/system/proton-routing-after-networkd.service
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/vision-cert-renew.service"       /etc/systemd/system/vision-cert-renew.service
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/vision-cert-renew.timer"         /etc/systemd/system/vision-cert-renew.timer
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/ntfy-cert-renew@.service"        /etc/systemd/system/ntfy-cert-renew@.service

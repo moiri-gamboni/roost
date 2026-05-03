@@ -149,6 +149,7 @@ files/travel/proton-keepalive.service|/etc/systemd/system/proton-keepalive.servi
 files/travel/proton-keepalive.timer|/etc/systemd/system/proton-keepalive.timer|plain|daemon-reload
 files/travel/proton-routing-ensure.service|/etc/systemd/system/proton-routing-ensure.service|plain|daemon-reload
 files/travel/proton-routing-ensure.timer|/etc/systemd/system/proton-routing-ensure.timer|plain|daemon-reload
+files/travel/proton-routing-after-networkd.service|/etc/systemd/system/proton-routing-after-networkd.service|plain|daemon-reload
 files/travel/apt-roost-travel.conf|/etc/apt/apt.conf.d/99-roost-travel.conf|plain|
 files/travel/wg-proton.service.d/roost.conf|/etc/systemd/system/wg-quick@wg-proton.service.d/roost.conf|plain|daemon-reload
 files/travel/proton.conf.example|/etc/roost-travel/proton.conf.example|plain|
