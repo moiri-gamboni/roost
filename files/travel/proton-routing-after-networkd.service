@@ -1,0 +1,21 @@
+[Unit]
+Description=Re-apply Proton policy-routing after systemd-networkd start/restart
+ConditionPathExists=/sys/class/net/wg-proton
+# `needrestart` (invoked by apt's own DPkg::Post-Invoke during unattended /
+# auto-upgrades) issues `systemctl restart systemd-networkd` after iproute2 or
+# kernel package upgrades. systemd-networkd's restart flushes ip rules it
+# doesn't own (priority 50/140/150/200/300 — our policy-routing rules), without
+# touching iptables. The dpkg Post-Invoke hook (99-roost-travel.conf) fires
+# *before* needrestart, so its ensure call gets wiped seconds later. This unit
+# is WantedBy=systemd-networkd.service, so each networkd start/restart pulls
+# it in *after* networkd is up, and ExecStart re-applies the rules. Idempotent
+# canary in `proton-routing.sh ensure` makes this a no-op when state is intact.
+After=systemd-networkd.service wg-quick@wg-proton.service
+Wants=systemd-networkd.service
+
+[Service]
+Type=oneshot
+ExecStart=/etc/roost-travel/proton-routing.sh ensure
+
+[Install]
+WantedBy=systemd-networkd.service

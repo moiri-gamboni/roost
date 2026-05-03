@@ -250,11 +250,17 @@ cmd_vpn() {
             }
             sudo systemctl enable --now proton-keepalive.timer
             sudo systemctl enable --now proton-routing-ensure.timer
+            # WantedBy=systemd-networkd.service: pulled in on every networkd
+            # start/restart to re-apply policy-routing ip rules that networkd
+            # flushes on restart (e.g. iproute2 upgrade triggers needrestart →
+            # `systemctl restart systemd-networkd` → ip rules gone).
+            sudo systemctl enable proton-routing-after-networkd.service
             echo "on" | sudo tee "$STATE_DIR/vpn" >/dev/null
             ntfy_send -t "VPN ON" "Egress: $ip"
             echo "VPN mode: ON (egress $ip)"
             ;;
         off)
+            sudo systemctl disable proton-routing-after-networkd.service || true
             sudo systemctl disable --now proton-routing-ensure.timer || true
             sudo systemctl disable --now proton-keepalive.timer || true
             sudo systemctl disable --now wg-quick@wg-proton || true
