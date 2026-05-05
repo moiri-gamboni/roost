@@ -289,7 +289,7 @@ Prerequisites: `gh` CLI authenticated so `gh auth token` succeeds non-interactiv
 1. **Tailscale**: Install from F-Droid, join your tailnet
 2. **Termux**: Install from F-Droid (not Google Play)
    - On GrapheneOS you may need "exploit protection compatibility mode" for Termux
-   - `pkg install et openssh` (the termux package is named `et`, not `eternalterminal`)
+   - `pkg install et openssh`
    - Connect (drops into the tmux window picker; `ROOST_CLIENT` gives stable session rejoining across reconnects):
      ```bash
      et <username>@<tailscale-ip> --command='bash -lc "ROOST_CLIENT=pixel agents"'
