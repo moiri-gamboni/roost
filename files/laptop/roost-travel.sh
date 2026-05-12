@@ -36,7 +36,7 @@ resolve_hetzner_ipv4() {
 
 usage() {
     cat <<EOF
-Usage: roost-travel {on|off|status|logs|config|ips}
+Usage: roost-travel {on|off|status|logs|config|ips|vpn}
 
   on       Start the tunnel (systemd). Best-effort config refresh first:
            falls back to the existing config if the server is unreachable.
@@ -49,6 +49,8 @@ Usage: roost-travel {on|off|status|logs|config|ips}
            the top N (latency-ranked) to the server's cf-preferred-ip, then
            refresh sing-box config. Run when CF reachability changes (new
            network, IPs blocked, etc.). Takes 1-3 minutes.
+  vpn      Toggle server-side Proton egress (forwards to roost-net vpn over
+           SSH). Subcommands: on, off.
 EOF
 }
 
@@ -230,6 +232,33 @@ cmd_logs() {
     sudo journalctl -u "$UNIT" -f -n 50
 }
 
+# Server-side VPN toggle: forwards to `roost-net vpn <on|off>` over SSH.
+# roost-net elevates internally (sudo systemctl for wg-quick@wg-proton etc.)
+# and the server's sudoers grant the user passwordless sudo, so no TTY /
+# `-t` is needed here. bash -lc puts ~/bin on PATH (login shell sources
+# .profile on Ubuntu). ConnectTimeout=10 keeps a stale Tailscale state from
+# hanging the laptop indefinitely. Only `on`/`off` are passthrough-validated
+# — `profile` and other roost-net vpn subcommands are reachable via raw ssh.
+cmd_vpn() {
+    local target="${ROOST_SSH_TARGET:-}"
+    [ -n "$target" ] || { echo "ROOST_SSH_TARGET not set in $ENV_FILE" >&2; exit 1; }
+    case "${1:-}" in
+        on|off)
+            ssh -o ConnectTimeout=10 "$target" "bash -lc 'roost-net vpn $1'"
+            ;;
+        "")
+            echo "Usage: roost-travel vpn {on|off}" >&2
+            exit 2
+            ;;
+        *)
+            echo "Usage: roost-travel vpn {on|off}" >&2
+            echo "For other roost-net vpn subcommands (e.g. profile), run:" >&2
+            echo "  ssh $target roost-net vpn $*" >&2
+            exit 2
+            ;;
+    esac
+}
+
 cmd_config() {
     local sb_version
     sb_version=$(dpkg-query -W -f='${Version}' sing-box 2>/dev/null || echo unknown)
@@ -363,6 +392,7 @@ case "${1:-}" in
     logs)              cmd_logs ;;
     config)            cmd_config ;;
     ips)               cmd_ips ;;
+    vpn)               shift; cmd_vpn "$@" ;;
     help|-h|--help|'') usage ;;
     *)                 usage; exit 2 ;;
 esac
