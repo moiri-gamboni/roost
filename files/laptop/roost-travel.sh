@@ -13,12 +13,26 @@ if [ -f "$ENV_FILE" ]; then
     . "$ENV_FILE"
 fi
 
-# Hetzner public IPv4: derive from `travel-direct.$DOMAIN` at runtime so the
-# code is fork-portable. HETZNER_PUBLIC_IPV4 env var (or .env override sourced
-# above) wins if explicitly set; otherwise resolve via DNS. Used by `status`
-# to flag "egress is going through the tunnel" vs Proton; missing/empty just
-# means the annotation falls through to the generic "external" message.
-HETZNER_IPV4="${HETZNER_PUBLIC_IPV4:-$(getent ahostsv4 "travel-direct.${DOMAIN:-}" 2>/dev/null | awk 'NR==1 {print $1}')}"
+# Hetzner public IPv4: HETZNER_PUBLIC_IPV4 env var (or .env override sourced
+# above) wins if set; otherwise derive from `travel-direct.$DOMAIN` so the code
+# is fork-portable. Used by `status` to flag "egress is going through the
+# tunnel" vs Proton; missing/empty just means the annotation falls through to
+# the generic "external" message.
+#
+# Lazy + bounded: running getent at script load would let an unreachable
+# resolver (e.g. tun-only DNS with no internet) hang status/on/off for the
+# system resolver's full retry budget before any output prints.
+HETZNER_IPV4=""
+resolve_hetzner_ipv4() {
+    [ -z "$HETZNER_IPV4" ] || return 0
+    if [ -n "${HETZNER_PUBLIC_IPV4:-}" ]; then
+        HETZNER_IPV4="$HETZNER_PUBLIC_IPV4"
+        return 0
+    fi
+    [ -n "${DOMAIN:-}" ] || return 0
+    HETZNER_IPV4=$(timeout 3 getent ahostsv4 "travel-direct.${DOMAIN}" 2>/dev/null \
+        | awk 'NR==1 {print $1}') || true
+}
 
 usage() {
     cat <<EOF
@@ -48,6 +62,9 @@ EOF
 # broken config that the systemd unit then loops on with Restart=on-failure.
 # It must live in fetch_config (not in cmd_config) so cmd_on gets the same
 # protection — otherwise cmd_on's invocation would leave orphan .new files.
+# `sing-box check` validates JSON schema and tag references, but does NOT
+# catch semantic bugs: empty urltest pools, process matchers that don't fire,
+# or routes that all fail at runtime. Those need behavioural tests.
 fetch_config() {
     local target="${ROOST_SSH_TARGET:-}" new_config
     [ -n "$target" ] || return 1
@@ -118,10 +135,9 @@ cmd_status() {
     else
         state="OFF"
     fi
-    # Single attempt — fast for standalone `roost-travel status`. Callers
-    # that want to wait for the tunnel to come up after restart use
-    # wait_for_tunnel before invoking cmd_status.
-    egress=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || echo unreachable)
+    # Print state first — local-only, instant — so no-internet runs always
+    # show something useful even while the egress probe is waiting out its
+    # timeout.
     echo "Tunnel: $state"
     # Selected urltest path + its last-probe latency, when tunnel is up.
     # Pulled from sing-box's clash API at 127.0.0.1:47200; fails silently if
@@ -145,15 +161,23 @@ cmd_status() {
             fi
         fi
     fi
+    # Single attempt — fast for standalone `roost-travel status`. Callers
+    # that want to wait for the tunnel to come up after restart use
+    # wait_for_tunnel before invoking cmd_status. `timeout` wrapper is
+    # belt-and-braces — older curl can ignore --max-time during blocking DNS.
+    egress=$(timeout 6 curl -s --max-time 5 https://api.ipify.org 2>/dev/null || echo unreachable)
     echo "Egress: $egress"
     # Server vpn=off → egress is our Hetzner IP. Server vpn=on → egress is
     # whatever Proton profile is active (varies per location). Anything else
     # reachable is almost certainly Proton; a real leak would bypass sing-box
     # entirely and show the laptop's ISP IP, which we can't pre-enumerate.
-    if [ "$state" = "ON" ] && [ "$egress" = "$HETZNER_IPV4" ]; then
-        echo "  (Hetzner — roost direct, server vpn=off)"
-    elif [ "$state" = "ON" ] && [ "$egress" != "unreachable" ]; then
-        echo "  (external — via roost + Proton, server vpn=on)"
+    if [ "$state" = "ON" ] && [ "$egress" != "unreachable" ]; then
+        resolve_hetzner_ipv4
+        if [ -n "$HETZNER_IPV4" ] && [ "$egress" = "$HETZNER_IPV4" ]; then
+            echo "  (Hetzner — roost direct, server vpn=off)"
+        else
+            echo "  (external — via roost + Proton, server vpn=on)"
+        fi
     fi
 }
 
@@ -163,6 +187,7 @@ cmd_on() {
         was_active=1
     fi
 
+    echo "Refreshing config from server (10s timeout)..."
     if fetch_config; then
         fetched=1
         echo "Config refreshed from server."
@@ -189,13 +214,16 @@ cmd_on() {
 }
 
 cmd_off() {
-    # disable --now = stop + disable. Both toggled in lockstep.
+    # disable --now = stop + disable. Both toggled in lockstep. systemctl is
+    # synchronous — exit 0 means the unit is stopped, so we can trust the
+    # state and skip cmd_status. Keeps `off` network-free; the user just
+    # asked for the tunnel down, they don't need a 5s egress probe to
+    # confirm it.
     if ! sudo systemctl disable --now "$UNIT"; then
         echo "Service failed to stop cleanly. Inspect with: sudo journalctl -u $UNIT -n 30" >&2
         exit 1
     fi
-    sleep 1
-    cmd_status
+    echo "Tunnel: OFF"
 }
 
 cmd_logs() {
@@ -206,9 +234,11 @@ cmd_config() {
     local sb_version
     sb_version=$(dpkg-query -W -f='${Version}' sing-box 2>/dev/null || echo unknown)
     echo "[sing-box ${sb_version} on laptop]"
+    echo "Fetching config from ${ROOST_SSH_TARGET:-<unset>} (10s timeout)..."
     if ! fetch_config; then
         echo "Failed to fetch config from '${ROOST_SSH_TARGET:-<unset>}'." >&2
         echo "Checks: Tailscale up? roost-net installed on server? $ENV_FILE present?" >&2
+        echo "If reachable, run 'ssh ${ROOST_SSH_TARGET:-<target>} roost-net client laptop' to see the renderer's stderr." >&2
         exit 1
     fi
     echo "Config written to $CONFIG."
