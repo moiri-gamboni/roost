@@ -1,32 +1,28 @@
 {
+  "cleanupPeriodDays": 99999,
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_CODE_EFFORT_LEVEL": "max",
-    "ENABLE_PROMPT_CACHING_1H": "1"
+    "ENABLE_PROMPT_CACHING_1H": "1",
+    "CLAUDE_CODE_SCROLL_SPEED": "1"
   },
-  "cleanupPeriodDays": 99999,
-  "autoCompactEnabled": false,
-  "autoMemoryEnabled": false,
-  "effortLevel": "high",
-  "tui": "fullscreen",
-  "skipAutoPermissionPrompt": true,
+  "permissions": {
+    "allow": [
+      "Read",
+      "WebSearch",
+      "WebFetch",
+      "mcp__exa__web_search_exa",
+      "mcp__exa__web_fetch_exa"
+    ],
+    "defaultMode": "auto"
+  },
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "~/roost/claude/hooks/session-lock.sh"
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/roost/claude/hooks/session-unlock.sh"
+            "command": "~/roost/claude/hooks/gh-token.sh"
           }
         ]
       }
@@ -54,16 +50,6 @@
       }
     ]
   },
-  "permissions": {
-    "defaultMode": "auto",
-    "allow": [
-      "Read",
-      "WebSearch",
-      "WebFetch",
-      "mcp__exa__web_search_exa",
-      "mcp__exa__web_fetch_exa"
-    ]
-  },
   "statusLine": {
     "type": "command",
     "command": "~/roost/claude/hooks/statusline.sh"
@@ -71,7 +57,6 @@
   "enabledPlugins": {
     "claude-code-setup@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true,
-    "context-mode@context-mode": false,
     "playground@claude-plugins-official": true,
     "plugin-dev@claude-plugins-official": true,
     "praxis@praxis-marketplace": true,
@@ -86,5 +71,13 @@
         "repo": "moiri-gamboni/claude-strip-images"
       }
     }
-  }
+  },
+  "effortLevel": "high",
+  "tui": "fullscreen",
+  "autoMemoryEnabled": false,
+  "autoCompactEnabled": false,
+  "teammateMode": "tmux",
+  "remoteControlAtStartup": false,
+  "agentPushNotifEnabled": false,
+  "skipAutoPermissionPrompt": true
 }
