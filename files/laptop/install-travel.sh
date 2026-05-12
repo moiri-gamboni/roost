@@ -129,7 +129,14 @@ esac
 if [ -z "$cfst_arch" ]; then
     skip "unsupported arch $(uname -m); skipping cfst (path-a-IP probing disabled)"
 elif [ -x /usr/local/bin/cfst ] \
-        && /usr/local/bin/cfst -v 2>&1 | head -1 | grep -qF "${CFST_VERSION#v}"; then
+        && [[ "$(timeout 1 /usr/local/bin/cfst -v 2>&1 | head -1 || true)" == *"${CFST_VERSION#v}"* ]]; then
+    # `cfst -v` phones home for an update check after printing the version
+    # line, which hangs on networks where the upstream is blocked. Bound
+    # the call with `timeout 1` (version line is written first thing, well
+    # under a second), capture just the first line, and compare with [[ ==
+    # *...* ]]. `|| true` swallows the pipefail-induced non-zero from
+    # cfst getting SIGPIPE'd / killed by timeout — without it, set -o
+    # pipefail makes the elif evaluate false and we re-download every run.
     skip "cfst $CFST_VERSION already installed"
 else
     cfst_url="https://github.com/XIU2/CloudflareSpeedTest/releases/download/$CFST_VERSION/cfst_linux_$cfst_arch.tar.gz"
