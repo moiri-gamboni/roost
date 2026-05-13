@@ -217,13 +217,33 @@ agent() {
     fi
 
     # Spawn via --bg, pass any flags through.
-    # For fresh spawns (no claude flags), set --name so the dashboard row shows
-    # the project basename instead of the "bg" template placeholder. For
-    # --resume / --continue, skip --name and let Haiku auto-summarize the
-    # loaded transcript so the row reflects actual content, not cwd.
+    # Set --name so the dashboard row shows a useful label instead of the "bg"
+    # template placeholder. Two cases:
+    #   - Fresh spawn (no claude flags): name = cwd basename.
+    #   - Resume by explicit UUID: name = source session's custom-title (read
+    #     from its JSONL). Without this, --bg --resume forks to a new UUID and
+    #     state.json.name stays null even though the JSONL inherits the title.
+    # The interactive picker case (-r with no UUID) can't be pre-resolved here;
+    # those sessions show "bg" in the dashboard until /rename'd manually.
     local -a bg_args=()
     if [[ ${#claude_args[@]} -eq 0 ]]; then
         bg_args+=(--name "$base_name")
+    else
+        local arg jsonl source_name=""
+        for arg in "${claude_args[@]}"; do
+            if [[ "$arg" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]]; then
+                jsonl=$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" \
+                    -name "$arg.jsonl" -type f 2>/dev/null | head -1)
+                if [[ -n "$jsonl" ]]; then
+                    source_name=$(grep -m1 '"type":"custom-title"' "$jsonl" \
+                        | jq -r '.customTitle' 2>/dev/null)
+                fi
+                break
+            fi
+        done
+        if [[ -n "$source_name" && "$source_name" != "null" ]]; then
+            bg_args+=(--name "$source_name")
+        fi
     fi
     local out id
     out=$(cd "$dir" && claude --bg "${bg_args[@]}" "${claude_args[@]}" 2>&1)
@@ -233,7 +253,9 @@ agent() {
         echo "$out" >&2
         return 1
     fi
-    local cmd="claude attach $id"
+    # Chain a shell-window selection after `claude attach` exits so closing the
+    # session lands us on the shell window instead of whatever tmux picks next.
+    local cmd="claude attach $id; tmux select-window -t shell 2>/dev/null"
 
     _ensure_tmux
     local state=$?
