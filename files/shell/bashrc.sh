@@ -216,10 +216,19 @@ agent() {
         name="${base_name}-${i}"
     fi
 
-    # Spawn via --bg, pass any flags through
+    # Spawn via --bg, pass any flags through.
+    # For fresh spawns (no claude flags), set --name so the dashboard row shows
+    # the project basename instead of the "bg" template placeholder. For
+    # --resume / --continue, skip --name and let Haiku auto-summarize the
+    # loaded transcript so the row reflects actual content, not cwd.
+    local -a bg_args=()
+    if [[ ${#claude_args[@]} -eq 0 ]]; then
+        bg_args+=(--name "$base_name")
+    fi
     local out id
-    out=$(cd "$dir" && claude --bg "${claude_args[@]}" 2>&1)
-    id=$(echo "$out" | grep -oE 'backgrounded · [a-f0-9]+' | awk '{print $3}')
+    out=$(cd "$dir" && claude --bg "${bg_args[@]}" "${claude_args[@]}" 2>&1)
+    # Strip ANSI codes before extracting the id (claude --bg colorizes output)
+    id=$(echo "$out" | sed 's/\x1b\[[0-9;]*m//g' | grep -oE 'backgrounded · [a-f0-9]+' | awk '{print $3}')
     if [[ -z "$id" ]]; then
         echo "$out" >&2
         return 1
@@ -249,14 +258,31 @@ agent() {
     fi
 }
 
-# Open or focus the agent-view dashboard window (singleton in the main group).
+# Open or focus a live agent-view dashboard window in the main group.
 # Inside the dashboard: arrow keys to navigate, Space to peek, Enter to attach,
 # ← to detach. For quick tmux-window switching, use Ctrl-b n/p or Ctrl-b w.
 # `claude agents` auto-spawns the supervisor if it isn't running.
+#
+# Detection is by pane_title ("claude agents", set by the dashboard's OSC),
+# not window name, so a previously-created `agents` window whose content has
+# been hijacked by an attached session (via Enter on a row) is correctly
+# ignored — a fresh dashboard window is created in that case.
+_find_dashboard_window() {
+    local target="${1:-}"  # optional session/scope, e.g. "main" or empty for current
+    if [[ -n "$target" ]]; then
+        tmux list-windows -t "$target" -F '#{window_id} #{pane_title}' 2>/dev/null \
+            | awk '{title=$0; sub(/^[^ ]+ /,"",title); if (title == "claude agents") {print $1; exit}}'
+    else
+        tmux list-windows -F '#{window_id} #{pane_title}' 2>/dev/null \
+            | awk '{title=$0; sub(/^[^ ]+ /,"",title); if (title == "claude agents") {print $1; exit}}'
+    fi
+}
+
 agents() {
     if [[ -n "${TMUX:-}" ]]; then
-        if tmux list-windows -F '#{window_name}' | grep -Fxq agents; then
-            tmux select-window -t agents
+        local target; target=$(_find_dashboard_window)
+        if [[ -n "$target" ]]; then
+            tmux select-window -t "$target"
         else
             tmux new-window -n agents "claude agents"
         fi
@@ -265,13 +291,14 @@ agents() {
     # _ensure_tmux creates main with a shell window when none exists, so the
     # singleton shell window invariant matches what `agent` provides.
     _ensure_tmux
-    if ! tmux list-windows -t main -F '#{window_name}' 2>/dev/null | grep -Fxq agents; then
-        tmux new-window -t main -n agents "claude agents"
+    local target; target=$(_find_dashboard_window main)
+    if [[ -z "$target" ]]; then
+        target=$(tmux new-window -t main -n agents -P -F '#{window_id}' "claude agents")
     fi
     local group; group=$(_roost_group_name)
     if tmux has-session -t "$group" 2>/dev/null; then
-        tmux attach-session -t "$group" \; select-window -t agents
+        tmux attach-session -t "$group" \; select-window -t "$target"
     else
-        tmux new-session -t main -s "$group" \; select-window -t agents
+        tmux new-session -t main -s "$group" \; select-window -t "$target"
     fi
 }
