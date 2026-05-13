@@ -218,18 +218,23 @@ agent() {
 
     # Spawn via --bg, pass any flags through.
     # Set --name so the dashboard row shows a useful label instead of the "bg"
-    # template placeholder. Two cases:
+    # template placeholder. Three cases:
     #   - Fresh spawn (no claude flags): name = cwd basename.
     #   - Resume by explicit UUID: name = source session's custom-title (read
     #     from its JSONL). Without this, --bg --resume forks to a new UUID and
     #     state.json.name stays null even though the JSONL inherits the title.
-    # The interactive picker case (-r with no UUID) can't be pre-resolved here;
-    # those sessions show "bg" in the dashboard until /rename'd manually.
+    #   - Resume via interactive picker (-r with no UUID): can't pre-resolve.
+    #     We launch a background watcher that polls the new fork's JSONL for
+    #     the inherited custom-title (written after the user picks) and patches
+    #     state.json.name + nameSource. Supervisor writes preserve user-set
+    #     names with nameSource=user, so the patch sticks.
     local -a bg_args=()
+    local source_name=""
+    local need_picker_watcher=0
     if [[ ${#claude_args[@]} -eq 0 ]]; then
         bg_args+=(--name "$base_name")
     else
-        local arg jsonl source_name=""
+        local arg jsonl
         for arg in "${claude_args[@]}"; do
             if [[ "$arg" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]]; then
                 jsonl=$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" \
@@ -243,6 +248,8 @@ agent() {
         done
         if [[ -n "$source_name" && "$source_name" != "null" ]]; then
             bg_args+=(--name "$source_name")
+        else
+            need_picker_watcher=1
         fi
     fi
     local out id
@@ -252,6 +259,36 @@ agent() {
     if [[ -z "$id" ]]; then
         echo "$out" >&2
         return 1
+    fi
+    # Picker case: kick off async watcher that waits for the inherited
+    # custom-title to appear in the fork's JSONL, then patches state.json.
+    if [[ $need_picker_watcher -eq 1 ]]; then
+        local jobs_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/jobs"
+        local state_file="$jobs_dir/$id/state.json"
+        local uuid; uuid=$(jq -r '.sessionId' "$state_file" 2>/dev/null)
+        local encoded; encoded=$(echo "$dir" | tr '/' '-')
+        local jsonl_path="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$encoded/$uuid.jsonl"
+        # Poll every 2s for up to 30 min. Covers a leisurely picker browse;
+        # the loop body is trivial (file stat + grep when present + jq once),
+        # so the overhead is negligible. Inotify-based watch would be cleaner
+        # but inotifywait isn't installed by default.
+        (
+            for _ in $(seq 900); do
+                if [[ -f "$jsonl_path" ]]; then
+                    local t
+                    t=$(grep -m1 '"type":"custom-title"' "$jsonl_path" 2>/dev/null \
+                        | jq -r '.customTitle' 2>/dev/null)
+                    if [[ -n "$t" && "$t" != "null" ]]; then
+                        local tmpf; tmpf=$(mktemp)
+                        jq --arg n "$t" '.name = $n | .nameSource = "user"' \
+                            "$state_file" > "$tmpf" && mv "$tmpf" "$state_file"
+                        break
+                    fi
+                fi
+                sleep 2
+            done
+        ) &>/dev/null &
+        disown 2>/dev/null
     fi
     # Chain a shell-window selection after `claude attach` exits so closing the
     # session lands us on the shell window instead of whatever tmux picks next.
