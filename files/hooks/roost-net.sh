@@ -735,14 +735,39 @@ render_android() {
 render_laptop() {
     # Laptop config = Android outbounds + local SOCKS5 inbound on 127.0.0.1:54321
     # so SSH ProxyCommand can chain through sing-box.
+    # Torrent traffic is pinned off Path A: Cloudflare's free Anycast forbids
+    # sustained non-HTML content, and P2P trips it (tunnel can be terminated).
+    # The non-cf-urltest pool routes via paths B/C/D direct to Hetzner.
+    # Match by process_path_regex so wrappers, AppImages, and Flatpaks of the
+    # current torrent client are caught (one rule with `process_name` would
+    # AND with `process_path_regex` per sing-box semantics, so we use the
+    # broader matcher alone). Also takes precedence over the local-socks
+    # inbound rule, so Tixati-via-SOCKS5 also lands on non-cf-urltest.
+    # Requires tun.stack="system" (set by render_android); switching to
+    # gvisor would silently break process matching.
+    # Tag filter is an allowlist on path-{b,c,d}-* and errors at render time
+    # if empty — fails closed if render_android renames or drops a path.
     render_android | jq '
-        .inbounds = [
+        (.outbounds | map(.tag) | map(select(test("^path-(b|c|d)-")))) as $non_cf_tags
+        | (if ($non_cf_tags | length) == 0
+             then error("non-cf-urltest pool would be empty; render_android tag scheme changed?")
+             else . end)
+        | .inbounds = [
             .inbounds[0],
             {type: "socks", tag: "local-socks", listen: "127.0.0.1", listen_port: 54321, users: []}
         ]
+        | .outbounds += [{
+            type: "urltest",
+            tag: "non-cf-urltest",
+            outbounds: $non_cf_tags,
+            url: "https://www.gstatic.com/generate_204",
+            interval: "1m",
+            tolerance: 100
+        }]
         | .route.rules = [
             {action: "sniff"},
             {protocol: "dns", action: "hijack-dns"},
+            {process_path_regex: ["(?i)tixati"], action: "route", outbound: "non-cf-urltest"},
             {inbound: ["local-socks"], action: "route", outbound: "urltest"},
             {ip_cidr: ["0.0.0.0/0", "::/0"], action: "route", outbound: "urltest"}
         ]
