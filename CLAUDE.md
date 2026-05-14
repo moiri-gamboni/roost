@@ -202,7 +202,7 @@ Toggleable GFW-resistant network with a Proton egress layer. High-level:
 
 **Egress:** optional ProtonVPN WireGuard (`wg-proton`) as a policy-routed outbound. Traffic from the `xray` system user plus Tailscale-exit-node forwarded traffic gets fwmarked with `0x1337` (mask `0x0000ffff`, so Tailscale's own mark bits survive). A dual-stack kill-switch REJECTs anything from those sources that would otherwise leak out `eth0`.
 
-**Toggles (four modes, two state files in `/etc/roost-travel/`):**
+**Toggles (four modes from two state files in `/etc/roost-travel/`):**
 
 | Mode | Phone transport | `roost-net travel` | `roost-net vpn` | Phone egress |
 |---|---|---|---|---|
@@ -211,7 +211,7 @@ Toggleable GFW-resistant network with a Proton egress layer. High-level:
 | Travel | Xray A/B/C/D | on | off | Hetzner |
 | Travel, private | Xray A/B/C/D | on | on | Proton |
 
-**State:** `/etc/roost-travel/{travel,vpn}` contain `on`/`off`. `/etc/roost-travel/state.env` (`0600 root`) holds the generated keys (UUID, REALITY keypair, shortIds, SS-2022 password, VISION_SNI). `vpn=on` is persisted via `systemctl enable --now wg-quick@wg-proton` so the server survives an in-country update + reboot.
+**State:** `/etc/roost-travel/{travel,vpn}` contain `on`/`off`; `/etc/roost-travel/path` holds the forced Xray path (`a`/`b`/`c`/`d`/`auto`, absent = `auto`). `/etc/roost-travel/state.env` (`0600 root`) holds the generated keys (UUID, REALITY keypair, shortIds, SS-2022 password, VISION_SNI). `vpn=on` is persisted via `systemctl enable --now wg-quick@wg-proton` so the server survives an in-country update + reboot.
 
 **Path D one-time provisioning** (separate from the toggles above): the wildcard cert for `*.$DOMAIN` lives at `/etc/roost-travel/vision-cert/`. Issued by `vision-cert-init.sh` once per server lifetime (or per cert rotation), renewed weekly by `vision-cert-renew.timer` (Tue 04:00 UTC). The init step needs the Cloudflare API token, which is laptop-only by design; pass it explicitly:
 
@@ -226,6 +226,7 @@ acme.sh persists the token into its account config so subsequent `--cron` renewa
 - `roost-net travel on|off` -- deploy/remove CF fragment, open/close UFW for 443/tcp + 51820/tcp+udp + 8443/tcp (8443/tcp is conditional on Vision cert presence — skipped with a warning if `/etc/roost-travel/vision-cert/fullchain.cer` is absent)
 - `roost-net vpn on|off` -- enable/disable `wg-quick@wg-proton` + keepalive timer, verify egress is external (not our Hetzner IP) on activation
 - `roost-net vpn profile [name]` -- list/activate Proton profiles under `/etc/roost-travel/proton-profiles/*.conf` (e.g. NetShield-on vs NetShield-off); swaps `/etc/wireguard/wg-proton.conf` symlink and hot-restarts wg-quick if vpn=on
+- `roost-net path [a|b|c|d|auto]` -- pin client renders to one Xray path (writes `/etc/roost-travel/path`, read by `render_android` so laptop + Android both inherit it); `auto` or absent restores urltest selection. Render-time only -- re-fetch client configs to apply
 - `roost-net test` -- fwmark masking, kill-switch REJECT, external egress, plus Path D assertions (vision cert validity, :8443 reachability, fallback responds)
 - `roost-net client {android|laptop|ssh}` -- emit sing-box or SSH config from `state.env`
 - `roost-net rotate-keys` -- regenerate `state.env` via `keys-init.sh --force`, restart Xray
