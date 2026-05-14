@@ -87,12 +87,14 @@ is_external_egress() {
 }
 
 cmd_status() {
-    local travel_state vpn_state
+    local travel_state vpn_state force_path
     travel_state=$(read_state_file "$STATE_DIR/travel" "off")
     vpn_state=$(read_state_file "$STATE_DIR/vpn" "off")
+    force_path=$(read_state_file "$STATE_DIR/path" "auto")
 
     echo "Travel: $travel_state"
     echo "VPN:    $vpn_state"
+    echo "Path:   $force_path"
     echo
 
     local xray_status
@@ -317,6 +319,41 @@ cmd_vpn() {
     esac
 }
 
+# Pin the client urltest pool to a single Xray path (or 'auto' for all).
+# Pure client-render preference: nothing server-side restarts, so callers must
+# re-fetch client configs (roost-travel config / travel-clients) to apply.
+cmd_path() {
+    local action="${1:-}"
+    local state_file="$STATE_DIR/path"
+
+    case "$action" in
+        "")
+            local current
+            current=$(read_state_file "$state_file" "auto")
+            if [ "$current" = "auto" ]; then
+                echo "Forced path: auto (urltest picks the fastest of A/B/C/D)"
+            else
+                echo "Forced path: ${current^^} (clients pinned to Path ${current^^})"
+            fi
+            ;;
+        a|b|c|d|auto)
+            echo "$action" | sudo tee "$state_file" >/dev/null
+            sudo chmod 0644 "$state_file"
+            if [ "$action" = "auto" ]; then
+                echo "Forced path cleared; clients urltest across A/B/C/D."
+            else
+                echo "Forced path: ${action^^}. Clients pin to Path ${action^^} on next config refresh."
+            fi
+            echo "Re-fetch client configs to apply:"
+            echo "  laptop:  roost-travel config"
+            echo "  phone:   travel-clients android --send-tailscale <peer>"
+            ;;
+        *)
+            die "Usage: roost-net path [a|b|c|d|auto]"
+            ;;
+    esac
+}
+
 cmd_test() {
     local travel_state vpn_state pass=0 fail=0
     travel_state=$(read_state_file "$STATE_DIR/travel" "off")
@@ -473,6 +510,23 @@ render_android() {
     # JSON array of strings for jq's --argjson.
     local path_a_ips_json
     path_a_ips_json=$(printf '%s\n' "$path_a_ips_raw" | jq -R . | jq -sc .)
+
+    # Force-path: /etc/roost-travel/path pins the client's urltest pool to a
+    # single path's outbounds (a/b/c/d); "auto" or absent keeps the full
+    # A/B/C/D pool. Set with `roost-net path <a|b|c|d|auto>`. Read here so
+    # every client render — laptop via `roost-travel config`, Android via
+    # `travel-clients` — inherits the pin with no extra plumbing in those paths.
+    local force_path
+    force_path=$(read_state_file "$STATE_DIR/path" "auto")
+    case "$force_path" in
+        a|b|c|d|auto) ;;
+        *) die "Invalid $STATE_DIR/path state '$force_path' (expected a|b|c|d|auto); fix with: roost-net path <a|b|c|d|auto>" ;;
+    esac
+    if [ "$force_path" != "auto" ]; then
+        printf 'NOTE: client config pinned to Path %s (urltest scoped to that path); revert with: roost-net path auto\n' \
+            "${force_path^^}" >&2
+    fi
+
     jq -n \
         --arg domain "$DOMAIN" \
         --arg uuid "$XRAY_UUID" \
@@ -484,10 +538,35 @@ render_android() {
         --arg server_v4 "$server_v4" \
         --arg server_v6 "$server_v6" \
         --argjson path_a_ips "$path_a_ips_json" \
+        --arg force_path "$force_path" \
         --arg vision_sni "${VISION_SNI:-static.$DOMAIN}" \
         '
         # path-a-ipN tag list (one per CF IP); referenced by urltest pool.
         ($path_a_ips | to_entries | map("path-a-ip\(.key + 1)")) as $path_a_tags |
+        # Full urltest pool: Path A multi-IP tags + Path B/C/D per-family tags.
+        (
+            $path_a_tags
+            + ["path-b-v4", "path-c-v4", "path-d-v4"]
+            + (if ($server_v6 | length) > 0 then ["path-b-v6", "path-c-v6", "path-d-v6"] else [] end)
+        ) as $all_path_tags |
+        # force_path a/b/c/d collapses the pool to the outbounds of that one
+        # path; "auto" or "" keeps all. Filtering the pool (not rewriting the
+        # route) keeps the cf-doh detour and the render_laptop tag-derived
+        # non-cf pool working unchanged. An empty result errors the render:
+        # "auto" cannot hit it and a/b/c/d each always have at least one tag,
+        # so it only fires if the path tag scheme changed -- which sing-box
+        # check does NOT catch for an empty urltest pool.
+        (
+            if $force_path == "auto" or $force_path == ""
+            then $all_path_tags
+            else ($all_path_tags | map(select(startswith("path-\($force_path)-"))))
+            end
+        ) as $urltest_pool_raw |
+        (if ($urltest_pool_raw | length) == 0
+            then error("force_path \($force_path|@json) matched no outbound tags")
+            else $urltest_pool_raw
+            end
+        ) as $urltest_pool |
         # Corresponding outbound objects.
         ($path_a_ips | to_entries | map({
             type: "vless",
@@ -533,11 +612,7 @@ render_android() {
                     {
                         type: "urltest",
                         tag: "urltest",
-                        outbounds: (
-                            $path_a_tags
-                            + ["path-b-v4", "path-c-v4", "path-d-v4"]
-                            + (if ($server_v6 | length) > 0 then ["path-b-v6", "path-c-v6", "path-d-v6"] else [] end)
-                        ),
+                        outbounds: $urltest_pool,
                         url: "https://www.gstatic.com/generate_204",
                         interval: "1m",
                         tolerance: 100
@@ -732,6 +807,7 @@ case "$subcmd" in
     status) cmd_status ;;
     travel) cmd_travel "$@" ;;
     vpn) cmd_vpn "$@" ;;
+    path) cmd_path "$@" ;;
     test) cmd_test ;;
     client) cmd_client "$@" ;;
     rotate-keys) cmd_rotate_keys ;;
@@ -740,11 +816,13 @@ case "$subcmd" in
 Usage: roost-net <subcommand> [args]
 
 Subcommands:
-  status                     Show travel/vpn state, service health, egress IP+ASN
+  status                     Show travel/vpn/path state, service health, egress IP+ASN
   travel {on|off}            Toggle Path A (CF Tunnel fragment + UFW 443/51820)
   vpn {on|off}               Toggle Proton egress (wg-quick@wg-proton + keepalive)
   vpn profile [name]         List or activate a Proton profile from /etc/roost-travel/proton-profiles/.
                              Swaps /etc/wireguard/wg-proton.conf symlink; restarts wg if vpn=on.
+  path [a|b|c|d|auto]        Pin clients to one Xray path, or 'auto' for urltest.
+                             Render-time only; re-fetch client configs to apply.
   test                       Assert fwmark, routing, kill-switch
   client {android|laptop|ssh}  Emit client config to stdout
   rotate-keys                Regenerate UUID + REALITY keys + SS-2022 password

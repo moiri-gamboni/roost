@@ -374,6 +374,7 @@ roost-net vpn on       # enables wg-quick@wg-proton (survives reboot)
 ### If something degrades mid-trip
 
 - **Path A slow or dead** -- urltest switches to B or C automatically; no action required.
+- **urltest keeps picking a slow path** -- pin a known-good one with `roost-net path <a|b|c|d>` on the server, then re-fetch client configs (`roost-travel config` on the laptop). `roost-net path auto` restores urltest selection.
 - **All three degraded** -- check sing-box logs on phone. Fallback: ProtonVPN Android app with Stealth (independent of Roost; browse-only, no SSH).
 - **Server unreachable entirely** -- from laptop, `./files/laptop/roost-net-fw.sh close` (stops advertising a broken endpoint); then Hetzner Cloud Console via 2FA + printed recovery codes.
 
@@ -393,6 +394,7 @@ roost-net travel off
 | `roost-net status` | Toggles, service states, egress IP (raw + via-Proton) |
 | `roost-net travel on` / `off` | Enable/disable the CF fragment + UFW rules for 443/tcp + 51820/tcp+udp |
 | `roost-net vpn on` / `off` | Enable/disable `wg-quick@wg-proton` + keepalive timer; verifies egress is external (not our Hetzner IP) on activation |
+| `roost-net path [a\|b\|c\|d\|auto]` | Pin client configs to one Xray path, or `auto` for urltest selection; render-time only, re-fetch client configs to apply |
 | `roost-net test` | Plan §4.2 assertions (masked fwmark, kill-switch REJECT, external egress) |
 | `roost-net client {android\|laptop\|ssh}` | Emit sing-box or SSH config from `/etc/roost-travel/state.env` |
 | `roost-net rotate-keys` | Regenerate `state.env` (UUID + REALITY keypair + shortIds + SS-2022 password); restart xray |
