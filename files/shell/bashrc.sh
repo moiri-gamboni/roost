@@ -361,3 +361,22 @@ agents() {
         tmux new-session -t main -s "$group" \; select-window -t "$target"
     fi
 }
+
+# Attach to the main tmux session as a grouped client: same windows,
+# independent current-window state. Use this in a new SSH tab when plain
+# `tmux attach` would link window switches across already-open tabs.
+# Group name comes from $ROOST_CLIENT (stable across reconnects) or PID
+# (swept on shell exit by _sweep_dead_groups).
+attach() {
+    if [[ -n "${TMUX:-}" ]]; then
+        echo "already inside tmux" >&2
+        return 1
+    fi
+    _ensure_tmux
+    local group; group=$(_roost_group_name)
+    if tmux has-session -t "$group" 2>/dev/null; then
+        tmux attach-session -t "$group"
+    else
+        tmux new-session -t main -s "$group"
+    fi
+}
