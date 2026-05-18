@@ -32,7 +32,7 @@ for arg in "$@"; do
 done
 
 SSH_TARGET="$SERVER_USER@$SERVER_HOST"
-RSYNC_OPTS=(-avz --delete -e ssh)
+RSYNC_OPTS=(-avz -e ssh)
 
 mkdir -p "$DROP_DIR"
 
