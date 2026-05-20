@@ -81,12 +81,15 @@ if $backfill && [ -f "$STATE_FILE" ]; then
     short_ids_json="${REALITY_SHORT_IDS:-}"
     ss2022_password="${SS2022_PASSWORD:-}"
     vision_sni="${VISION_SNI:-}"
+    hetzner_public_ipv4="${HETZNER_PUBLIC_IPV4:-}"
+    hetzner_public_ipv6="${HETZNER_PUBLIC_IPV6:-}"
 else
     # Force or first-run: empty so every block below generates fresh.
     xray_uuid="" xray_path="" grpc_service_name=""
     reality_private_key="" reality_public_key=""
     short_ids_json="" ss2022_password=""
     vision_sni=""
+    hetzner_public_ipv4="" hetzner_public_ipv6=""
 fi
 
 # UUID — prefer xray's built-in; fall back to uuidgen for defensive parity.
@@ -167,6 +170,18 @@ if [ -z "$vision_sni" ]; then
     vision_sni="static.$DOMAIN"
 fi
 
+# Hetzner public addresses — Path B (REALITY) binds these specific IPs rather
+# than the wildcard, so :443 on the Tailscale IP stays free for Caddy. Derived
+# from eth0; override by setting them in state.env and re-running --backfill.
+[ -n "$hetzner_public_ipv4" ] || hetzner_public_ipv4=$(ip -o -4 addr show eth0 scope global | awk '{split($4,a,"/"); print a[1]; exit}')
+[ -n "$hetzner_public_ipv6" ] || hetzner_public_ipv6=$(ip -o -6 addr show eth0 scope global | awk '{split($4,a,"/"); print a[1]; exit}')
+if [ -z "$hetzner_public_ipv4" ] || [ -z "$hetzner_public_ipv6" ]; then
+    echo "Error: could not determine Hetzner public IPv4/IPv6 on eth0." >&2
+    echo "       Set HETZNER_PUBLIC_IPV4 / HETZNER_PUBLIC_IPV6 in state.env" >&2
+    echo "       manually, then re-run with --backfill." >&2
+    exit 1
+fi
+
 tmpfile=$(mktemp)
 trap 'rm -f "$tmpfile"' EXIT
 cat > "$tmpfile" <<EOF
@@ -180,6 +195,8 @@ REALITY_PUBLIC_KEY='$reality_public_key'
 REALITY_SHORT_IDS='$short_ids_json'
 SS2022_PASSWORD='$ss2022_password'
 VISION_SNI='$vision_sni'
+HETZNER_PUBLIC_IPV4='$hetzner_public_ipv4'
+HETZNER_PUBLIC_IPV6='$hetzner_public_ipv6'
 EOF
 
 install -m 0600 -o root -g root "$tmpfile" "$STATE_FILE"
