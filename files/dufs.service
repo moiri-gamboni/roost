@@ -1,0 +1,12 @@
+[Unit]
+Description=dufs file server for the drop folder
+After=network.target
+
+[Service]
+User=$USERNAME
+ExecStart=$HOME_DIR/bin/dufs --bind 127.0.0.1 --port 5000 --allow-archive --allow-search $HOME_DIR/$ROOST_DIR_NAME/drop
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

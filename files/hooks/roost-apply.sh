@@ -133,6 +133,7 @@ files/cloudflare-config.yml|$HOME_DIR/.cloudflared/config.yml|envsubst:TUNNEL_ID
 files/ntfy-server.yml|/etc/ntfy/server.yml|plain|restart:ntfy
 files/et.cfg|/etc/et.cfg|envsubst:TAILSCALE_IP|restart:et
 files/caddy-tailscale.conf|/etc/systemd/system/caddy.service.d/tailscale.conf|plain|daemon-reload
+files/dufs.service|/etc/systemd/system/dufs.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload,restart:dufs
 files/glances.service|/etc/systemd/system/glances.service|envsubst:USERNAME|daemon-reload,restart:glances
 files/ram-monitor.service|/etc/systemd/system/ram-monitor.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
 files/ram-monitor.timer|/etc/systemd/system/ram-monitor.timer|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload,restart:ram-monitor.timer

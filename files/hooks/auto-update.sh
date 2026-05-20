@@ -201,6 +201,19 @@ else
     logger -t "$_HOOK_TAG" "gitleaks: skipped (release < 7 days old)"
 fi
 
+# --- dufs (file server backing the drop folder) ---
+if github_release_cooldown_ok "sigoden/dufs" 7; then
+    DUFS_LATEST=$(github_latest_version "sigoden/dufs")
+    DUFS_CURRENT=$(~/bin/dufs --version 2>/dev/null | awk '{print $2}' || echo "")
+    if [ -n "$DUFS_LATEST" ]; then
+        if [ -z "$DUFS_CURRENT" ] || major_guard "dufs" "$DUFS_CURRENT" "$DUFS_LATEST"; then
+            track "dufs" bash -c "curl -fsSL 'https://github.com/sigoden/dufs/releases/download/v${DUFS_LATEST}/dufs-v${DUFS_LATEST}-x86_64-unknown-linux-musl.tar.gz' -o /tmp/dufs.tar.gz && tar -C ~/bin -xzf /tmp/dufs.tar.gz dufs && rm -f /tmp/dufs.tar.gz && sudo systemctl restart dufs"
+        fi
+    fi
+else
+    logger -t "$_HOOK_TAG" "dufs: skipped (release < 7 days old)"
+fi
+
 # --- acme.sh (Let's Encrypt client for Vision Path D wildcard cert) ---
 # Self-update is disabled in vision-cert-init.sh (--auto-upgrade 0); we update
 # acme.sh from here on the same 7-day-cooldown discipline as other tools so

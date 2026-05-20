@@ -979,6 +979,20 @@ remote_script "setup/travel-vpn.sh"
 ok "Xray + travel-vpn configs deployed (travel=off, vpn=off by default)"
 
 # ============================================
+# dufs (drop folder file server)
+# ============================================
+
+section "dufs (drop folder)"
+
+# drop.$DOMAIN resolves to the Tailscale IP -- only tailnet members can reach
+# it. Unproxied (Cloudflare can't proxy a 100.64/10 address anyway). Caddy
+# binds the Tailscale v4 IP only (default_bind), so there is no AAAA record.
+ensure_dns_record "drop.$DOMAIN" A "$TAILSCALE_IP"
+
+remote_script "setup/dufs.sh"
+ok "dufs serving the drop folder at https://drop.$DOMAIN/"
+
+# ============================================
 # Agent Tools
 # ============================================
 
