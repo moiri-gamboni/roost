@@ -108,7 +108,7 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
   - `sshd/` -- sshd drop-in configs (`50-clip-forward.conf`: `StreamLocalBindUnlink yes`)
   - `travel/` -- Travel VPN server pieces (Xray + Proton egress); see Travel VPN section below
     - `xray.service`, `xray-boot-guard`, `xray-logrotate.conf`, `xray-config.json.tmpl` -- Xray runtime
-    - `keys-init.sh` -- Generates `/etc/roost-travel/state.env` (REALITY keypair, UUID, SS-2022 password, shortIds)
+    - `keys-init.sh` -- Generates `/etc/roost-travel/state.env` (REALITY keypair, UUID, SS-2022 password, shortIds, Hetzner public v4/v6 for the Path B bind)
     - `proton-routing.sh` -- wg-quick PostUp/PreDown: dual-stack fwmark policy routing + kill-switch. Also supports `ensure` (idempotent re-apply of ip rules + proton-table route) for self-heal.
     - `proton-keepalive.service` / `.timer` / `proton-keepalive-check` -- Debounced watchdog (30s)
     - `proton-routing-ensure.service` / `.timer` -- Self-heal: `proton-routing.sh ensure` runs every 5m. Catches ip-rule flushes from systemd re-exec etc. that iptables survives but ip rules don't.
@@ -198,7 +198,7 @@ Toggleable GFW-resistant network with a Proton egress layer. High-level:
 
 **Paths:** four concurrent Xray inbounds on the server, sing-box urltest on clients picks the fastest:
 - **Path A** -- VLESS + WebSocket + TLS behind the existing Cloudflare Tunnel (CF terminates TLS, xray listens on `127.0.0.1:10000`). Multi-IP: one outbound per CF Anycast IP (`path-a-ip1`, `path-a-ip2`, ...), all in the urltest pool. urltest skips IPs that fail (CF Anycast prefixes can have wildly different reachability per network — `104.21/16` was SYN-dropped from China while `172.67/16` worked) and picks the live one with lowest latency. IP source priority: (1) `~/roost/travel/cf-preferred-ip` on the server (one IP per line, populated by `roost-travel ips` from the laptop — runs cfst/CloudflareSpeedTest against ~5000 CF /24 samples and pushes top 5 by latency); (2) DNS via `getent` for `travel.$DOMAIN` (~2 IPs, CF's BGP-nearest pair).
-- **Path B** -- VLESS + gRPC + REALITY on `:::443` direct to Hetzner (masquerades as `www.samsung.com`).
+- **Path B** -- VLESS + gRPC + REALITY on `:443` direct to Hetzner (masquerades as `www.samsung.com`). Two inbounds (`reality-v4`/`reality-v6`) bind the specific public v4+v6 addresses rather than the wildcard, so `:443` on the Tailscale IP stays free for Caddy (`drop.$DOMAIN`).
 - **Path C** -- Shadowsocks-2022 (`chacha20-poly1305`) on `:::51820` direct to Hetzner, TCP + UDP.
 - **Path D** -- VLESS + XTLS-Vision over plain TLS on `:::8443` direct to Hetzner (Let's Encrypt wildcard cert via acme.sh DNS-01; bad-key probes fall back to a Caddy canned page on `127.0.0.1:8081` so the listener doesn't TCP-RST and fingerprint as a proxy).
 
@@ -213,7 +213,7 @@ Toggleable GFW-resistant network with a Proton egress layer. High-level:
 | Travel | Xray A/B/C/D | on | off | Hetzner |
 | Travel, private | Xray A/B/C/D | on | on | Proton |
 
-**State:** `/etc/roost-travel/{travel,vpn}` contain `on`/`off`; `/etc/roost-travel/path` holds the forced Xray path (`a`/`b`/`c`/`d`/`auto`, absent = `auto`). `/etc/roost-travel/state.env` (`0600 root`) holds the generated keys (UUID, REALITY keypair, shortIds, SS-2022 password, VISION_SNI). `vpn=on` is persisted via `systemctl enable --now wg-quick@wg-proton` so the server survives an in-country update + reboot.
+**State:** `/etc/roost-travel/{travel,vpn}` contain `on`/`off`; `/etc/roost-travel/path` holds the forced Xray path (`a`/`b`/`c`/`d`/`auto`, absent = `auto`). `/etc/roost-travel/state.env` (`0600 root`) holds the generated keys (UUID, REALITY keypair, shortIds, SS-2022 password, VISION_SNI, `HETZNER_PUBLIC_IPV4`/`IPV6` for the Path B bind). `vpn=on` is persisted via `systemctl enable --now wg-quick@wg-proton` so the server survives an in-country update + reboot.
 
 **Path D one-time provisioning** (separate from the toggles above): the wildcard cert for `*.$DOMAIN` lives at `/etc/roost-travel/vision-cert/`. Issued by `vision-cert-init.sh` once per server lifetime (or per cert rotation), renewed weekly by `vision-cert-renew.timer` (Tue 04:00 UTC). The init step needs the Cloudflare API token, which is laptop-only by design; pass it explicitly:
 
