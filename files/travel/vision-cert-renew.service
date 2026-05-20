@@ -17,6 +17,11 @@ ExecStart=/root/.acme.sh/acme.sh --cron --config-home /etc/roost-travel/acme-con
 ExecStartPost=/root/.acme.sh/acme.sh --install-cert -d ${DOMAIN} --config-home /etc/roost-travel/acme-config --cert-home /etc/roost-travel/vision-cert --fullchain-file /etc/roost-travel/vision-cert/fullchain.cer --key-file /etc/roost-travel/vision-cert/private.key
 ExecStartPost=/bin/chgrp xray /etc/roost-travel/vision-cert/fullchain.cer /etc/roost-travel/vision-cert/private.key
 ExecStartPost=/bin/chmod 0640 /etc/roost-travel/vision-cert/fullchain.cer /etc/roost-travel/vision-cert/private.key
+# Caddy serves drop.$DOMAIN with this same wildcard cert and does not watch
+# cert files; reload it so a renewed cert is picked up. Non-fatal (leading
+# '-') — cert renewal succeeding matters more than the courtesy reload.
+# (xray hot-reloads its TLS cert files on its own, so it needs no hook here.)
+ExecStartPost=-/bin/systemctl reload caddy
 EnvironmentFile=/etc/roost-travel/vision-cert.env
 StandardOutput=journal
 StandardError=journal
