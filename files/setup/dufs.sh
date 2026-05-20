@@ -78,6 +78,14 @@ if [ ! -f "$CADDY_SITE" ] || [ "$(cat "$CADDY_SITE")" != "$CADDY_CONTENT" ]; the
 fi
 
 if $caddy_restart; then
+    # Validate before restarting — a malformed drop site must not be able to
+    # take Caddy (and the other sites it serves) down.
+    if ! validate_out=$(caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1); then
+        rm -f "$CADDY_SITE"
+        echo "$validate_out" >&2
+        echo "  [!] dufs: Caddy config invalid — drop site reverted, Caddy not restarted" >&2
+        exit 1
+    fi
     systemctl restart caddy
     ok "Caddy serving https://drop.${DOMAIN}/"
 else
