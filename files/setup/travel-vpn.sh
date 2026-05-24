@@ -95,8 +95,8 @@ install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/vision-cert-renew.serv
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/vision-cert-renew.timer"         /etc/systemd/system/vision-cert-renew.timer
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/ntfy-cert-renew@.service"        /etc/systemd/system/ntfy-cert-renew@.service
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/apt-roost-travel.conf"           /etc/apt/apt.conf.d/99-roost-travel.conf
-install -d -m 0755                                                                      /etc/systemd/system/wg-quick@proton.service.d
-install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/wg-proton.service.d/roost.conf" /etc/systemd/system/wg-quick@proton.service.d/roost.conf
+install -d -m 0755                                                                      /etc/systemd/system/wg-quick@wg-proton.service.d
+install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/wg-proton.service.d/roost.conf" /etc/systemd/system/wg-quick@wg-proton.service.d/roost.conf
 install -m 0644 -o root -g root "$REMOTE_DIR/files/travel/xray-logrotate.conf"         /etc/logrotate.d/xray
 
 # --- Vision cert renewal env file (DOMAIN for systemd ExecStartPost --install-cert) ---
