@@ -1,63 +1,48 @@
-# ProtonVPN WireGuard config — TEMPLATE.
+# ProtonVPN WireGuard profile — drop in raw, no editing required.
 #
-# Multi-profile workflow (e.g. NetShield-on vs NetShield-off):
+# Workflow:
 #
 #   1. Download each variant from https://account.protonvpn.com/downloads
-#      (WireGuard tab -> enable IPv6 -> pick country -> pick NetShield setting).
-#   2. Fill in PostUp / PreDown / Table / DNS per the blocks below.
-#   3. Install each under /etc/roost-travel/proton-profiles/<NAME>.conf:
+#      (WireGuard tab → enable IPv6 → pick country → pick NetShield setting).
+#   2. Install each under /etc/roost-travel/proton-profiles/<NAME>.conf as-is:
 #        sudo install -m 0600 -o root -g root ch-netshield.conf \
 #            /etc/roost-travel/proton-profiles/netshield.conf
 #        sudo install -m 0600 -o root -g root ch-clean.conf \
 #            /etc/roost-travel/proton-profiles/clean.conf
-#   4. Activate one:
-#        roost-net vpn profile netshield   # symlinks /etc/wireguard/wg-proton.conf
-#   5. Toggle VPN:
+#   3. Activate one:
+#        roost-net vpn profile netshield   # synthesizes /etc/wireguard/wg-proton.conf
+#   4. Toggle VPN:
 #        roost-net vpn on
-#   6. Switch later (hot-swap, auto-restarts wg-quick if vpn=on):
+#   5. Switch later (hot-swap, auto-restarts wg-quick if vpn=on):
 #        roost-net vpn profile clean
 #
-# Single-profile shortcut: if you only ever want one config, put it at
-# /etc/wireguard/wg-proton.conf directly and skip the profiles dir.
+# `vpn profile` strips any Table/PostUp/PreDown/DNS lines from the source and
+# re-injects the roost-canonical values:
 #
-# IPv6 is mandatory for the dual-stack kill-switch to be meaningful. Without v6
-# in Address below, ip6tables REJECT rules have no egress to gate, leaking v6.
-
-[Interface]
-# Private key generated and shown once on the Proton dashboard (cannot be retrieved later).
-PrivateKey = <PRIVATE_KEY_FROM_PROTON>
-
-# Tunnel interior addresses. Proton assigns both v4 and v6 when IPv6 is enabled in the config generator.
-# Keep both — the server's kill-switch and policy routing assume dual-stack parity.
-Address = 10.2.0.2/32, fd7a::2/128
-
-# Table = off disables wg-quick's automatic default-route install. proton-routing.sh
-# manages the Proton routing table (51820) and policy rules instead.
-Table = off
-
-# DNS = (empty) prevents wg-quick from rewriting resolv.conf. Xray resolves via
-# the system resolver (Cloudflare DoH on the client side); the server doesn't need
-# to route DNS through Proton for this architecture.
-DNS =
-
-# Routing + kill-switch lifecycle. PostUp installs fwmark policy, kill-switch,
-# rp_filter tweaks; PreDown undoes them. A trap inside the script rolls back on
-# partial failure, so wg-quick up either succeeds fully or leaves nothing behind.
-PostUp = /etc/roost-travel/proton-routing.sh up
-PreDown = /etc/roost-travel/proton-routing.sh down
-
-[Peer]
-# Proton server public key (fixed per server, shown on the dashboard).
-PublicKey = <SERVER_PUBLIC_KEY_FROM_PROTON>
-
-# Proton server endpoint. Prefer a hostname so DNS resolves A + AAAA; proton-routing.sh
-# reads both and adds exclusion rules for each family. Pick a country close to
-# Hetzner for latency (e.g. ch-1.protonvpn.net for Switzerland).
-Endpoint = <COUNTRY>.protonvpn.net:51820
-
-# Route all traffic into the tunnel. Combined with Table = off above, this is
-# harmless (wg doesn't touch routes); policy routing in PostUp does the work.
-AllowedIPs = 0.0.0.0/0, ::/0
-
-# Optional but recommended when NAT traversal is involved; Proton's default is 25s.
-PersistentKeepalive = 25
+#   Table = off                                            # wg-quick: skip auto-routing
+#   DNS =                                                  # wg-quick: don't rewrite resolv.conf
+#   PostUp  = /etc/roost-travel/proton-routing.sh up       # install fwmark policy + kill-switch
+#   PreDown = /etc/roost-travel/proton-routing.sh down     # tear them back down
+#
+# Those four are roost-level concerns, identical across profiles — keeping them
+# out of the source means profiles drop in as raw downloads, no per-profile
+# hand-editing, and forgetting them can no longer brick the tunnel + kill
+# Tailscale (the failure mode behind the May 2026 outage).
+#
+# IPv6 is mandatory for the kill-switch to be meaningful: without v6 in the
+# profile's Address, ip6tables REJECT rules have no egress to gate and v6
+# leaks. Proton's config generator includes v6 automatically when IPv6 is
+# enabled at download time.
+#
+# Reference shape (raw Proton output — what you should be installing):
+#
+#   [Interface]
+#   PrivateKey = <PRIVATE_KEY_FROM_PROTON>
+#   Address = 10.2.0.2/32, fd7a::2/128
+#   DNS = 10.2.0.1, fd7a::1
+#
+#   [Peer]
+#   PublicKey = <SERVER_PUBLIC_KEY_FROM_PROTON>
+#   AllowedIPs = 0.0.0.0/0, ::/0
+#   Endpoint = <country>.protonvpn.net:51820
+#   PersistentKeepalive = 25
