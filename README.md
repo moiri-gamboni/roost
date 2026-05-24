@@ -320,17 +320,14 @@ GFW-resistant remote access: Xray multi-path stack (VLESS+WS behind Cloudflare, 
 
 ```bash
 # 1. Drop one or more Proton WireGuard profiles on the server (e.g. NetShield
-#    on vs off). Each goes under /etc/roost-travel/proton-profiles/<name>.conf:
+#    on vs off). Each goes under /etc/roost-travel/proton-profiles/<name>.conf
+#    as a raw download — no hand-editing required; `vpn profile` strips and
+#    re-injects Table/PostUp/PreDown/DNS at synth time.
 sudo install -m 0600 -o root -g root ~/netshield.conf \
     /etc/roost-travel/proton-profiles/netshield.conf
 sudo install -m 0600 -o root -g root ~/clean.conf \
     /etc/roost-travel/proton-profiles/clean.conf
-# Edit each to include PostUp/PreDown (see /etc/roost-travel/proton.conf.example):
-#   PostUp  = /etc/roost-travel/proton-routing.sh up
-#   PreDown = /etc/roost-travel/proton-routing.sh down
-#   Table = off
-#   DNS =
-# Activate one (symlinks /etc/wireguard/wg-proton.conf):
+# Activate one (synthesizes /etc/wireguard/wg-proton.conf):
 roost-net vpn profile netshield
 
 # 2. Install sing-box for Android from GitHub releases
