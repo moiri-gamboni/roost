@@ -23,13 +23,17 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 # Vision inbound. Skips silently if /var/log/xray/access.log doesn't exist.
 30 5 * * * $USERNAME flock -n $HOME_DIR/.locks/vision-abuse-watch $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/vision-abuse-watch.sh
 
+# Agents-list cleanup — DISABLED. Reverted to built-in `claude agents`
+# behavior. To re-enable, uncomment both lines below and roost-apply push.
+# The scripts themselves remain deployed at ~/$ROOST_DIR_NAME/claude/hooks/.
+# Tag agents-cleanup-v1 marks the working version, in case of revert.
+#
 # Minute-tick: touch ~/$ROOST_DIR_NAME/claude/last-connection-activity if any
 # SSH (22) or ET (2022) connection is alive. Used by agents-cleanup.sh as a
 # "is the user around" gate. No flock — operation is idempotent and trivial.
-* * * * * $USERNAME $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/track-ssh-activity.sh
-
-# Daily agents-list cleanup (3:30am): drop done/stopped sessions idle ≥48
-# weekday hours, only if a connection-activity marker is ≤24h old (i.e.
-# user hasn't been away for too long). Worktree-safe (claude rm keeps dirty
-# worktrees; we additionally guard against unpushed commits).
-30 3 * * * $USERNAME flock -n $HOME_DIR/.locks/agents-cleanup $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/agents-cleanup.sh
+#* * * * * $USERNAME $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/track-ssh-activity.sh
+#
+# Daily agents-list cleanup (3:30am): drop done/stopped/failed/crashed sessions
+# idle ≥48 weekday hours, only if a connection-activity marker is ≤24h old.
+# Uses rm -rf jobs/<id> — preserves transcripts and worktrees.
+#30 3 * * * $USERNAME flock -n $HOME_DIR/.locks/agents-cleanup $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/agents-cleanup.sh
