@@ -1,10 +1,12 @@
 #!/bin/bash
-# Cleanup stopped/done agent sessions you've moved on from.
+# Cleanup terminal-state agent sessions you've moved on from.
 #
 # Policy: a session is deleted iff ALL of
-#   (1) state ∈ {done, stopped}
+#   (1) state ∈ {done, stopped, failed, crashed}
 #   (2) tempo == "idle" (not actively responding mid-turn)
-#   (3) not present in supervisor roster (no live worker)
+#   (3) supervisor roster entry's pid is not actually alive
+#       (roster presence alone isn't enough — stale entries with pid=0 or
+#       dead pids happen when the supervisor's bookkeeping desyncs)
 #   (4) worktree (if any) has no unpushed commits — `claude rm` would
 #       otherwise force-delete the branch via `git branch -D`, leaving
 #       commits only in reflog
@@ -85,9 +87,6 @@ if [ "$activity_age" -gt "$activity_threshold_s" ]; then
     exit 0
 fi
 
-roster_ids=""
-[ -f "$ROSTER" ] && roster_ids=$(jq -r '.workers | keys[]' "$ROSTER" 2>/dev/null || echo "")
-
 deleted=0; kept=0; skipped=0
 
 for d in "$JOBS_DIR"/*/; do
@@ -103,7 +102,7 @@ for d in "$JOBS_DIR"/*/; do
     worktree_branch=$(jq -r '.worktreeBranch // ""' "$state_file" 2>/dev/null || echo "")
 
     case "$state" in
-        done|stopped) ;;
+        done|stopped|failed|crashed) ;;
         *)
             skipped=$((skipped + 1))
             [ "$DRY_RUN" = 1 ] && printf 'SKIP   %s  state=%-8s non-terminal\n' "$id" "${state:-empty}"
@@ -116,9 +115,13 @@ for d in "$JOBS_DIR"/*/; do
         continue
     fi
 
-    if echo "$roster_ids" | grep -qx "$id"; then
+    # Roster presence alone isn't enough — the supervisor sometimes leaves
+    # stale entries (e.g. pid=0, or pid for a process that's since died).
+    # Verify the worker pid is actually alive.
+    worker_pid=$(jq -r --arg id "$id" '.workers[$id].pid // 0' "$ROSTER" 2>/dev/null || echo 0)
+    if [ "$worker_pid" -gt 0 ] && kill -0 "$worker_pid" 2>/dev/null; then
         skipped=$((skipped + 1))
-        [ "$DRY_RUN" = 1 ] && printf 'SKIP   %s  state=%-8s in roster (live worker)\n' "$id" "$state"
+        [ "$DRY_RUN" = 1 ] && printf 'SKIP   %s  state=%-8s in roster (pid=%d live)\n' "$id" "$state" "$worker_pid"
         continue
     fi
 
