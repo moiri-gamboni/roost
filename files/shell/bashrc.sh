@@ -125,11 +125,36 @@ if [[ -n "${TMUX:-}" ]]; then
     unset _v
 fi
 
+# --- GitHub token resolution ---
+
+# Resolve a GH_TOKEN from ~/.config/git/tokens/ based on the git remote's owner.
+# Falls back to the personal token (first file found) if no match.
+_resolve_gh_token() {
+    local dir="$1"
+    local token_dir="$HOME/.config/git/tokens"
+    [ -d "$token_dir" ] || return 0
+
+    local remote_url owner token_file
+    remote_url=$(git -C "$dir" remote get-url origin 2>/dev/null || true)
+    if [[ -n "$remote_url" ]]; then
+        # Extract owner from https://github.com/OWNER/repo or git@github.com:OWNER/repo
+        owner=$(echo "$remote_url" | sed -n 's|.*github\.com[:/]\([^/]*\)/.*|\1|p' | tr '[:upper:]' '[:lower:]')
+    fi
+
+    if [[ -n "${owner:-}" ]] && [[ -f "$token_dir/$owner" ]]; then
+        token_file="$token_dir/$owner"
+    else
+        # Fall back to first available token (skip dotfiles)
+        token_file=$(find "$token_dir" -maxdepth 1 -type f -not -name '.*' | sort | head -1)
+        if [[ -n "${owner:-}" ]] && [[ -n "$token_file" ]]; then
+            echo "Warning: no token for '$owner', falling back to $(basename "$token_file")" >&2
+        fi
+    fi
+
+    [ -n "$token_file" ] && cat "$token_file"
+}
+
 # --- Agent management helpers ---
-#
-# GH_TOKEN is resolved per-session by ~/roost/claude/hooks/gh-token.sh
-# (SessionStart hook), so it works for any spawn path including the agent
-# view dashboard and one-off `claude --bg`.
 
 # Name for this connection's grouped tmux session. $ROOST_CLIENT (set by the
 # client's alias, e.g. ROOST_CLIENT=pixel) gives stable rejoining across
@@ -178,33 +203,31 @@ _ensure_tmux() {
     return 2  # new session created, need attach (shell window already exists)
 }
 
-# Spawn a supervisor-managed Claude session in a tmux window.
+# Launch an interactive Claude session in a tmux window.
 # Usage: agent [path] [claude-args...]
-#   agent                           # fresh bg session in cwd
-#   agent ~/roost/code/myapp        # fresh bg session in that dir
-#   agent -r                        # bg session with --resume picker (shown on attach)
-#   agent -c                        # bg session continuing the most recent
-#   agent ~/roost/code/myapp -r     # resume picker scoped to that dir
-#
-# Always spawns via `claude --bg`, so the session is supervisor-managed and
-# appears in `agents`. Extra flags (-r, -c, --resume <id>, etc.) pass through
-# to claude; the picker/continue UI runs inside the bg session and is visible
-# when you attach. Resumed sessions are forks: they load the original
-# conversation but get a new session UUID, so the original JSONL is preserved.
+#   agent                           # cwd, interactive
+#   agent ~/roost/code/myapp        # that dir
+#   agent ~/roost/code/myapp -c     # continue last session
+#   agent -c                        # continue in cwd
 agent() {
     local dir="$PWD"
     local -a claude_args=()
 
+    # If first arg is a directory, use it as the working dir
     if [[ $# -gt 0 ]] && [[ -d "$1" ]]; then
         dir="$1"
         shift
     fi
     claude_args=("$@")
 
-    # Window-name dedup
-    local base_name name existing
+    # Window name defaults to basename of the directory
+    local base_name
     base_name=$(basename "$dir")
-    name="$base_name"
+    local name="$base_name"
+
+    # Deduplicate: if window name exists, append -2, -3, etc.
+    # Inside tmux, list from current session (shares windows with the group)
+    local existing
     if [[ -n "${TMUX:-}" ]]; then
         existing=$(tmux list-windows -F '#{window_name}' 2>/dev/null || true)
     else
@@ -212,91 +235,29 @@ agent() {
     fi
     if echo "$existing" | grep -Fqx "$name"; then
         local i=2
-        while echo "$existing" | grep -Fqx "${base_name}-${i}"; do ((i++)); done
+        while echo "$existing" | grep -Fqx "${base_name}-${i}"; do
+            ((i++))
+        done
         name="${base_name}-${i}"
     fi
 
-    # Spawn via --bg, pass any flags through.
-    # Set --name so the dashboard row shows a useful label instead of the "bg"
-    # template placeholder. Three cases:
-    #   - Fresh spawn (no claude flags): name = cwd basename.
-    #   - Resume by explicit UUID: name = source session's custom-title (read
-    #     from its JSONL). Without this, --bg --resume forks to a new UUID and
-    #     state.json.name stays null even though the JSONL inherits the title.
-    #   - Resume via interactive picker (-r with no UUID): can't pre-resolve.
-    #     We launch a background watcher that polls the new fork's JSONL for
-    #     the inherited custom-title (written after the user picks) and patches
-    #     state.json.name + nameSource. Supervisor writes preserve user-set
-    #     names with nameSource=user, so the patch sticks.
-    local -a bg_args=()
-    local source_name=""
-    local need_picker_watcher=0
-    if [[ ${#claude_args[@]} -eq 0 ]]; then
-        bg_args+=(--name "$base_name")
-    else
-        local arg jsonl
-        for arg in "${claude_args[@]}"; do
-            if [[ "$arg" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]]; then
-                jsonl=$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" \
-                    -name "$arg.jsonl" -type f 2>/dev/null | head -1)
-                if [[ -n "$jsonl" ]]; then
-                    source_name=$(grep -m1 '"type":"custom-title"' "$jsonl" \
-                        | jq -r '.customTitle' 2>/dev/null)
-                fi
-                break
-            fi
-        done
-        if [[ -n "$source_name" && "$source_name" != "null" ]]; then
-            bg_args+=(--name "$source_name")
-        else
-            need_picker_watcher=1
-        fi
+    # Resolve GitHub token for this repo
+    local gh_token
+    gh_token=$(_resolve_gh_token "$dir")
+
+    local -a cmd_parts=()
+    if [[ -n "$gh_token" ]]; then
+        cmd_parts+=(export "GH_TOKEN=$(printf '%q' "$gh_token")" '&&')
     fi
-    local out id
-    out=$(cd "$dir" && claude --bg "${bg_args[@]}" "${claude_args[@]}" 2>&1)
-    # Strip ANSI codes before extracting the id (claude --bg colorizes output)
-    id=$(echo "$out" | sed 's/\x1b\[[0-9;]*m//g' | grep -oE 'backgrounded · [a-f0-9]+' | awk '{print $3}')
-    if [[ -z "$id" ]]; then
-        echo "$out" >&2
-        return 1
-    fi
-    # Picker case: kick off async watcher that waits for the inherited
-    # custom-title to appear in the fork's JSONL, then patches state.json.
-    if [[ $need_picker_watcher -eq 1 ]]; then
-        local jobs_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/jobs"
-        local state_file="$jobs_dir/$id/state.json"
-        local uuid; uuid=$(jq -r '.sessionId' "$state_file" 2>/dev/null)
-        local encoded; encoded=$(echo "$dir" | tr '/' '-')
-        local jsonl_path="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$encoded/$uuid.jsonl"
-        # Poll every 2s for up to 30 min. Covers a leisurely picker browse;
-        # the loop body is trivial (file stat + grep when present + jq once),
-        # so the overhead is negligible. Inotify-based watch would be cleaner
-        # but inotifywait isn't installed by default.
-        (
-            for _ in $(seq 900); do
-                if [[ -f "$jsonl_path" ]]; then
-                    local t
-                    t=$(grep -m1 '"type":"custom-title"' "$jsonl_path" 2>/dev/null \
-                        | jq -r '.customTitle' 2>/dev/null)
-                    if [[ -n "$t" && "$t" != "null" ]]; then
-                        local tmpf; tmpf=$(mktemp)
-                        jq --arg n "$t" '.name = $n | .nameSource = "user"' \
-                            "$state_file" > "$tmpf" && mv "$tmpf" "$state_file"
-                        break
-                    fi
-                fi
-                sleep 2
-            done
-        ) &>/dev/null &
-        disown 2>/dev/null
-    fi
-    # Chain a shell-window selection after `claude attach` exits so closing the
-    # session lands us on the shell window instead of whatever tmux picks next.
-    local cmd="claude attach $id; tmux select-window -t shell 2>/dev/null"
+    cmd_parts+=(cd "$(printf '%q' "$dir")" '&&' claude)
+    for arg in "${claude_args[@]}"; do
+        cmd_parts+=("$(printf '%q' "$arg")")
+    done
 
     _ensure_tmux
     local state=$?
     # Ensure a shell window exists (state=2 means _ensure_tmux already created one)
+    # When inside tmux (state=0), main might not exist if we're in a different session
     if [[ $state -ne 2 ]] && ! echo "$existing" | grep -Fqx shell; then
         if [[ $state -ne 0 ]] || tmux has-session -t main 2>/dev/null; then
             tmux new-window -t main -n shell -d
@@ -305,10 +266,13 @@ agent() {
         fi
     fi
     if [[ $state -eq 0 ]]; then
-        tmux new-window -n "$name" "$cmd"
+        # Inside tmux: target current (grouped) session so it switches to the new window
+        tmux new-window -n "$name" "${cmd_parts[*]}"
     else
-        local group; group=$(_roost_group_name)
-        tmux new-window -t main -n "$name" "$cmd"
+        # Outside tmux: create window in main, then attach via grouped session
+        local group
+        group=$(_roost_group_name)
+        tmux new-window -t main -n "$name" "${cmd_parts[*]}"
         if tmux has-session -t "$group" 2>/dev/null; then
             tmux attach-session -t "$group" \; select-window -t "$name"
         else
@@ -317,49 +281,42 @@ agent() {
     fi
 }
 
-# Open or focus a live agent-view dashboard window in the main group.
-# Inside the dashboard: arrow keys to navigate, Space to peek, Enter to attach,
-# ← to detach. For quick tmux-window switching, use Ctrl-b n/p or Ctrl-b w.
-# `claude agents` auto-spawns the supervisor if it isn't running.
-#
-# Detection is by pane_title ("claude agents", set by the dashboard's OSC),
-# not window name, so a previously-created `agents` window whose content has
-# been hijacked by an attached session (via Enter on a row) is correctly
-# ignored — a fresh dashboard window is created in that case.
-_find_dashboard_window() {
-    local target="${1:-}"  # optional session/scope, e.g. "main" or empty for current
-    if [[ -n "$target" ]]; then
-        tmux list-windows -t "$target" -F '#{window_id} #{pane_title}' 2>/dev/null \
-            | awk '{title=$0; sub(/^[^ ]+ /,"",title); if (title == "claude agents") {print $1; exit}}'
+# Interactive agent window picker, or attach to tmux if outside it.
+agents() {
+    if [[ -n "${TMUX:-}" ]]; then
+        tmux choose-window
     else
-        tmux list-windows -F '#{window_id} #{pane_title}' 2>/dev/null \
-            | awk '{title=$0; sub(/^[^ ]+ /,"",title); if (title == "claude agents") {print $1; exit}}'
+        _sweep_dead_groups
+        local group
+        group=$(_roost_group_name)
+        if tmux has-session -t "$group" 2>/dev/null; then
+            tmux attach-session -t "$group" \; choose-window
+        else
+            tmux new-session -t main -s "$group" \; choose-window
+        fi
     fi
 }
 
-agents() {
-    if [[ -n "${TMUX:-}" ]]; then
-        local target; target=$(_find_dashboard_window)
-        if [[ -n "$target" ]]; then
-            tmux select-window -t "$target"
-        else
-            tmux new-window -n agents "claude agents"
-        fi
-        return
+# Gracefully stop an agent by sending Ctrl-D (triggers SessionEnd hooks).
+# Usage: agent_stop <index>
+agent_stop() {
+    if [[ $# -eq 0 ]]; then
+        echo "Usage: agent_stop <window-index>" >&2
+        return 1
     fi
-    # _ensure_tmux creates main with a shell window when none exists, so the
-    # singleton shell window invariant matches what `agent` provides.
-    _ensure_tmux
-    local target; target=$(_find_dashboard_window main)
-    if [[ -z "$target" ]]; then
-        target=$(tmux new-window -t main -n agents -P -F '#{window_id}' "claude agents")
+    tmux send-keys -t "$1" C-d
+}
+
+# Force-kill an agent with double Ctrl-C (triggers exit after 800ms).
+# Usage: agent_kill <index>
+agent_kill() {
+    if [[ $# -eq 0 ]]; then
+        echo "Usage: agent_kill <window-index>" >&2
+        return 1
     fi
-    local group; group=$(_roost_group_name)
-    if tmux has-session -t "$group" 2>/dev/null; then
-        tmux attach-session -t "$group" \; select-window -t "$target"
-    else
-        tmux new-session -t main -s "$group" \; select-window -t "$target"
-    fi
+    tmux send-keys -t "$1" C-c
+    sleep 0.5
+    tmux send-keys -t "$1" C-c
 }
 
 # Attach to the main tmux session as a grouped client: same windows,
