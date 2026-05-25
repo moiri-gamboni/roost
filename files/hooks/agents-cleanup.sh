@@ -1,22 +1,30 @@
 #!/bin/bash
-# Cleanup terminal-state agent sessions you've moved on from.
+# Drop terminal-state agent sessions from the dashboard list.
 #
-# Policy: a session is deleted iff ALL of
+# Removes only the supervisor's job metadata under $CLAUDE_CONFIG_DIR/jobs/<id>/.
+# Does NOT touch:
+#   - the conversation transcript (~/roost/claude/projects/<encoded-cwd>/<sessionId>.jsonl)
+#     — session remains resumable via `claude --resume`
+#   - the session's worktree or branch — pushed work and unpushed commits
+#     both stay on disk; manage worktree cleanup separately
+#
+# We use plain `rm -rf $JOBS_DIR/<id>` rather than `claude rm <id>` because
+# the latter also deletes the .jsonl transcript and force-deletes the
+# worktree branch via `git branch -D`. Manual rm is the surgical primitive.
+#
+# Policy: a session is dropped iff ALL of
 #   (1) state ∈ {done, stopped, failed, crashed}
 #   (2) tempo == "idle" (not actively responding mid-turn)
 #   (3) supervisor roster entry's pid is not actually alive
 #       (roster presence alone isn't enough — stale entries with pid=0 or
 #       dead pids happen when the supervisor's bookkeeping desyncs)
-#   (4) worktree (if any) has no unpushed commits — `claude rm` would
-#       otherwise force-delete the branch via `git branch -D`, leaving
-#       commits only in reflog
-#   (5) the session has been idle for ≥ AGENTS_CLEANUP_IDLE_HOURS weekday
+#   (4) the session has been idle for ≥ AGENTS_CLEANUP_IDLE_HOURS weekday
 #       hours since updatedAt (weekend hours are NOT counted; default: 48)
-#   (6) the connection-activity marker mtime is ≤ AGENTS_CLEANUP_ACTIVITY_HOURS
+#   (5) the connection-activity marker mtime is ≤ AGENTS_CLEANUP_ACTIVITY_HOURS
 #       calendar hours old — i.e. an SSH or ET connection was alive recently
 #       (default: 24). Marker is touched once a minute by track-ssh-activity.sh.
 #
-# (6) is a run-level gate: if it fails, no sessions are evaluated.
+# (5) is a run-level gate: if it fails, no sessions are evaluated.
 #
 # Usage:
 #   agents-cleanup.sh                # delete eligible, log to journald
@@ -98,8 +106,6 @@ for d in "$JOBS_DIR"/*/; do
     state=$(jq -r '.state // ""' "$state_file" 2>/dev/null || echo "")
     tempo=$(jq -r '.tempo // ""' "$state_file" 2>/dev/null || echo "")
     updated_at=$(jq -r '.updatedAt // ""' "$state_file" 2>/dev/null || echo "")
-    worktree_path=$(jq -r '.worktreePath // ""' "$state_file" 2>/dev/null || echo "")
-    worktree_branch=$(jq -r '.worktreeBranch // ""' "$state_file" 2>/dev/null || echo "")
 
     case "$state" in
         done|stopped|failed|crashed) ;;
@@ -147,25 +153,16 @@ for d in "$JOBS_DIR"/*/; do
         continue
     fi
 
-    if [ -n "$worktree_path" ] && [ -d "$worktree_path" ]; then
-        remote_has_head=$(git -C "$worktree_path" branch -r --contains HEAD 2>/dev/null | head -1 || true)
-        if [ -z "$remote_has_head" ]; then
-            kept=$((kept + 1))
-            [ "$DRY_RUN" = 1 ] && printf 'KEEP   %s  state=%-8s unpushed on %s\n' "$id" "$state" "${worktree_branch:-detached}"
-            continue
-        fi
-    fi
-
     if [ "$DRY_RUN" = 1 ]; then
         deleted=$((deleted + 1))
-        printf 'DELETE %s  state=%-8s idle=%-3dh worktree=%s\n' "$id" "$state" "$idle_h" "${worktree_path:-none}"
+        printf 'DROP   %s  state=%-8s idle=%-3dh\n' "$id" "$state" "$idle_h"
     else
-        if claude rm "$id" >/dev/null 2>&1; then
+        if rm -rf "$d"; then
             deleted=$((deleted + 1))
-            logger -t "$_HOOK_TAG" "deleted $id state=$state idle=${idle_h}h"
+            logger -t "$_HOOK_TAG" "dropped $id state=$state idle=${idle_h}h"
         else
             kept=$((kept + 1))
-            logger -t "$_HOOK_TAG" "claude rm $id failed"
+            logger -t "$_HOOK_TAG" "rm -rf $d failed"
         fi
     fi
 done
