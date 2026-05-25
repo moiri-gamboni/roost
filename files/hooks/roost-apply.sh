@@ -100,6 +100,7 @@ define_manifest() {
     cat <<'MANIFEST_A'
 files/settings.json|$ROOST_DIR/claude/settings.json|sed-roost|
 files/hooks/_hook-env.sh|$ROOST_DIR/claude/hooks/_hook-env.sh|plain+x|
+files/hooks/gh-token.sh|$ROOST_DIR/claude/hooks/gh-token.sh|plain+x|
 files/hooks/reflect.sh|$ROOST_DIR/claude/hooks/reflect.sh|plain+x|
 files/hooks/notify.sh|$ROOST_DIR/claude/hooks/notify.sh|plain+x|
 files/hooks/statusline.sh|$ROOST_DIR/claude/hooks/statusline.sh|plain+x|

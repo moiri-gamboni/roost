@@ -125,36 +125,12 @@ if [[ -n "${TMUX:-}" ]]; then
     unset _v
 fi
 
-# --- GitHub token resolution ---
-
-# Resolve a GH_TOKEN from ~/.config/git/tokens/ based on the git remote's owner.
-# Falls back to the personal token (first file found) if no match.
-_resolve_gh_token() {
-    local dir="$1"
-    local token_dir="$HOME/.config/git/tokens"
-    [ -d "$token_dir" ] || return 0
-
-    local remote_url owner token_file
-    remote_url=$(git -C "$dir" remote get-url origin 2>/dev/null || true)
-    if [[ -n "$remote_url" ]]; then
-        # Extract owner from https://github.com/OWNER/repo or git@github.com:OWNER/repo
-        owner=$(echo "$remote_url" | sed -n 's|.*github\.com[:/]\([^/]*\)/.*|\1|p' | tr '[:upper:]' '[:lower:]')
-    fi
-
-    if [[ -n "${owner:-}" ]] && [[ -f "$token_dir/$owner" ]]; then
-        token_file="$token_dir/$owner"
-    else
-        # Fall back to first available token (skip dotfiles)
-        token_file=$(find "$token_dir" -maxdepth 1 -type f -not -name '.*' | sort | head -1)
-        if [[ -n "${owner:-}" ]] && [[ -n "$token_file" ]]; then
-            echo "Warning: no token for '$owner', falling back to $(basename "$token_file")" >&2
-        fi
-    fi
-
-    [ -n "$token_file" ] && cat "$token_file"
-}
-
 # --- Agent management helpers ---
+#
+# GH_TOKEN is resolved per-session by ~/roost/claude/hooks/gh-token.sh
+# (SessionStart hook), so it works for any spawn path — interactive
+# `agent`-launched sessions, ad-hoc `claude --bg`, cron tasks, etc. —
+# without each entry point needing its own resolution logic.
 
 # Name for this connection's grouped tmux session. $ROOST_CLIENT (set by the
 # client's alias, e.g. ROOST_CLIENT=pixel) gives stable rejoining across
@@ -241,14 +217,8 @@ agent() {
         name="${base_name}-${i}"
     fi
 
-    # Resolve GitHub token for this repo
-    local gh_token
-    gh_token=$(_resolve_gh_token "$dir")
-
+    # GH_TOKEN is set by the gh-token.sh SessionStart hook based on cwd.
     local -a cmd_parts=()
-    if [[ -n "$gh_token" ]]; then
-        cmd_parts+=(export "GH_TOKEN=$(printf '%q' "$gh_token")" '&&')
-    fi
     cmd_parts+=(cd "$(printf '%q' "$dir")" '&&' claude)
     for arg in "${claude_args[@]}"; do
         cmd_parts+=("$(printf '%q' "$arg")")
@@ -295,28 +265,6 @@ agents() {
             tmux new-session -t main -s "$group" \; choose-window
         fi
     fi
-}
-
-# Gracefully stop an agent by sending Ctrl-D (triggers SessionEnd hooks).
-# Usage: agent_stop <index>
-agent_stop() {
-    if [[ $# -eq 0 ]]; then
-        echo "Usage: agent_stop <window-index>" >&2
-        return 1
-    fi
-    tmux send-keys -t "$1" C-d
-}
-
-# Force-kill an agent with double Ctrl-C (triggers exit after 800ms).
-# Usage: agent_kill <index>
-agent_kill() {
-    if [[ $# -eq 0 ]]; then
-        echo "Usage: agent_kill <window-index>" >&2
-        return 1
-    fi
-    tmux send-keys -t "$1" C-c
-    sleep 0.5
-    tmux send-keys -t "$1" C-c
 }
 
 # Attach to the main tmux session as a grouped client: same windows,

@@ -17,6 +17,16 @@
     "defaultMode": "auto"
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/gh-token.sh"
+          }
+        ]
+      }
+    ],
     "PreCompact": [
       {
         "hooks": [
