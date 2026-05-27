@@ -122,6 +122,7 @@ files/private/code-CLAUDE.md|$ROOST_DIR/code/CLAUDE.md|plain|
 files/private/global-CLAUDE.md|$ROOST_DIR/claude/CLAUDE.md|plain|
 files/skills/html2markdown/SKILL.md|$ROOST_DIR/claude/skills/html2markdown/SKILL.md|plain|
 files/skills/havelock-api/SKILL.md|$ROOST_DIR/claude/skills/havelock-api/SKILL.md|plain|
+files/skills/humanizer/SKILL.md|$ROOST_DIR/claude/skills/humanizer/SKILL.md|plain|
 MANIFEST_A
 
     # Category B: System files (root needed, may require service restarts)
