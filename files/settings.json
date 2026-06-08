@@ -59,9 +59,8 @@
     "claude-code-setup@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true,
     "playground@claude-plugins-official": true,
-    "plugin-dev@claude-plugins-official": true,
+    "plugin-dev@claude-plugins-official": false,
     "praxis@praxis-marketplace": true,
-    "ralph-loop@claude-plugins-official": true,
     "serena@claude-plugins-official": true,
     "strip-images@claude-strip-images": true
   },
