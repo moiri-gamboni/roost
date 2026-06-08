@@ -82,7 +82,7 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
   - `_setup-env.sh` -- Shared environment sourced by every setup script
   - `settings.json` -- Claude Code settings with hook definitions (SessionStart/End, PreCompact, Stop, PreToolUse, Notification)
   - `private/` -- Separate git repo (`claude-mds`); commit changes there, then deploy with `roost-apply push`
-    - `global-CLAUDE.md` -- Deployed to `$CLAUDE_CONFIG_DIR/CLAUDE.md` (`~/roost/claude/CLAUDE.md`); epistemic style, learning system, memory format
+    - `global-CLAUDE.md` -- Deployed to `$CLAUDE_CONFIG_DIR/CLAUDE.md` (`~/roost/claude/CLAUDE.md`); epistemic style, planning, search, agent, and writing conventions
     - `code-CLAUDE.md` -- Deployed to `~/roost/code/CLAUDE.md`; safety, planning, search, agent, and tool conventions
   - `Caddyfile` -- Caddy reverse proxy config template (envsubst-expanded); imports `/etc/caddy/sites-enabled/*` for app routes
   - `caddy-tailscale.conf` -- Systemd drop-in for Caddy to wait for Tailscale
@@ -100,7 +100,7 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
   - `shell/bashrc.sh` -- Shell configuration (PATH, tmux, agent helpers); deployed to `~/.bashrc.d/roost.sh`
   - `hooks/` -- Shell scripts for Claude Code hooks and cron jobs
     - `_hook-env.sh` -- Shared library: JSON input parsing (`hook_json`), ntfy helpers, rate limiting, logging
-    - `reflect.md` -- Prompt injected by `reflect.sh` before context compaction
+    - `reflect.md` -- Prompt for the `reflect.sh` PreCompact hook (currently disabled)
     - `roost-apply.sh` -- Config deployment and service reload (manifest-based + flag mode)
     - `roost-net.sh` -- Travel VPN control CLI: `status`, `travel on/off`, `vpn on/off`, `test`, `client {android|laptop|ssh}`, `rotate-keys`; symlinked as `~/bin/roost-net`
     - `cloudflare-assemble.sh` -- Assembles cloudflare config from base header + app fragments
@@ -165,14 +165,14 @@ Hooks are defined in `files/settings.json` and deployed to `~/roost/claude/hooks
 |---|---|---|
 | SessionStart | `session-lock.sh` | Writes a lock file with hostname/tmux/PID metadata for multi-machine coordination |
 | SessionEnd | `session-unlock.sh` | Removes the lock file; auto-names unnamed sessions via `claude -p --model sonnet` (background) |
-| PreCompact | `reflect.sh` | Injects a prompt reminding the agent to save learnings before context compaction |
+| PreCompact | `reflect.sh` | Disabled (memory/reflection system not in use); previously injected a prompt to save learnings before context compaction |
 | Notification | `notify.sh` | Sends push notifications via local ntfy (with rate limiting and priority levels) |
 
 Hook scripts source `_hook-env.sh` (except `reflect.sh` which just cats a prompt file) which provides `hook_json()` for parsing Claude Code's JSON input, `ntfy_send()` for notifications (with journald fallback), `rate_limit_ok()` to prevent notification floods, and journald logging via `logger -t "$_HOOK_TAG"` (tags: `roost/<script-name>`).
 
 Cron-triggered hooks (not Claude Code events):
 - `health-check.sh` -- Checks Ollama, Caddy, ntfy, Tailscale, cloudflared, disk; hard failures bundle into a high-priority `Service health alert`, cooled down by failure-set hash (notify on set change, else at most hourly). Soft signals (sustained swap >3GB high-priority, pending reboot via `/var/run/reboot-required` default-priority) send their own ntfy with per-event cooldowns (swap: 1h; reboot: 7d reminder, re-arms on new mtime). Sources `health-check-apps.sh` if present for app-specific checks.
-- `scheduled-task.sh` / `run-scheduled-task.sh` -- Runs Claude Code tasks in tmux windows. Two configured: daily 8:00 morning summary (ntfy history), Sunday 10:00 memory cleanup (deduplicates `~/roost/memory/`). Both run as headless `claude -p` in a `cron` tmux session.
+- `scheduled-task.sh` / `run-scheduled-task.sh` -- Runs Claude Code tasks in tmux windows as headless `claude -p` in a `cron` tmux session. One active: daily 8:00 morning summary (ntfy history). (A weekly memory-cleanup task is defined but disabled in `cron-roost`.)
 - `auto-update.sh` -- Weekly updates (Sunday 3am) with btrfs snapshot before, ntfy summary after. Safeguards: 7-day release cooldown, major version guard (blocked and reported via ntfy). Updated tools: Claude Code, claude-code-tools, aichat-search, claude-code-transcripts, Go, fnm, Node.js LTS, uv, Ollama models, grepai, gitleaks, rodney, OS packages. Logs: `journalctl -t roost/auto-update`.
 - `track-ssh-activity.sh` -- Every minute. Touches `~/roost/claude/last-connection-activity` if `ss` shows any SSH (22) or ET (2022) connection established. Read by `agents-cleanup.sh` to gate "is the user around." No journal access or group memberships needed.
 - `agents-cleanup.sh` -- Daily 3:30am. Drops agent sessions from the dashboard list via `rm -rf $CLAUDE_CONFIG_DIR/jobs/<id>/`. Does NOT touch the conversation transcript (`projects/<encoded-cwd>/<sessionId>.jsonl` stays put → session remains `claude --resume`-able) or the session's worktree/branch. Criteria: state in `{done, stopped, failed, crashed}`, `tempo=idle`, no live worker pid (roster entries with `pid=0` or dead pids don't count as live), idle ≥48 weekday hours (weekends skipped), and the connection-activity marker is ≤24h old. The marker gate ensures cleanup only fires when you've been on the box recently — vacation days don't churn the list. `--dry-run` previews decisions; `--marker FILE` overrides the marker for testing. Env: `AGENTS_CLEANUP_IDLE_HOURS` (default 48), `AGENTS_CLEANUP_ACTIVITY_HOURS` (default 24). Logs: `journalctl -t roost/agents-cleanup`.

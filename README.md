@@ -10,14 +10,14 @@ After running the deploy script you will have:
 - Private networking via Tailscale (SSH gated by Hetzner cloud firewall, no public HTTP/HTTPS ports)
 - Public web apps via Cloudflare Tunnel (zero open HTTP/HTTPS ports)
 - Claude Code with agent teams, session persistence, and push notifications
-- Semantic search over notes and code (Ollama + grepai)
+- Semantic search over skills (Ollama + grepai)
 - Session search and lineage tracking (claude-code-tools)
 - Push notifications to your phone (ntfy)
 - System monitoring (Glances) with automated health alerts
 - RAM monitoring with per-process alerts (3GB threshold)
 - Off-site btrfs backups to laptop (daily incremental snapshots)
 - Drop folder for quick laptop-to-server file transfer
-- Scheduled Claude Code tasks via cron (morning summary, weekly memory cleanup)
+- Scheduled Claude Code tasks via cron (morning summary)
 - Shell helpers for managing Claude Code agents (`agent`, `agents`, `agent_stop`, `agent_kill`)
 
 ## Prerequisites
@@ -225,14 +225,13 @@ The `agent` function resolves `GH_TOKEN` at launch from the repo's remote URL ow
 
 #### Scheduled tasks
 
-Two Claude Code tasks run automatically via cron:
+One Claude Code task runs automatically via cron:
 
 | Schedule | Task |
 |---|---|
 | Daily 8:00 | **Morning summary**: checks ntfy history and summarizes overnight events |
-| Sunday 10:00 | **Memory cleanup**: deduplicates and merges notes in `~/roost/memory/` |
 
-Both run as headless `claude -p` sessions in a `cron` tmux session. If Claude
+It runs as a headless `claude -p` session in a `cron` tmux session. If Claude
 Code OAuth has expired, scheduled task failures will alert via ntfy.
 
 #### Laptop setup:
@@ -468,9 +467,9 @@ The deployed `settings.json` includes:
 
 - **Agent teams** enabled (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`)
 - **Session transcripts** never cleaned up (`cleanupPeriodDays: 99999`)
-- **Auto-compaction** disabled (`autoCompactEnabled: false`); the PreCompact hook injects a reflection prompt instead
+- **Auto-compaction** disabled (`autoCompactEnabled: false`)
 - **Dangerous command blocker** (PreToolUse hook, vendored from [claude-code-templates](https://github.com/davila7/claude-code-templates), MIT) blocks destructive shell commands
-- **Semantic search** via grepai, initialized on `~/roost/memory/` and `~/roost/claude/skills/`
+- **Semantic search** via grepai, initialized on `~/roost/claude/skills/` and `~/roost/memory/` (the latter currently unused)
 
 ## Updating Config After Deploy
 
