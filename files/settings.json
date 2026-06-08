@@ -28,16 +28,7 @@
         ]
       }
     ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/roost/claude/hooks/reflect.sh"
-          }
-        ]
-      }
-    ],
+    "PreCompact": [],
     "Stop": [],
     "Notification": [
       {
