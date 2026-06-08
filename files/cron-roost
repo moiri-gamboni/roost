@@ -10,10 +10,11 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 # Morning summary
 0 8 * * * $USERNAME flock -n $HOME_DIR/.locks/morning-summary $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/scheduled-task.sh "Check ntfy history and summarize what happened overnight" $HOME_DIR/$ROOST_DIR_NAME/code/life
 
-# Weekly memory cleanup
-0 10 * * 0 $USERNAME flock -n $HOME_DIR/.locks/memory-cleanup $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/scheduled-task.sh "Review ~/$ROOST_DIR_NAME/memory/ for duplicate or mergeable notes. Deduplicate and merge where appropriate. Do not delete notes that passed the 6-month test at write time unless you can document a clear reason in the commit message." $HOME_DIR/$ROOST_DIR_NAME/code/life
+# Weekly memory cleanup — DISABLED. The ~/memory note system is not in use.
+# To re-enable, uncomment the line below and roost-apply push.
+#0 10 * * 0 $USERNAME flock -n $HOME_DIR/.locks/memory-cleanup $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/scheduled-task.sh "Review ~/$ROOST_DIR_NAME/memory/ for duplicate or mergeable notes. Deduplicate and merge where appropriate. Do not delete notes that passed the 6-month test at write time unless you can document a clear reason in the commit message." $HOME_DIR/$ROOST_DIR_NAME/code/life
 
-# Weekly auto-update (Sunday 3am, before weekly memory cleanup at 10am)
+# Weekly auto-update (Sunday 3am)
 0 3 * * 0 $USERNAME flock -n $HOME_DIR/.locks/auto-update $HOME_DIR/$ROOST_DIR_NAME/claude/hooks/auto-update.sh
 
 # Weekly Travel-VPN audit (Sunday 4am): roost-net test when vpn=on. cmd_test ntfy_sends on failure so no extra wrapper is needed.
