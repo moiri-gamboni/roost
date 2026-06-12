@@ -149,3 +149,22 @@ else
     FAILURES="$FAILURES\n- PrivateBin write gate returned $_pb_gate (public side may be writable)"
 fi
 unset _pb_gate
+
+# --- Fitness logging API (gym logging; loopback through Caddy covers
+#     caddy + fitness-api + postgres in one probe) ---
+check_service "fitness-api"
+check "Fitness API" "http://127.0.0.1:8090/fitness/api/health"
+
+# tailscale serve must keep proxying the app's HTTPS origin (wake lock + SW
+# need the secure context); the config lives only in tailscaled state.
+if ! tailscale serve status 2>/dev/null | grep -q 'proxy http://127.0.0.1:8090'; then
+    logger -t "$_HOOK_TAG" "FAIL: tailscale serve not proxying :8090 (fitness HTTPS origin down)"
+    FAILURES="$FAILURES\n- tailscale serve not proxying 127.0.0.1:8090 (fitness HTTPS origin)"
+fi
+
+# Nightly pg_dump should leave a dump <2 days old; catches a silently
+# broken cron (missing dir, malformed /etc/cron.d/roost-apps, dump failure).
+if ! find /home/moiri/roost/backups -name 'fitness-*.dump' -mtime -2 2>/dev/null | grep -q .; then
+    logger -t "$_HOOK_TAG" "FAIL: no fitness DB dump <2 days old"
+    FAILURES="$FAILURES\n- No fitness DB dump newer than 2 days (pg_dump cron broken?)"
+fi
