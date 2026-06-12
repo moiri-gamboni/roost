@@ -135,3 +135,17 @@ unset _travel_state_dir _travel_vpn_state _travel_travel_state _travel_wg_state
 # --- PrivateBin (origin for paste.$DOMAIN behind the CF tunnel) ---
 check_service "php8.3-fpm"
 check "PrivateBin" "http://127.0.0.1:8095/"
+
+# The public side must stay read-only: tunnel traffic carries CF-Connecting-IP
+# and Caddy must 403 write methods on it. Anything else means the write gate
+# was lost (e.g. a simplified privatebin.caddy) and the instance is publicly
+# writable again.
+_pb_gate=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X POST \
+    -H 'CF-Connecting-IP: 192.0.2.1' http://127.0.0.1:8095/ || echo 000)
+if [ "$_pb_gate" = "403" ]; then
+    logger -t "$_HOOK_TAG" "OK: PrivateBin write gate (tunnel POST -> 403)"
+else
+    logger -t "$_HOOK_TAG" "FAIL: PrivateBin write gate returned $_pb_gate (expected 403)"
+    FAILURES="$FAILURES\n- PrivateBin write gate returned $_pb_gate (public side may be writable)"
+fi
+unset _pb_gate

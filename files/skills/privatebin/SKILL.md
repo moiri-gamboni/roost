@@ -10,15 +10,25 @@ side; the server stores ciphertext only. The decryption key is the URL
 fragment after `#` and never reaches the server — anyone holding the full
 link can decrypt, so treat links to sensitive content as secrets themselves.
 
+The public hostname is **read-only** (Caddy rejects tunnel-tagged write
+methods with 403). Pastes are created only from this server, through the
+loopback origin.
+
 ## Publish
 
-Use `pbincli` (a uv tool on PATH; the server URL is preset in
-`~/.config/pbincli/pbincli.conf`):
+`pbincli` (a uv tool on PATH) is preconfigured in
+`~/.config/pbincli/pbincli.conf` to use the loopback origin
+`http://127.0.0.1:8095/` — the only endpoint that accepts writes:
 
 ```bash
-pbincli send --format markdown --expire 1week --json --text "$(cat document.md)"
-echo "quick note" | pbincli send --format markdown --expire 1week --json -
+OUT=$(pbincli send --format markdown --expire 1week --json --text "$(cat document.md)")
+echo "$OUT" | jq -r '.result.link, .result.deletelink' \
+  | sed 's|http://127.0.0.1:8095|https://paste.${DOMAIN}|'
 ```
+
+**Always rewrite the host** in `link`/`deletelink` to
+`https://paste.${DOMAIN}/` before sharing, as above — the paste id and key
+are host-independent, so the rewritten links work for anyone.
 
 - **Default to `--format markdown`** (also the instance default; renders
   headings, lists, links). Use `syntaxhighlighting` for code, `plaintext`
@@ -32,26 +42,26 @@ echo "quick note" | pbincli send --format markdown --expire 1week --json -
 - `--json` prints `{status, result: {id, password, deletetoken, link,
   deletelink}}` — `password` here is the URL key, not `--password`.
 
-**Always report back:** the full paste link, the delete link (or token), and
-the expiry chosen.
+**Always report back:** the rewritten public link, the rewritten delete link
+(or token), and the expiry chosen.
 
 ## Read / delete
 
 ```bash
-pbincli get "https://paste.${DOMAIN}/?<id>#<key>"      # saves text to paste-<id>.txt in cwd (-o DIR to redirect)
-pbincli delete "pasteid=<id>&deletetoken=<token>"
+pbincli get "https://paste.${DOMAIN}/?<id>#<key>"   # saves text to paste-<id>.txt in cwd (-o DIR to redirect)
+pbincli delete "pasteid=<id>&deletetoken=<token>"   # runs via loopback (public side is read-only)
 ```
 
 ## Notes
 
-- Paste creation is rate-limited to one per 10 s per client IP. If a send
-  fails with a traffic-limit error, wait ~10 s and retry. For bulk publishing,
-  `--server http://127.0.0.1:8095/` skips the limit (loopback is exempt) but
-  the printed link will carry the loopback host — swap it for
-  `https://paste.${DOMAIN}/` before sharing.
-- The web UI at https://paste.${DOMAIN}/ is public; anyone with the URL can
-  create pastes there too (it also defaults to markdown).
+- Loopback is exempt from the per-IP rate limit, so bulk publishing needs no
+  delays between sends.
+- The public web UI renders pastes for anyone but its Send button fails with
+  403 by design; comments (discussion) are disabled instance-wide.
+- Tokened delete links still work publicly — deletion is a GET authorized by
+  the secret token in the link.
 - Server layout (repo: `files/privatebin/`): php8.3-fpm pool `privatebin` +
-  Caddy on `127.0.0.1:8095`, public ingress via the Cloudflare Tunnel fragment
+  Caddy on `127.0.0.1:8095` (write gate in `privatebin.caddy`), public
+  ingress via the Cloudflare Tunnel fragment
   `~/roost/cloudflared/apps/privatebin.yml`, pastes in
   `/var/lib/privatebin/data`, config in `/etc/privatebin/conf.php`.

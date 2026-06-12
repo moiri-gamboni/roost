@@ -304,6 +304,14 @@ else
     fail "https://paste.$DOMAIN/" "DNS CNAME missing or tunnel ingress broken?"
 fi
 
+# Public side must be read-only: POST through the edge gets 403 from Caddy
+PB_GATE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X POST "https://paste.$DOMAIN/" 2>/dev/null)
+if [ "$PB_GATE" = "403" ]; then
+    pass "public write gate (POST -> 403)"
+else
+    fail "public write gate" "POST returned ${PB_GATE:-nothing} (expected 403)"
+fi
+
 # ── Travel VPN ────────────────────────────────────────────────
 echo ""
 echo "--- Travel VPN ---"

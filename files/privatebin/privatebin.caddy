@@ -2,12 +2,24 @@
 # 127.0.0.1:8095); this site never listens beyond loopback. Config and data
 # live outside the webroot — the deny list is defense-in-depth for the PHP
 # library directories (mirrors upstream's .htaccess/nginx rules).
+#
+# The public side is read-only: tunnel traffic always carries CF-Connecting-IP
+# (set by the Cloudflare edge), so write methods on tagged requests are
+# rejected before PHP runs. Creation happens only via raw loopback (pbincli /
+# the privatebin skill). Reads — including burn-after-reading and tokened
+# delete links — are GETs and unaffected.
 :8095 {
     bind 127.0.0.1
     root * /var/www/privatebin
 
     @internal path /data/* /cfg/* /lib/* /tpl/* /vendor/* /bin/* /.git* /composer.*
     respond @internal 404
+
+    @publicwrite {
+        header CF-Connecting-IP *
+        method POST PUT PATCH DELETE
+    }
+    respond @publicwrite "This PrivateBin is read-only from the public internet." 403
 
     encode gzip
     php_fastcgi unix//run/php/privatebin.sock
