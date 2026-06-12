@@ -214,6 +214,25 @@ else
     logger -t "$_HOOK_TAG" "dufs: skipped (release < 7 days old)"
 fi
 
+# --- PrivateBin (encrypted pastebin webapp) ---
+# Tarball swap; /etc/privatebin config and /var/lib/privatebin data live
+# outside the webroot and are untouched. php-fpm reload clears opcache.
+if [ -d /var/www/privatebin ]; then
+    if github_release_cooldown_ok "PrivateBin/PrivateBin" 7; then
+        PRIVATEBIN_LATEST=$(github_latest_version "PrivateBin/PrivateBin")
+        PRIVATEBIN_CURRENT=$(grep -oP "const VERSION = '\K[^']+" /var/www/privatebin/lib/Controller.php 2>/dev/null || echo "")
+        if [ -n "$PRIVATEBIN_LATEST" ] && [ "$PRIVATEBIN_LATEST" != "$PRIVATEBIN_CURRENT" ]; then
+            if [ -z "$PRIVATEBIN_CURRENT" ] || major_guard "PrivateBin" "$PRIVATEBIN_CURRENT" "$PRIVATEBIN_LATEST"; then
+                track "PrivateBin" bash -c "curl -fsSL 'https://github.com/PrivateBin/PrivateBin/archive/refs/tags/${PRIVATEBIN_LATEST}.tar.gz' -o /tmp/privatebin.tar.gz && sudo rm -rf /var/www/privatebin.new && sudo mkdir -p /var/www/privatebin.new && sudo tar -xzf /tmp/privatebin.tar.gz -C /var/www/privatebin.new --strip-components=1 && rm -f /tmp/privatebin.tar.gz && sudo chown -R root:root /var/www/privatebin.new && sudo mv /var/www/privatebin /var/www/privatebin.old && sudo mv /var/www/privatebin.new /var/www/privatebin && sudo rm -rf /var/www/privatebin.old && sudo systemctl reload php8.3-fpm"
+            fi
+        else
+            logger -t "$_HOOK_TAG" "PrivateBin: up to date (${PRIVATEBIN_CURRENT:-unknown})"
+        fi
+    else
+        logger -t "$_HOOK_TAG" "PrivateBin: skipped (release < 7 days old)"
+    fi
+fi
+
 # --- acme.sh (Let's Encrypt client for Vision Path D wildcard cert) ---
 # Self-update is disabled in vision-cert-init.sh (--auto-upgrade 0); we update
 # acme.sh from here on the same 7-day-cooldown discipline as other tools so

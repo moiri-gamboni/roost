@@ -279,6 +279,31 @@ else
     fail "Tunnel credentials not found in ~/.cloudflared/"
 fi
 
+# ── PrivateBin ────────────────────────────────────────────────
+echo ""
+echo "--- PrivateBin ---"
+
+if run systemctl is-active php8.3-fpm >/dev/null 2>&1; then
+    pass "php8.3-fpm service active"
+else
+    fail "php8.3-fpm service"
+fi
+
+PB_LOCAL=$(run curl -sf --max-time 5 http://127.0.0.1:8095/ 2>/dev/null)
+if echo "$PB_LOCAL" | grep -qi privatebin 2>/dev/null; then
+    pass "PrivateBin origin responds on 127.0.0.1:8095"
+else
+    fail "PrivateBin origin (127.0.0.1:8095)"
+fi
+
+# Laptop-side end-to-end: DNS -> Cloudflare edge -> tunnel -> Caddy -> php-fpm
+PB_PUBLIC=$(curl -sf --max-time 10 "https://paste.$DOMAIN/" 2>/dev/null)
+if echo "$PB_PUBLIC" | grep -qi privatebin 2>/dev/null; then
+    pass "https://paste.$DOMAIN/ publicly reachable"
+else
+    fail "https://paste.$DOMAIN/" "DNS CNAME missing or tunnel ingress broken?"
+fi
+
 # ── Travel VPN ────────────────────────────────────────────────
 echo ""
 echo "--- Travel VPN ---"

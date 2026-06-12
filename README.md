@@ -525,8 +525,9 @@ A weekly cron job (Sunday 3am) updates all installed tools. Before updating,
 it creates a btrfs snapshot. After finishing, it sends an ntfy summary with
 what was updated, what failed, and any available major version bumps.
 
-Updated tools: Claude Code, claude-code-tools, claude-code-transcripts, Go,
-fnm, Node.js, uv, Ollama models, grepai, gitleaks, and OS packages.
+Updated tools: Claude Code, claude-code-tools, claude-code-transcripts,
+aichat-search, Go, fnm, Node.js, uv, Ollama models, grepai, gitleaks, dufs,
+PrivateBin, acme.sh, rodney, and OS packages.
 
 Safeguards:
 - New releases must be at least 7 days old before being applied (cooldown)
