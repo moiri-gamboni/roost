@@ -1,7 +1,9 @@
 #!/bin/bash
 # Install PrivateBin (zero-knowledge encrypted pastebin) behind php-fpm and a
 # loopback-only Caddy site, published via the Cloudflare Tunnel at
-# paste.$DOMAIN (proxied CNAME created laptop-side by deploy.sh):
+# paste.$DOMAIN (proxied CNAME created laptop-side by deploy.sh). The public
+# side is read-only — the Caddy site 403s tunnel-tagged write methods, so
+# pastes are created only via loopback (pbincli / the privatebin skill):
 #   /var/www/privatebin       app code (root-owned, read-only)
 #   /etc/privatebin/conf.php  config (CONFIG_PATH env set in the fpm pool)
 #   /var/lib/privatebin/data  paste storage (privatebin system user)
@@ -118,10 +120,12 @@ else
     ok "pbincli installed"
 fi
 
+# Loopback is the only writable endpoint (public side is read-only); the
+# skill rewrites link hosts to https://paste.$DOMAIN/ before sharing.
 PBCONF="$HOME_DIR/.config/pbincli/pbincli.conf"
-if [ -f "$PBCONF" ] && grep -q "^server=https://paste.$DOMAIN/$" "$PBCONF"; then
+if [ -f "$PBCONF" ] && grep -q "^server=http://127.0.0.1:8095/$" "$PBCONF"; then
     skip "pbincli.conf configured"
 else
-    as_user "mkdir -p '$HOME_DIR/.config/pbincli' && printf 'server=https://paste.%s/\n' '$DOMAIN' > '$PBCONF'"
-    ok "pbincli.conf -> https://paste.$DOMAIN/"
+    as_user "mkdir -p '$HOME_DIR/.config/pbincli' && printf 'server=http://127.0.0.1:8095/\n' > '$PBCONF'"
+    ok "pbincli.conf -> http://127.0.0.1:8095/ (loopback write endpoint)"
 fi

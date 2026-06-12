@@ -9,15 +9,18 @@ name = "PrivateBin"
 ; Documents published from this box are mostly markdown; preselect it.
 defaultformatter = "markdown"
 languageselection = false
+; The public side is read-only (Caddy write gate), so comments could never be
+; posted — drop the affordance entirely.
+discussion = false
 
 [expire]
 default = "1week"
 
 [traffic]
-; Seconds between document creations per client IP — basic abuse damper for a
-; publicly writable instance. Loopback is exempt so server-side tooling
-; (pbincli via the privatebin skill) is never throttled when posting straight
-; to 127.0.0.1:8095.
+; Second layer behind the Caddy write gate (public POSTs are 403'd before PHP
+; runs): if that gate ever disappears, per-IP limiting still damps abuse.
+; Loopback — the only intended write path — is exempt, so pbincli / the
+; privatebin skill are never throttled.
 limit = 10
 exempted = "127.0.0.1"
 ; All public requests arrive via cloudflared from 127.0.0.1; Cloudflare puts
