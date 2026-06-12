@@ -1,4 +1,10 @@
 :8090 {
+    # Dual-bind: tailscale serve (the https://roost.<tailnet>.ts.net origin)
+    # only accepts loopback proxy targets, so this site must also listen on
+    # 127.0.0.1 in addition to the default Tailscale-IP bind.
+    # No app on this listener may emit Access-Control-Allow-* headers:
+    # the fitness API's CSRF defense depends on cross-origin preflights failing.
+    bind 100.73.69.20 127.0.0.1
     import /etc/caddy/apps-enabled/*
     @nocache path *.html *.js *.css *.json
     header @nocache Cache-Control no-cache
