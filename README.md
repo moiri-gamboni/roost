@@ -17,6 +17,7 @@ After running the deploy script you will have:
 - RAM monitoring with per-process alerts (3GB threshold)
 - Off-site btrfs backups to laptop (daily incremental snapshots)
 - Drop folder for quick laptop-to-server file transfer
+- PrivateBin: end-to-end encrypted pastebin, publicly shareable links via the tunnel (`paste.<domain>`)
 - Scheduled Claude Code tasks via cron (morning summary)
 - Shell helpers for managing Claude Code agents (`agent`, `agents`, `agent_stop`, `agent_kill`)
 
@@ -196,6 +197,8 @@ done
 | Cloudflare ingress | `~/roost/cloudflared/apps/<app>.yml` |
 | Cron jobs | `/etc/cron.d/${ROOST_DIR_NAME}-apps` (filenames must not contain dots) |
 | Health checks | `~/roost/claude/hooks/health-check-apps.sh` (sourced by the main health check if present) |
+
+PrivateBin (`files/setup/privatebin.sh`) is a repo-managed worked example of this pattern: loopback Caddy site on `:8095`, ingress fragment `privatebin.yml`, proxied CNAME `paste.<domain>` ensured by deploy.sh.
 
 #### Shell helpers
 

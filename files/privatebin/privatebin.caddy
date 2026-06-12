@@ -1,0 +1,15 @@
+# PrivateBin origin. Public entry is the Cloudflare Tunnel (paste.$DOMAIN ->
+# 127.0.0.1:8095); this site never listens beyond loopback. Config and data
+# live outside the webroot — the deny list is defense-in-depth for the PHP
+# library directories (mirrors upstream's .htaccess/nginx rules).
+:8095 {
+    bind 127.0.0.1
+    root * /var/www/privatebin
+
+    @internal path /data/* /cfg/* /lib/* /tpl/* /vendor/* /bin/* /.git* /composer.*
+    respond @internal 404
+
+    encode gzip
+    php_fastcgi unix//run/php/privatebin.sock
+    file_server
+}
