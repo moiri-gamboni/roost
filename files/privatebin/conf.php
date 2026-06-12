@@ -20,7 +20,7 @@ default = "1week"
 ; Second layer behind the Caddy write gate (public POSTs are 403'd before PHP
 ; runs): if that gate ever disappears, per-IP limiting still damps abuse.
 ; Loopback — the only intended write path — is exempt, so pbincli / the
-; privatebin skill are never throttled.
+; pastebin skill are never throttled.
 limit = 10
 exempted = "127.0.0.1"
 ; All public requests arrive via cloudflared from 127.0.0.1; Cloudflare puts
