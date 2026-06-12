@@ -193,6 +193,38 @@ ensure_dns_record() {
         || { echo "Error updating DNS record:"; echo "$resp" | jq '.errors // .'; exit 1; }
 }
 
+# Idempotent proxied-CNAME upsert for Cloudflare-Tunnel-published hostnames
+# (content <TUNNEL_ID>.cfargotunnel.com, proxied=true — unlike the
+# direct-to-IP, unproxied A/AAAA records ensure_dns_record manages).
+#
+#   ensure_cname_record <name> <target>
+ensure_cname_record() {
+    local name="$1" target="$2" existing rec_id rec_content rec_proxied payload resp
+    existing=$(curl -fsS "${CF_AUTH[@]}" \
+        "$CF_API/zones/$CF_ZONE_ID/dns_records?name=$name&type=CNAME" \
+        | jq -c '.result[0] // empty')
+    payload=$(jq -nc --arg name "$name" --arg content "$target" \
+        '{type: "CNAME", name: $name, content: $content, ttl: 1, proxied: true}')
+    if [ -z "$existing" ]; then
+        info_msg "DNS: creating $name CNAME $target (proxied)"
+        resp=$(curl -fsS "${CF_AUTH[@]}" -X POST "$CF_API/zones/$CF_ZONE_ID/dns_records" --data "$payload")
+        echo "$resp" | jq -e '.success' >/dev/null \
+            || { echo "Error creating DNS record:"; echo "$resp" | jq '.errors // .'; exit 1; }
+        return
+    fi
+    rec_id=$(echo "$existing" | jq -r '.id')
+    rec_content=$(echo "$existing" | jq -r '.content')
+    rec_proxied=$(echo "$existing" | jq -r '.proxied')
+    if [ "$rec_content" = "$target" ] && [ "$rec_proxied" = "true" ]; then
+        info_msg "DNS: $name CNAME already correct ($target)"
+        return
+    fi
+    info_msg "DNS: updating $name CNAME $rec_content -> $target (proxied)"
+    resp=$(curl -fsS "${CF_AUTH[@]}" -X PATCH "$CF_API/zones/$CF_ZONE_ID/dns_records/$rec_id" --data "$payload")
+    echo "$resp" | jq -e '.success' >/dev/null \
+        || { echo "Error updating DNS record:"; echo "$resp" | jq '.errors // .'; exit 1; }
+}
+
 # Zone ID (resolve first; the account ID can be derived from the zone if needed)
 ZONE_JSON=$(curl -s "${CF_AUTH[@]}" "$CF_API/zones?name=$DOMAIN")
 CF_ZONE_ID=$(echo "$ZONE_JSON" | jq -r '.result[0].id // empty')
@@ -958,6 +990,18 @@ if ! remote "$ROOT_CMD systemctl is-active cloudflared" &>/dev/null; then
 fi
 remote "$ROOT_CMD systemctl restart cloudflared"
 ok "cloudflared running as systemd service"
+
+# ============================================
+# PrivateBin (encrypted pastebin)
+# ============================================
+
+section "PrivateBin"
+
+# Public hostname rides the tunnel: proxied CNAME -> <tunnel>.cfargotunnel.com.
+ensure_cname_record "paste.$DOMAIN" "$TUNNEL_ID.cfargotunnel.com"
+
+remote_script "setup/privatebin.sh"
+ok "PrivateBin at https://paste.$DOMAIN/ (origin 127.0.0.1:8095)"
 
 # ============================================
 # Travel VPN (Xray + Proton egress)

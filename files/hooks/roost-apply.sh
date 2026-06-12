@@ -123,6 +123,8 @@ files/private/global-CLAUDE.md|$ROOST_DIR/claude/CLAUDE.md|plain|
 files/skills/html2markdown/SKILL.md|$ROOST_DIR/claude/skills/html2markdown/SKILL.md|plain|
 files/skills/havelock-api/SKILL.md|$ROOST_DIR/claude/skills/havelock-api/SKILL.md|plain|
 files/skills/humanizer/SKILL.md|$ROOST_DIR/claude/skills/humanizer/SKILL.md|plain|
+files/skills/privatebin/SKILL.md|$ROOST_DIR/claude/skills/privatebin/SKILL.md|envsubst:DOMAIN|
+files/privatebin/privatebin-cloudflare.yml.tmpl|$ROOST_DIR/cloudflared/apps/privatebin.yml|envsubst:DOMAIN|run:~/roost/claude/hooks/cloudflare-assemble.sh,restart:cloudflared
 MANIFEST_A
 
     # Category B: System files (root needed, may require service restarts)
@@ -162,6 +164,9 @@ files/travel/vision-cert-renew.service|/etc/systemd/system/vision-cert-renew.ser
 files/travel/vision-cert-renew.timer|/etc/systemd/system/vision-cert-renew.timer|plain|daemon-reload,restart:vision-cert-renew.timer
 files/travel/ntfy-cert-renew@.service|/etc/systemd/system/ntfy-cert-renew@.service|plain|daemon-reload
 files/travel/vision-fallback.caddy|/etc/caddy/sites-enabled/vision-fallback.caddy|plain|reload-or-restart:caddy
+files/privatebin/conf.php|/etc/privatebin/conf.php|plain|
+files/privatebin/php-fpm-pool.conf|/etc/php/8.3/fpm/pool.d/privatebin.conf|plain|restart:php8.3-fpm
+files/privatebin/privatebin.caddy|/etc/caddy/sites-enabled/privatebin.caddy|plain|reload-or-restart:caddy
 MANIFEST_B
 }
 

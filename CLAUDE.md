@@ -94,6 +94,7 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
   - `glances.service` -- Systemd unit for Glances monitoring
   - `ram-monitor.service` / `ram-monitor.timer` -- Systemd units for per-process RAM alerting (30s interval)
   - `dufs.service` -- Systemd unit for the dufs file server that backs the drop folder (`setup/dufs.sh` installs it; see Native Services)
+  - `privatebin/` -- PrivateBin app configs (see Native Services): `conf.php` (markdown default, CF-aware rate limiting; deployed to `/etc/privatebin/`), `php-fpm-pool.conf` (dedicated `privatebin` user, socket consumed by Caddy), `privatebin.caddy` (loopback origin `127.0.0.1:8095`), `privatebin-cloudflare.yml.tmpl` (tunnel ingress fragment for `paste.$DOMAIN`)
   - `cron-roost` -- Crontab entries for health checks, scheduled tasks, auto-update
   - `bashrc-append.sh` -- Stub appended to `~/.bashrc`; sources `~/.bashrc.d/$ROOST_DIR_NAME.sh`
   - `profile-append.sh` -- Stub appended to `~/.profile`; sources the same file for non-interactive shells
@@ -105,7 +106,7 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
     - `roost-net.sh` -- Travel VPN control CLI: `status`, `travel on/off`, `vpn on/off`, `test`, `client {android|laptop|ssh}`, `rotate-keys`; symlinked as `~/bin/roost-net`
     - `cloudflare-assemble.sh` -- Assembles cloudflare config from base header + app fragments
   - `skills/` -- Claude Code skills deployed to `$CLAUDE_CONFIG_DIR/skills/`
-    - `html2markdown/SKILL.md`, `havelock-api/SKILL.md`
+    - `html2markdown/SKILL.md`, `havelock-api/SKILL.md`, `humanizer/SKILL.md`, `privatebin/SKILL.md` (publish encrypted pastes via pbincli)
   - `sshd/` -- sshd drop-in configs (`50-clip-forward.conf`: `StreamLocalBindUnlink yes`)
   - `travel/` -- Travel VPN server pieces (Xray + Proton egress); see Travel VPN section below
     - `xray.service`, `xray-boot-guard`, `xray-logrotate.conf`, `xray-config.json.tmpl` -- Xray runtime
@@ -117,9 +118,9 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
     - `apt-roost-travel.conf` -- Dpkg `Post-Invoke` hook deployed to `/etc/apt/apt.conf.d/99-roost-travel.conf`. Runs `proton-routing.sh ensure` after every dpkg op so unattended-upgrades re-execs don't leave a 5m outage window. Note: complementary to `proton-routing-after-networkd.service` — the dpkg hook catches systemd-package re-execs that don't restart networkd; the networkd unit catches `needrestart`-driven networkd restarts that fire after the dpkg hook.
     - `wg-proton.service.d/roost.conf` -- Drop-in for `wg-quick@wg-proton` (ordering + kill-switch sanity)
     - `proton.conf.example` -- Template for Proton WG configs; drop per-profile copies under `/etc/roost-travel/proton-profiles/<name>.conf`
-    - `travel-health.sh` -- Deployed as `health-check-apps.sh`; sourced by the base health check
+    - `travel-health.sh` -- Deployed as `health-check-apps.sh`; sourced by the base health check (hosts travel-vpn + PrivateBin checks)
     - `travel-cloudflare.yml.tmpl` -- CF Tunnel ingress fragment (copied to `~/roost/cloudflared/apps/travel.yml` by `roost-net travel on`)
-  - `setup/` -- Modular setup scripts, run via `remote_script()` in deploy.sh: `system`, `create-user`, `ssh-hardening`, `ufw`, `swap`, `snapper` (btrfs), `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `travel-vpn`, `dufs`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `et`, `clip-forward`, `unattended-upgrades`
+  - `setup/` -- Modular setup scripts, run via `remote_script()` in deploy.sh: `system`, `create-user`, `ssh-hardening`, `ufw`, `swap`, `snapper` (btrfs), `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `privatebin`, `travel-vpn`, `dufs`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `et`, `clip-forward`, `unattended-upgrades`
   - `laptop/` -- Scripts and systemd units designed to run on the laptop, not the server. Each component has a self-contained `install-*.sh` that reads `.env` and handles install + unit rendering + enable in one step.
     - `btrfs-backup.sh` + `roost-backup.service` / `roost-backup.timer` + `install-btrfs-backup.sh` -- Pull-based incremental btrfs snapshot backup (`btrfs send`/`receive`). Daily timer (`RandomizedDelaySec=1h`, `Persistent=true`).
     - `drop-watch.sh` + `drop-watch.service` + `install-drop-watch.sh` -- inotifywait-based folder watcher; auto-rsyncs `~/drop/` to server on change. Installed as a systemd *user* service (not system-wide) so it has the user's SSH keys.
@@ -191,6 +192,7 @@ All infrastructure runs as native systemd services installed via official apt re
 - **cloudflared** (`cloudflared.service`) -- Cloudflare Tunnel. Config at `/etc/cloudflared/config.yml`.
 - **ntfy** (`ntfy.service`) -- Push notifications on `0.0.0.0:2586` (auth required, firewall limits to localhost + Tailscale). Config at `/etc/ntfy/server.yml`.
 - **dufs** (`dufs.service`) -- File server for `~/$ROOST_DIR_NAME/drop/`, bound to `127.0.0.1:5000`. Caddy fronts it at `https://drop.$DOMAIN/` (a `sites-enabled/drop.caddy` site on the Tailscale IP `:443`, TLS via the `*.$DOMAIN` Vision wildcard cert), rewriting `Content-Disposition: inline` to `attachment` so HTML/JS downloads instead of rendering in-browser. Folder-zip downloads via `?zip`. Read-only (no `--allow-upload`/`--allow-delete`). `caddy` joins group `xray` to read the wildcard cert; `vision-cert-renew.service` reloads Caddy after renewal.
+- **PrivateBin** (`php8.3-fpm` pool `privatebin` + Caddy site on `127.0.0.1:8095`) -- Zero-knowledge encrypted pastebin, public at `https://paste.$DOMAIN/` through the Cloudflare Tunnel (proxied CNAME ensured by deploy.sh). App at `/var/www/privatebin` (root-owned, read-only; weekly same-major updates via auto-update.sh), config at `/etc/privatebin/conf.php` (markdown default formatter, per-IP rate limit keyed on `CF-Connecting-IP`, loopback exempt), pastes at `/var/lib/privatebin/data` (owner `privatebin`). Publish from sessions with the `privatebin` skill (pbincli; server preset in `~/.config/pbincli/pbincli.conf`).
 
 Caddy has a systemd drop-in that waits for Tailscale before starting. Updates are handled by `apt upgrade` (via auto-update.sh and unattended-upgrades).
 
