@@ -17,7 +17,7 @@ After running the deploy script you will have:
 - RAM monitoring with per-process alerts (3GB threshold)
 - Off-site btrfs backups to laptop (daily incremental snapshots)
 - Drop folder for quick laptop-to-server file transfer
-- PrivateBin: end-to-end encrypted pastebin; links are publicly readable via the tunnel (`paste.<domain>`), creation is server-side only (publish via the `privatebin` skill)
+- PrivateBin: end-to-end encrypted pastebin; links are publicly readable via the tunnel (`paste.<domain>`), creation is server-side only (publish via the `pastebin` skill)
 - Scheduled Claude Code tasks via cron (morning summary)
 - Shell helpers for managing Claude Code agents (`agent`, `agents`, `agent_stop`, `agent_kill`)
 

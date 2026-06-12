@@ -1,5 +1,5 @@
 ---
-name: privatebin
+name: pastebin
 description: Publish text or markdown as an end-to-end-encrypted paste with a public shareable link, using the self-hosted PrivateBin at https://paste.${DOMAIN}/. Use when the user asks to publish, share, or paste a document, note, report, or snippet for someone else — especially recipients outside the tailnet. Also covers reading and deleting existing pastes via pbincli.
 ---
 

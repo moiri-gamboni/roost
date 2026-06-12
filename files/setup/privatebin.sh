@@ -3,7 +3,7 @@
 # loopback-only Caddy site, published via the Cloudflare Tunnel at
 # paste.$DOMAIN (proxied CNAME created laptop-side by deploy.sh). The public
 # side is read-only — the Caddy site 403s tunnel-tagged write methods, so
-# pastes are created only via loopback (pbincli / the privatebin skill):
+# pastes are created only via loopback (pbincli / the pastebin skill):
 #   /var/www/privatebin       app code (root-owned, read-only)
 #   /etc/privatebin/conf.php  config (CONFIG_PATH env set in the fpm pool)
 #   /var/lib/privatebin/data  paste storage (privatebin system user)

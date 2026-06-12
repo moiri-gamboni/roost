@@ -123,7 +123,7 @@ files/private/global-CLAUDE.md|$ROOST_DIR/claude/CLAUDE.md|plain|
 files/skills/html2markdown/SKILL.md|$ROOST_DIR/claude/skills/html2markdown/SKILL.md|plain|
 files/skills/havelock-api/SKILL.md|$ROOST_DIR/claude/skills/havelock-api/SKILL.md|plain|
 files/skills/humanizer/SKILL.md|$ROOST_DIR/claude/skills/humanizer/SKILL.md|plain|
-files/skills/privatebin/SKILL.md|$ROOST_DIR/claude/skills/privatebin/SKILL.md|envsubst:DOMAIN|
+files/skills/pastebin/SKILL.md|$ROOST_DIR/claude/skills/pastebin/SKILL.md|envsubst:DOMAIN|
 files/privatebin/privatebin-cloudflare.yml.tmpl|$ROOST_DIR/cloudflared/apps/privatebin.yml|envsubst:DOMAIN|run:~/roost/claude/hooks/cloudflare-assemble.sh,restart:cloudflared
 MANIFEST_A
 

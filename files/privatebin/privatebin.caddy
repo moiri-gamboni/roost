@@ -6,7 +6,7 @@
 # The public side is read-only: tunnel traffic always carries CF-Connecting-IP
 # (set by the Cloudflare edge), so write methods on tagged requests are
 # rejected before PHP runs. Creation happens only via raw loopback (pbincli /
-# the privatebin skill). Reads — including burn-after-reading and tokened
+# the pastebin skill). Reads — including burn-after-reading and tokened
 # delete links — are GETs and unaffected.
 :8095 {
     bind 127.0.0.1
