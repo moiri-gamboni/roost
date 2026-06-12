@@ -1,6 +1,7 @@
 #!/bin/bash
-# Travel-VPN health checks. Deployed as health-check-apps.sh; inherits
-# check/check_service/$FAILURES/$_HOOK_TAG. Report-only, no mutations.
+# App health checks (travel VPN + PrivateBin). Deployed as
+# health-check-apps.sh; inherits check/check_service/$FAILURES/$_HOOK_TAG.
+# Report-only, no mutations.
 
 _travel_state_dir=/etc/roost-travel
 
@@ -130,3 +131,7 @@ if [ "$_travel_travel_state" = "on" ]; then
 fi
 
 unset _travel_state_dir _travel_vpn_state _travel_travel_state _travel_wg_state
+
+# --- PrivateBin (origin for paste.$DOMAIN behind the CF tunnel) ---
+check_service "php8.3-fpm"
+check "PrivateBin" "http://127.0.0.1:8095/"
