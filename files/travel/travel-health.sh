@@ -155,12 +155,10 @@ unset _pb_gate
 check_service "fitness-api"
 check "Fitness API" "http://127.0.0.1:8090/fitness/api/health"
 
-# tailscale serve must keep proxying the app's HTTPS origin (wake lock + SW
-# need the secure context); the config lives only in tailscaled state.
-if ! tailscale serve status 2>/dev/null | grep -q 'proxy http://127.0.0.1:8090'; then
-    logger -t "$_HOOK_TAG" "FAIL: tailscale serve not proxying :8090 (fitness HTTPS origin down)"
-    FAILURES="$FAILURES\n- tailscale serve not proxying 127.0.0.1:8090 (fitness HTTPS origin)"
-fi
+# Canonical HTTPS origin: Caddy :443 (wildcard cert) -> /api rewrite -> API -> PG.
+# Covers the secure-context path (wake lock + SW) that the loopback probe doesn't,
+# plus the wildcard cert validity and the tailnet Caddy site.
+check "Fitness HTTPS" "https://***REMOVED***/api/health"
 
 # Nightly pg_dump should leave a dump <2 days old; catches a silently
 # broken cron (missing dir, malformed /etc/cron.d/roost-apps, dump failure).
