@@ -1,0 +1,28 @@
+# app.moiri.dev — public app host (Cloudflare Tunnel -> Caddy :8092 -> here).
+# Root is a directory of apps; it never defaults to a specific app.
+# Each public app gets its own path; the `app-serve` quick-publish slot (:8501)
+# is reachable at /scratch/.
+:8092 {
+    bind 127.0.0.1
+    encode gzip
+
+    # APART — Apart Research work task. Content is fully relative, so the
+    # handle_path prefix strip is safe.
+    handle_path /apart/* {
+        root * /home/moiri/roost/code/apart-work-task/public
+        file_server
+    }
+
+    # Quick-publish slot: run one app on :8501 via `app-serve`. handle_path
+    # strips /scratch so the proxied app sees root paths (use relative asset
+    # paths). Returns 502 when nothing is running on :8501.
+    handle_path /scratch/* {
+        reverse_proxy 127.0.0.1:8501
+    }
+
+    # Root: directory of public apps.
+    handle {
+        root * /home/moiri/roost/ops/app-directory
+        file_server
+    }
+}
