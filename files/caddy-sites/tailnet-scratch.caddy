@@ -1,0 +1,11 @@
+# *.moiri.dev catch-all (tailnet) — scratch slot for quick/throwaway deploys.
+# Run something on 127.0.0.1:8500 and it's instantly at <anything>.moiri.dev over HTTPS,
+# no DNS and no per-app Caddy edit. For a keeper, add its own sites-enabled/tailnet-*.caddy.
+# Nothing on :8500 -> friendly 404.
+https://*.moiri.dev {
+    tls /etc/roost-travel/vision-cert/fullchain.cer /etc/roost-travel/vision-cert/private.key
+    reverse_proxy 127.0.0.1:8500
+    handle_errors {
+        respond "No app on the scratch slot (127.0.0.1:8500). Add a sites-enabled/tailnet-<name>.caddy for a permanent app." 404
+    }
+}

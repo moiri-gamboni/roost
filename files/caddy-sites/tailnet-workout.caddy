@@ -1,0 +1,18 @@
+# workout.moiri.dev — training dashboard + gym logging (plans/gym-logging.md), tailnet-only.
+# App files served at root; /api/* rewritten to the API's /fitness/api/* path so fitness_api.py is unchanged.
+https://workout.moiri.dev {
+    tls /etc/roost-travel/vision-cert/fullchain.cer /etc/roost-travel/vision-cert/private.key
+    @blocked path /.git/* /scripts/* /plans/* /.venv-fitness/*
+    respond @blocked 404
+    handle /api/* {
+        rewrite * /fitness{uri}
+        reverse_proxy 127.0.0.1:8700
+    }
+    handle {
+        root * /home/moiri/roost/code/gadgetbridge
+        @nocache path *.html *.js *.css *.json
+        header @nocache Cache-Control no-cache
+        encode gzip
+        file_server
+    }
+}

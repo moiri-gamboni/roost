@@ -1,0 +1,8 @@
+# drop.moiri.dev — dufs read-only file share, tailnet-only, wildcard cert.
+# Finishes the deferred work from commit 31edf88 (was held for a quiet travel window).
+https://drop.moiri.dev {
+    tls /etc/roost-travel/vision-cert/fullchain.cer /etc/roost-travel/vision-cert/private.key
+    reverse_proxy 127.0.0.1:5000 {
+        header_down Content-Disposition inline attachment
+    }
+}
