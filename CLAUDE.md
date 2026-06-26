@@ -47,6 +47,8 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
 | `TAILSCALE_AUTHKEY` | yes | Pre-authenticated key for unattended setup |
 | `TAILSCALE_API_KEY` | no | API key for setting ACL policy during deploy; manual setup if empty |
 | `GITHUB_TOKEN_<owner>` | no | Fine-grained PATs for the server, one per GitHub owner (replace hyphens with underscores in variable name) |
+| `NOTION_TOKEN` | no | Notion integration token; passed to the Notion MCP server via `-e` (baked into `.claude.json`). Write tools gated via `permissions.ask` in `settings.json` |
+| `DONETHAT_API_KEY` | no | DoneThat REST key (`x-api-key`); deployed to `~/.config/donethat/api-key`. DoneThat MCP uses OAuth (`claude mcp login donethat --no-browser`), not this key |
 
 ## Script Roles
 
@@ -74,6 +76,8 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
 Services that must stay **v4-only** pin their bind explicitly: Caddy via `default_bind $TAILSCALE_IP`, ntfy via `listen-http: "0.0.0.0:2586"`. New services that bind `:` or `::` will auto-pick-up v6 on dual-stack Linux — decide intentionally.
 
 **`~/roost/` directory**: All managed state lives under `~/$ROOST_DIR_NAME/` (default `~/roost/`, configurable via `ROOST_DIR_NAME` in `.env`). `CLAUDE_CONFIG_DIR=~/$ROOST_DIR_NAME/claude` redirects Claude Code's config there.
+
+**Node on PATH for MCP servers**: fnm uses ephemeral per-shell multishells, so `node`/`npx` aren't reliably on PATH for processes that don't source `roost.sh` (notably `agent`-spawned `claude`, launched via `tmux` then `sh -c`), which can inherit a stale multishell path. `setup/dev-tools.sh` symlinks the stable fnm default (`~/.local/share/fnm/aliases/default/bin/{node,npx}`) into `~/bin` (always on PATH), so node-based MCP servers resolve regardless. Cron `claude -p` gets node because `cron-roost` sets `BASH_ENV` to the deployed `roost.sh`. Net: register node-based MCP servers plainly (`claude mcp add ... -- npx -y <pkg>`), no per-server launcher wrapper.
 
 ## File Layout
 
@@ -349,6 +353,8 @@ Snapper retention: 24 hourly, 7 daily, 4 weekly. Rollback: `snapper list`, then 
 **Tailscale ACLs**: The server is registered with `tag:server`. ACLs allow laptop/phone to reach the server but block the server from initiating connections to other devices. This limits blast radius if a prompt injection compromises a Claude session. When `TAILSCALE_API_KEY` is set in `.env`, `deploy.sh` sets the restrictive ACL policy automatically via the Tailscale API.
 
 **GitHub credentials**: Fine-grained PATs scoped to "Contents: Read and write" (plus other low-risk permissions) but explicitly excluding Administration, Workflows, Webhooks, Secrets, and Codespaces. This prevents a compromised session from modifying branch rulesets, injecting CI secrets, or exfiltrating code via webhooks. When `GITHUB_TOKEN_*` variables are set in `.env`, `deploy.sh` stores tokens on the server, authenticates `gh`, and configures git for HTTPS. Branch rulesets (block deletion and force push on main) are created automatically on personal repos when `gh` is installed and authenticated on the laptop.
+
+**Notion write gate**: The Notion token has broad workspace read, so write tools are gated behind a `permissions.ask` rule in `settings.json` (reads allow-listed; still prompts under `defaultMode: auto`). It's a *safety* gate, not a *security* boundary: a session with NOPASSWD sudo can read the token and bypass the MCP path, so a hard gate would need off-box write authority (e.g. split read-only/write tokens).
 
 ## Shell Conventions
 

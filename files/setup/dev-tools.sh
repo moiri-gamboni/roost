@@ -18,6 +18,15 @@ else
     ok "Node.js $(as_user 'node -v') installed"
 fi
 
+# Stable node/npx on PATH for MCP servers. fnm uses ephemeral per-shell
+# multishells, so node/npx aren't reliably on PATH for processes that don't
+# source roost.sh (e.g. `agent`-spawned claude via tmux -> sh -c, which can
+# inherit a stale multishell path). Symlink the stable fnm default into ~/bin
+# (always on PATH) so node-based MCP servers (`npx -y <pkg>`) resolve regardless.
+as_user "fnm default lts-latest >/dev/null 2>&1 || true"
+as_user 'mkdir -p ~/bin && ln -sfn ~/.local/share/fnm/aliases/default/bin/node ~/bin/node && ln -sfn ~/.local/share/fnm/aliases/default/bin/npx ~/bin/npx'
+ok "stable ~/bin/{node,npx} symlinks for MCP servers"
+
 # --- pnpm (via corepack) ---
 
 if as_user "command -v pnpm" &>/dev/null; then
