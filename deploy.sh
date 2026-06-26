@@ -855,34 +855,19 @@ ok "tmux, shell, and directory structure configured"
 
 section "GitHub Credentials"
 
-# Discover GITHUB_TOKEN_* variables from .env
-TOKEN_COUNT=0
-FIRST_TOKEN=""
-while IFS='=' read -r varname value; do
-    [ -z "$value" ] && continue
-    # GITHUB_TOKEN_moiri_gamboni -> moiri-gamboni
-    owner=$(echo "${varname#GITHUB_TOKEN_}" | tr '[:upper:]' '[:lower:]' | tr '_' '-')
-    if echo "$value" | remote "sudo -u $USERNAME tee /home/$USERNAME/.config/git/tokens/$owner > /dev/null" \
-        && remote "chmod 600 /home/$USERNAME/.config/git/tokens/$owner" \
-        && remote "chown $USERNAME:$USERNAME /home/$USERNAME/.config/git/tokens/$owner"; then
-        ok "Token stored for $owner"
-    else
-        warn "Failed to store token for $owner"
-        continue
-    fi
-    [ -z "$FIRST_TOKEN" ] && FIRST_TOKEN="$value"
-    TOKEN_COUNT=$((TOKEN_COUNT + 1))
-done < <(env | grep '^GITHUB_TOKEN_' | sort)
+# Git transport is SSH (the server's ed25519 key does both auth and commit
+# signing); git needs no token. gh config is local, so set the protocol here.
+remote "sudo -u $USERNAME bash -c 'gh config set -h github.com git_protocol ssh'" || warn "gh config set failed"
 
-if [ "$TOKEN_COUNT" -gt 0 ]; then
-    # Authenticate gh CLI with the first token
-    echo "$FIRST_TOKEN" | remote "sudo -u $USERNAME bash -c 'gh auth login --hostname github.com --with-token'" || warn "gh auth login failed"
-    # Set git protocol to HTTPS
-    remote "sudo -u $USERNAME bash -c 'gh config set -h github.com git_protocol https'" || warn "gh config set failed"
-    ok "$TOKEN_COUNT GitHub token(s) configured"
-else
-    skip "No GITHUB_TOKEN_* variables in .env"
-fi
+# gh's REST API still needs a token, but PATs are no longer managed in .env.
+# Authenticate gh once, interactively, after deploy: ssh in and run `gh auth login`.
+skip "gh CLI: run 'gh auth login' on the server once (OAuth; no PAT in .env)"
+
+# The ed25519 key must be registered on GitHub for BOTH authentication and
+# signing (separate entries). The fine-grained token can't upload it, so surface
+# the public key here for a one-time manual upload.
+PUBKEY=$(remote "cat /home/$USERNAME/.ssh/id_ed25519.pub" 2>/dev/null || true)
+[ -n "$PUBKEY" ] && info "Register on GitHub as Authentication + Signing key: $PUBKEY"
 
 # ============================================
 # Claude Code Configuration + Hooks
@@ -1226,8 +1211,6 @@ if [ -z "${TAILSCALE_API_KEY:-}" ]; then
 echo ""
 echo "  - Set Tailscale ACLs manually: https://login.tailscale.com/admin/acls"
 fi
-if [ "${TOKEN_COUNT:-0}" -eq 0 ]; then
 echo ""
-echo "  - Add GITHUB_TOKEN_<owner> variables to .env for per-repo credentials"
-fi
+echo "  - GitHub: register the ed25519 key (shown above) for auth + signing, then run 'gh auth login' for the gh CLI"
 echo ""

@@ -46,7 +46,6 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
 | `CLOUDFLARE_ACCOUNT_ID` | no | Skips account lookup if provided |
 | `TAILSCALE_AUTHKEY` | yes | Pre-authenticated key for unattended setup |
 | `TAILSCALE_API_KEY` | no | API key for setting ACL policy during deploy; manual setup if empty |
-| `GITHUB_TOKEN_<owner>` | no | Fine-grained PATs for the server, one per GitHub owner (replace hyphens with underscores in variable name) |
 | `NOTION_TOKEN` | no | Notion integration token; passed to the Notion MCP server via `-e` (baked into `.claude.json`). Write tools gated via `permissions.ask` in `settings.json` |
 | `DONETHAT_API_KEY` | no | DoneThat REST key (`x-api-key`); deployed to `~/.config/donethat/api-key`. DoneThat MCP uses OAuth (`claude mcp login donethat --no-browser`), not this key |
 
@@ -301,7 +300,7 @@ Agent management functions (defined in `files/shell/bashrc.sh`, deployed to `~/.
 
 | Command | Usage |
 |---|---|
-| `agent [path] [claude-args...]` | Launch interactive Claude in a tmux window (path defaults to cwd); resolves `GH_TOKEN` from `~/.config/git/tokens/<owner>` based on the repo's git remote |
+| `agent [path] [claude-args...]` | Launch interactive Claude in a tmux window (path defaults to cwd) |
 | `agent -c` | Continue last session in cwd |
 | `agents` | Interactive tmux window picker |
 | `agent_stop <index>` | Graceful stop (Ctrl-D, triggers SessionEnd hooks) |
@@ -352,7 +351,7 @@ Snapper retention: 24 hourly, 7 daily, 4 weekly. Rollback: `snapper list`, then 
 
 **Tailscale ACLs**: The server is registered with `tag:server`. ACLs allow laptop/phone to reach the server but block the server from initiating connections to other devices. This limits blast radius if a prompt injection compromises a Claude session. When `TAILSCALE_API_KEY` is set in `.env`, `deploy.sh` sets the restrictive ACL policy automatically via the Tailscale API.
 
-**GitHub credentials**: Fine-grained PATs scoped to "Contents: Read and write" (plus other low-risk permissions) but explicitly excluding Administration, Workflows, Webhooks, Secrets, and Codespaces. This prevents a compromised session from modifying branch rulesets, injecting CI secrets, or exfiltrating code via webhooks. When `GITHUB_TOKEN_*` variables are set in `.env`, `deploy.sh` stores tokens on the server, authenticates `gh`, and configures git for HTTPS. Branch rulesets (block deletion and force push on main) are created automatically on personal repos when `gh` is installed and authenticated on the laptop.
+**GitHub credentials**: Git uses **SSH** — the server's ed25519 key handles both authentication and commit signing (registered on GitHub as separate auth and signing keys). No PATs are stored on the server. The `gh` CLI authenticates separately via `gh auth login` (OAuth, a one-time manual step); its scope is whatever you grant at login. Branch rulesets (block deletion and force push on main) are created automatically on personal repos when `gh` is installed and authenticated on the laptop.
 
 **Notion write gate**: The Notion token has broad workspace read, so write tools are gated behind a `permissions.ask` rule in `settings.json` (reads allow-listed; still prompts under `defaultMode: auto`). It's a *safety* gate, not a *security* boundary: a session with NOPASSWD sudo can read the token and bypass the MCP path, so a hard gate would need off-box write authority (e.g. split read-only/write tokens).
 
