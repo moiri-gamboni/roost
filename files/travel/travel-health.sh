@@ -149,20 +149,3 @@ else
     FAILURES="$FAILURES\n- PrivateBin write gate returned $_pb_gate (public side may be writable)"
 fi
 unset _pb_gate
-
-# --- Fitness logging API (gym logging; loopback through Caddy covers
-#     caddy + fitness-api + postgres in one probe) ---
-check_service "fitness-api"
-check "Fitness API" "http://127.0.0.1:8090/fitness/api/health"
-
-# Canonical HTTPS origin: Caddy :443 (wildcard cert) -> /api rewrite -> API -> PG.
-# Covers the secure-context path (wake lock + SW) that the loopback probe doesn't,
-# plus the wildcard cert validity and the tailnet Caddy site.
-check "Fitness HTTPS" "https://***REMOVED***/api/health"
-
-# Nightly pg_dump should leave a dump <2 days old; catches a silently
-# broken cron (missing dir, malformed /etc/cron.d/roost-apps, dump failure).
-if ! find /home/moiri/roost/backups -name 'fitness-*.dump' -mtime -2 2>/dev/null | grep -q .; then
-    logger -t "$_HOOK_TAG" "FAIL: no fitness DB dump <2 days old"
-    FAILURES="$FAILURES\n- No fitness DB dump newer than 2 days (pg_dump cron broken?)"
-fi

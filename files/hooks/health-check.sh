@@ -52,6 +52,11 @@ if [ -f "$(dirname "$0")/health-check-apps.sh" ]; then
     source "$(dirname "$0")/health-check-apps.sh"
 fi
 
+# Source private app-specific health checks if present (kept out of the public repo)
+if [ -f "$(dirname "$0")/health-check-apps-private.sh" ]; then
+    source "$(dirname "$0")/health-check-apps-private.sh"
+fi
+
 if [ -n "$FAILURES" ]; then
     logger -t "$_HOOK_TAG" "Health check FAILED"
     # Key the cooldown by the failure set so escalations / partial recoveries

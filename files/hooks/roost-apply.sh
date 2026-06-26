@@ -117,6 +117,7 @@ files/hooks/roost-apply.sh|$ROOST_DIR/claude/hooks/roost-apply.sh|plain+x|
 files/hooks/roost-net.sh|$ROOST_DIR/claude/hooks/roost-net.sh|plain+x|
 files/hooks/vision-abuse-watch.sh|$ROOST_DIR/claude/hooks/vision-abuse-watch.sh|plain+x|
 files/travel/travel-health.sh|$ROOST_DIR/claude/hooks/health-check-apps.sh|plain+x|
+files/private/health-check-apps-private.sh|$ROOST_DIR/claude/hooks/health-check-apps-private.sh|plain+x|
 files/shell/bashrc.sh|$HOME_DIR/.bashrc.d/roost.sh|plain|
 files/private/code-CLAUDE.md|$ROOST_DIR/code/CLAUDE.md|plain|
 files/private/global-CLAUDE.md|$ROOST_DIR/claude/CLAUDE.md|plain|
@@ -167,6 +168,9 @@ files/travel/vision-fallback.caddy|/etc/caddy/sites-enabled/vision-fallback.cadd
 files/privatebin/conf.php|/etc/privatebin/conf.php|plain|
 files/privatebin/php-fpm-pool.conf|/etc/php/8.3/fpm/pool.d/privatebin.conf|plain|restart:php8.3-fpm
 files/privatebin/privatebin.caddy|/etc/caddy/sites-enabled/privatebin.caddy|plain|reload-or-restart:caddy
+files/private/caddy-sites/app.caddy|/etc/caddy/sites-enabled/app.caddy|plain|reload-or-restart:caddy
+files/private/caddy-sites/tailnet-scratch.caddy|/etc/caddy/sites-enabled/tailnet-scratch.caddy|plain|reload-or-restart:caddy
+files/private/caddy-sites/tailnet-workout.caddy|/etc/caddy/sites-enabled/tailnet-workout.caddy|plain|reload-or-restart:caddy
 MANIFEST_B
 }
 
