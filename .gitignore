@@ -3,3 +3,5 @@ logs/
 repomix-output.xml
 files/private/
 plans/
+.claude/
+reviews/
