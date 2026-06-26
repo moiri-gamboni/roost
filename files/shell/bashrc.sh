@@ -126,11 +126,6 @@ if [[ -n "${TMUX:-}" ]]; then
 fi
 
 # --- Agent management helpers ---
-#
-# GH_TOKEN is resolved per-session by ~/roost/claude/hooks/gh-token.sh
-# (SessionStart hook), so it works for any spawn path — interactive
-# `agent`-launched sessions, ad-hoc `claude --bg`, cron tasks, etc. —
-# without each entry point needing its own resolution logic.
 
 # Name for this connection's grouped tmux session. $ROOST_CLIENT (set by the
 # client's alias, e.g. ROOST_CLIENT=pixel) gives stable rejoining across
@@ -247,7 +242,6 @@ agent() {
         name="${base_name}-${i}"
     fi
 
-    # GH_TOKEN is set by the gh-token.sh SessionStart hook based on cwd.
     local -a cmd_parts=()
     cmd_parts+=(cd "$(printf '%q' "$dir")" '&&' claude)
     for arg in "${claude_args[@]}"; do

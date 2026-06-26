@@ -26,7 +26,7 @@ After running the deploy script you will have:
 - **Hetzner Cloud account** with an API token (https://console.hetzner.cloud/ > Security > API Tokens)
 - **Cloudflare account** with a domain whose DNS is managed by Cloudflare, and an API token with `Account:Cloudflare Tunnel:Edit` and `Zone:DNS:Edit` permissions (https://dash.cloudflare.com/profile/api-tokens)
 - **Tailscale account** (free, https://tailscale.com/)
-- **GitHub fine-grained PATs** for the server (see `.env.example` for permission details)
+- **GitHub** account (deploy generates an SSH key to register; `gh` uses `gh auth login`)
 - **Claude Code subscription**
 - **On your laptop:** `hcloud` CLI, `jq`, SSH key pair, Git
 
@@ -61,7 +61,7 @@ hcloud ssh-key create --name my-key --public-key-from-file ~/.ssh/id_ed25519.pub
 
 **Tailscale:** Add `"tagOwners": { "tag:server": ["autogroup:admin"] }` to your ACL policy at https://login.tailscale.com/admin/acls, then generate a **tagged** auth key with `tag:server` at https://login.tailscale.com/admin/settings/keys. Optionally generate an **API key** to let deploy.sh set restrictive ACLs automatically.
 
-**GitHub:** Create fine-grained PATs (one per GitHub owner) at https://github.com/settings/personal-access-tokens/new. See `.env.example` for the recommended permission set.
+**GitHub:** No token to create. Git uses SSH (deploy generates an ed25519 key you register on GitHub), and `gh` authenticates via `gh auth login` (OAuth) as a one-time post-deploy step — see below.
 
 **`.env`:** Copy `.env.example` to `.env` and fill in. Required: `SERVER_NAME`, `USERNAME`, `DOMAIN`, `TAILSCALE_AUTHKEY`, `CLOUDFLARE_API_TOKEN`. See `.env.example` for all optional settings.
 
@@ -101,16 +101,16 @@ These steps must be completed manually after the deploy script finishes.
 
 Tests ~50 checks over SSH: connectivity, filesystem, SSH hardening, all services, hooks, directory structure, dev tools, cron.
 
-**Register the server's SSH key on GitHub as a signing key:**
+**Register the server's SSH key on GitHub (Authentication + Signing):**
 
-deploy.sh generates an SSH key on the server and configures git to sign commits with it. Register the public key on GitHub so signed commits show as "Verified":
+deploy.sh generates an ed25519 key on the server and uses it for both git auth (transport is SSH) and commit signing. The fine-grained token can't upload keys, so register the public key manually:
 
 1. Print the key: `ssh <username>@<server> cat ~/.ssh/id_ed25519.pub`
 2. Go to https://github.com/settings/keys > New SSH key
-3. Key type: **Signing Key** (not Authentication Key)
-4. Paste the public key
+3. Add it **twice** — once as **Authentication Key**, once as **Signing Key** (GitHub treats these as separate entries for the same key)
+4. Paste the public key for each
 
-If the same key was previously registered as an authentication key, delete it and re-add as signing only.
+Until the key is registered, SSH push/pull and "Verified" commit badges won't work.
 
 **If you didn't set `TAILSCALE_API_KEY` in `.env`**, restrict ACLs manually at https://login.tailscale.com/admin/acls:
 
@@ -126,14 +126,10 @@ If the same key was previously registered as an authentication key, delete it an
 
 Verify: `ssh` from server to laptop should fail; `ssh` from laptop to server should work.
 
-**If you didn't set `GITHUB_TOKEN_*` in `.env`**, store tokens manually on the server:
+**Authenticate the `gh` CLI on the server** (one-time; git already works over SSH):
 
 ```bash
-gh auth login --with-token <<< "ghp_..."
-gh config set -h github.com git_protocol https
-mkdir -p ~/.config/git/tokens
-echo "ghp_..." > ~/.config/git/tokens/<github-username>
-chmod 600 ~/.config/git/tokens/*
+gh auth login --hostname github.com --git-protocol ssh
 ```
 
 **If branch rulesets weren't created during deploy**, create them from the laptop:
@@ -223,8 +219,6 @@ agent_kill <index>
 
 Using `/rename` inside a session updates the tmux window name automatically.
 Sessions that aren't manually renamed get an auto-generated name on exit.
-
-The `agent` function resolves `GH_TOKEN` at launch from the repo's remote URL owner, so each session uses the correct token for that GitHub owner (personal, org, etc.). Tokens are stored in `~/.config/git/tokens/<owner>`.
 
 #### Scheduled tasks
 
