@@ -893,6 +893,41 @@ remote_script "setup/claude-config.sh"
 ok "Claude Code config, hooks, and dangerous command blocker installed"
 
 # ============================================
+# Notion + DoneThat Integrations
+# ============================================
+
+section "Notion + DoneThat Integrations"
+
+if [ -n "${NOTION_TOKEN:-}" ]; then
+    # Broad read; writes gated via permissions.ask in files/settings.json. The token
+    # is baked into the server's env via -e; node/npx resolve through the ~/bin
+    # symlinks set up in setup/dev-tools.sh. remove+add refreshes the token on
+    # re-deploy (stdio server, no OAuth to lose).
+    if remote "sudo -u $USERNAME $CLAUDE_CMD mcp remove --scope user notion >/dev/null 2>&1; sudo -u $USERNAME $CLAUDE_CMD mcp add --scope user notion -e NOTION_TOKEN=\"$NOTION_TOKEN\" -- npx -y @notionhq/notion-mcp-server"; then
+        ok "Notion integration configured"
+    else
+        warn "Failed to register notion MCP server"
+    fi
+else
+    skip "NOTION_TOKEN not set in .env"
+fi
+
+if [ -n "${DONETHAT_API_KEY:-}" ]; then
+    if remote "sudo -u $USERNAME mkdir -p /home/$USERNAME/.config/donethat && chmod 700 /home/$USERNAME/.config/donethat" \
+        && echo "$DONETHAT_API_KEY" | remote "sudo -u $USERNAME tee /home/$USERNAME/.config/donethat/api-key > /dev/null" \
+        && remote "chmod 600 /home/$USERNAME/.config/donethat/api-key"; then
+        # DoneThat MCP uses OAuth (one-time post-deploy: claude mcp login donethat --no-browser).
+        # Register only if absent so re-deploys don't wipe Claude Code's stored OAuth tokens.
+        remote "sudo -u $USERNAME $CLAUDE_CMD mcp get donethat >/dev/null 2>&1 || sudo -u $USERNAME $CLAUDE_CMD mcp add --transport http --scope user donethat https://mcp.donethat.ai" || warn "Failed to register donethat MCP server"
+        ok "DoneThat integration configured (run 'claude mcp login donethat --no-browser' once)"
+    else
+        warn "Failed to configure DoneThat integration"
+    fi
+else
+    skip "DONETHAT_API_KEY not set in .env"
+fi
+
+# ============================================
 # Caddy (Reverse Proxy)
 # ============================================
 

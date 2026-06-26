@@ -13,7 +13,20 @@
       "WebSearch",
       "WebFetch",
       "mcp__exa__web_search_exa",
-      "mcp__exa__web_fetch_exa"
+      "mcp__exa__web_fetch_exa",
+      "mcp__notion__API-get-*",
+      "mcp__notion__API-retrieve-*",
+      "mcp__notion__API-list-data-source-templates",
+      "mcp__notion__API-post-search",
+      "mcp__notion__API-query-data-source"
+    ],
+    "ask": [
+      "mcp__notion__API-patch-*",
+      "mcp__notion__API-update-*",
+      "mcp__notion__API-create-*",
+      "mcp__notion__API-delete-*",
+      "mcp__notion__API-post-page",
+      "mcp__notion__API-move-page"
     ],
     "defaultMode": "auto"
   },
