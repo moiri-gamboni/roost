@@ -471,7 +471,6 @@ The deployed `settings.json` includes:
 - **Agent teams** enabled (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`)
 - **Session transcripts** never cleaned up (`cleanupPeriodDays: 99999`)
 - **Auto-compaction** disabled (`autoCompactEnabled: false`)
-- **Dangerous command blocker** (PreToolUse hook, vendored from [claude-code-templates](https://github.com/davila7/claude-code-templates), MIT) blocks destructive shell commands
 - **Semantic search** via grepai, initialized on `~/roost/claude/skills/` and `~/roost/memory/` (the latter currently unused)
 
 ## Updating Config After Deploy
