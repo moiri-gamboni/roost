@@ -153,6 +153,36 @@ _sweep_dead_groups() {
     done
 }
 
+# A corrupt terminal size makes any full-screen tmux (the choose-window picker,
+# or a plain attach) draw into an unusable geometry: the session looks frozen
+# even though input/output still flow. Confirmed root cause is client-side: et's
+# Termux client reads the size with an unchecked ioctl into an uninitialized
+# winsize, and when that ioctl fails at connect it ships stack garbage (observed:
+# cols=4 rows=24286). It does NOT self-correct -- et only resends the size on
+# change and has no SIGWINCH handler -- so a real resize on the phone (rotate the
+# screen / toggle the keyboard) is what fixes it. Proceed instantly when the size
+# is sane (laptop, or a clean connect); otherwise explain the fix and wait for
+# the resize before handing the terminal to tmux.
+_roost_await_sane_size() {
+    [[ -t 0 ]] || return 0          # no controlling tty: nothing to guard
+    local sz rows cols waited=0 warned=0
+    while :; do
+        sz=$(stty size) && read -r rows cols <<<"$sz"
+        if [[ "${rows:-}" =~ ^[0-9]+$ && "${cols:-}" =~ ^[0-9]+$ ]] \
+           && (( cols >= 20 && rows >= 5 && rows <= 1000 )); then
+            (( warned )) && printf '  size is %sx%s now -- continuing.\n' "$cols" "$rows" >&2
+            return 0
+        fi
+        if (( ! warned )); then
+            printf '\n  tmux: terminal size looks corrupt (cols=%s rows=%s) -- the et/Termux winsize bug.\n' "${cols:-?}" "${rows:-?}" >&2
+            printf '  Rotate the screen or toggle the soft keyboard to force a valid size (waiting up to 60s)...\n' >&2
+            warned=1
+        fi
+        (( ++waited > 120 )) && { printf '  size still corrupt after 60s -- reconnect once it is fixed.\n' >&2; return 1; }
+        sleep 0.5
+    done
+}
+
 # Ensure a tmux session exists, starting one if needed.
 # Returns 0 if already inside tmux, 1 if a new session was started (caller
 # should use tmux send-keys instead of direct commands).
@@ -257,10 +287,15 @@ agents() {
         tmux choose-window
     else
         _sweep_dead_groups
+        _roost_await_sane_size || return 1
         local group
         group=$(_roost_group_name)
+        # -d detaches a prior client on this session first. On the phone (stable
+        # ROOST_CLIENT name) that's usually a dead/garbage-sized et connection;
+        # dropping it stops the pile-up. Laptop tabs use per-PID names, so -d
+        # never kicks a different live tab.
         if tmux has-session -t "$group" 2>/dev/null; then
-            tmux attach-session -t "$group" \; choose-window
+            tmux attach-session -d -t "$group" \; choose-window
         else
             tmux new-session -t main -s "$group" \; choose-window
         fi
@@ -278,9 +313,10 @@ attach() {
         return 1
     fi
     _ensure_tmux
+    _roost_await_sane_size || return 1
     local group; group=$(_roost_group_name)
     if tmux has-session -t "$group" 2>/dev/null; then
-        tmux attach-session -t "$group"
+        tmux attach-session -d -t "$group"
     else
         tmux new-session -t main -s "$group"
     fi
