@@ -479,27 +479,26 @@ cmd_push() {
         local content="${changed_contents[$i]}"
         local service="${changed_services[$i]}"
 
-        # Ensure parent directory exists and write file
-        local parent_dir
+        # Ensure parent dir exists, then write ATOMICALLY (temp in the same dir +
+        # mv) so a file that is currently executing — e.g. roost-apply.sh
+        # deploying itself — gets a fresh inode instead of having its bytes
+        # rewritten under the running process. Also prevents torn reads mid-write.
+        local parent_dir tmp mode=644
         parent_dir=$(dirname "$sp")
+        [[ "$transform" == *"+x"* ]] && mode=755
         if needs_root "$sp"; then
             sudo mkdir -p "$parent_dir"
-            printf '%s\n' "$content" | sudo tee "$sp" > /dev/null
-            # sudo tee preserves existing non-root ownership; enforce root:root 0644 for /etc/*
-            sudo chown root:root "$sp"
-            sudo chmod 644 "$sp"
+            tmp=$(sudo mktemp "$parent_dir/.roost-apply.XXXXXX")
+            printf '%s\n' "$content" | sudo tee "$tmp" > /dev/null
+            sudo chown root:root "$tmp"
+            sudo chmod "$mode" "$tmp"
+            sudo mv -f "$tmp" "$sp"
         else
             mkdir -p "$parent_dir"
-            printf '%s\n' "$content" > "$sp"
-        fi
-
-        # Set executable if needed
-        if [[ "$transform" == *"+x"* ]]; then
-            if needs_root "$sp"; then
-                sudo chmod +x "$sp"
-            else
-                chmod +x "$sp"
-            fi
+            tmp=$(mktemp "$parent_dir/.roost-apply.XXXXXX")
+            printf '%s\n' "$content" > "$tmp"
+            chmod "$mode" "$tmp"
+            mv -f "$tmp" "$sp"
         fi
 
         # Track service actions
