@@ -48,7 +48,8 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "~/roost/claude/hooks/statusline.sh"
+    "command": "~/roost/claude/hooks/statusline.sh",
+    "refreshInterval": 10
   },
   "enabledPlugins": {
     "claude-code-setup@claude-plugins-official": true,

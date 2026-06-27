@@ -83,6 +83,11 @@ ln -sf "$ROOST_DIR/claude/hooks/roost-apply.sh" "$HOME_DIR/bin/roost-apply"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-apply"
 ln -sf "$ROOST_DIR/claude/hooks/roost-net.sh" "$HOME_DIR/bin/roost-net"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-net"
+# usage / roost-usage: on-demand session token/cost/budget check
+ln -sf "$ROOST_DIR/claude/hooks/roost-usage.sh" "$HOME_DIR/bin/roost-usage"
+chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-usage"
+ln -sf "$ROOST_DIR/claude/hooks/roost-usage.sh" "$HOME_DIR/bin/usage"
+chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/usage"
 
 # --- Git identity ---
 if [ -n "${GIT_USER_NAME:-}" ] && [ -n "${GIT_USER_EMAIL:-}" ]; then
