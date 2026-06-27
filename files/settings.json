@@ -70,6 +70,7 @@
   "effortLevel": "high",
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
+  "skipWorkflowUsageWarning": true,
   "autoCompactEnabled": false,
   "teammateMode": "tmux",
   "remoteControlAtStartup": false,
