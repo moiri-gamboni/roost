@@ -2,11 +2,14 @@
 # roost-usage — on-demand view of this Claude plan's usage limits.
 #
 # Shows the 5-hour and weekly (7-day) rate-limit %s + reset countdowns (the caps
-# that actually gate the session), plus context-window fill and session cost.
-# Source: the cache the statusline writes (~/roost/claude/usage/last-status.json)
-# from its stdin `rate_limits`. rate_limits are account-global; the statusline
-# refreshes the cache on every render (events + every refreshInterval seconds).
-# Reset countdowns are computed live, so they stay accurate even if the %s lag.
+# that actually gate the session), plus context-window fill. Source: the cache the
+# statusline writes (~/roost/claude/usage/last-status.json) from its stdin
+# `rate_limits`. rate_limits are account-global; the statusline refreshes the cache
+# on every render (events + every refreshInterval seconds). Reset countdowns are
+# computed live, so they stay accurate even if the %s lag.
+#
+# No dollar cost is shown: this is a subscription plan, so the API-equivalent $ is
+# misleading — the 5-hour / weekly limits are what actually gate you.
 #
 # Usage: usage [--json] [--file PATH]
 set -uo pipefail
@@ -19,7 +22,7 @@ while [ $# -gt 0 ]; do
     --file) shift; cache="${1:?--file needs a path}" ;;
     -h|--help)
       printf 'usage [--json] [--file PATH]\n'
-      printf '  Shows 5-hour + weekly Claude rate-limit %%s and reset times, context %%, and cost.\n'
+      printf '  Shows 5-hour + weekly Claude rate-limit %%s and reset times, and context %%.\n'
       printf '  Reads %s (written by the statusline on each render).\n' "$cache"
       exit 0 ;;
     *) echo "roost-usage: unknown arg '$1'" >&2; exit 2 ;;
@@ -35,7 +38,7 @@ fi
 
 if [ "$mode" = json ]; then
   jq '{rate_limits, context_pct: .context_window.used_percentage,
-       cost_usd: .cost.total_cost_usd, model: .model.display_name}' "$cache"
+       model: .model.display_name}' "$cache"
   exit 0
 fi
 
@@ -43,13 +46,12 @@ now=$(date +%s)
 mtime=$(stat -c %Y "$cache" 2>/dev/null || echo "$now")
 age=$(( now - mtime ))
 
-IFS=$'\t' read -r five fivereset week weekreset ctx cost model < <(
+IFS=$'\t' read -r five fivereset week weekreset ctx model < <(
   jq -r '[ (.rate_limits.five_hour.used_percentage // -1),
            (.rate_limits.five_hour.resets_at // 0),
            (.rate_limits.seven_day.used_percentage // -1),
            (.rate_limits.seven_day.resets_at // 0),
            (.context_window.used_percentage // -1),
-           (.cost.total_cost_usd // 0),
            (.model.display_name // .model.id // "?") ] | @tsv' "$cache"
 )
 
@@ -69,7 +71,7 @@ echo   "── Claude usage limits ───────────────
 printf "  5-hour   %s  %-4s  resets in %s\n"   "$(bar "$five")" "$(pct "$five")" "$(hm $(( fivereset - now )) )"
 printf "  weekly   %s  %-4s  resets in %s\n"   "$(bar "$week")" "$(pct "$week")" "$(dh $(( weekreset - now )) )"
 printf "  context  %s  %-4s  (this session)\n" "$(bar "$ctx")"  "$(pct "$ctx")"
-printf "  cost     \$%.2f   ·   %s   ·   cache %ds old\n" "$cost" "$model" "$age"
 echo   "──────────────────────────────────────────────────"
+printf "  %s · cache %ds old\n" "$model" "$age"
 (( age > 60 )) && echo "  (cache ${age}s old — the %s may lag; reset countdowns are live)"
 exit 0
