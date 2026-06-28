@@ -1,6 +1,6 @@
 ---
 name: usage
-description: Check this Claude plan's live usage limits — the 5-hour and weekly (7-day) rate-limit %s and reset times that actually gate the session, plus context-window fill. Use mid-task to decide whether to keep spawning subagents, before/between waves of a big multi-agent job, or when the user asks "how close are we to the limit", "how much is left", "when does it reset", or "how full is the context". Runs the `usage` command (alias `roost-usage`).
+description: Check this Claude plan's live usage limits — the 5-hour and weekly (7-day) rate-limit %s and reset times that actually gate the session, plus context-window fill. Has a `--guard` pacing gate for multi-agent fan-outs. Use mid-task to decide whether to keep spawning subagents, before/between waves of a big job, or when the user asks "how close are we to the limit", "how much is left", "when does it reset", or "how full is the context". Runs the `usage` command (alias `roost-usage`).
 ---
 
 # usage — check the 5-hour & weekly limits on demand
@@ -9,21 +9,25 @@ Run **`usage`** (alias `roost-usage`). Example:
 
 ```
 ── Claude usage limits ────────────────────────────
-  5-hour   ░░░░░░░░░░  3%    resets in 4h14m
-  weekly   ███░░░░░░░  39%   resets in 0d18h
-  context  ████░░░░░░  47%   (this session)
+  5-hour   ░░░░░░░░░░  3%    resets in 4h11m  (pace cap 16%)
+  weekly   ███░░░░░░░  39%   resets in 0d18h  (pause >80%)
+  context  ████░░░░░░  49%   (this session)
 ──────────────────────────────────────────────────
-  Opus 4.8 · cache 6s old
+  Opus 4.8 · cache 1s old
 ```
 
-- **5-hour** and **weekly (7-day)** are the caps that throttle the plan — these are the numbers to watch. Each shows % consumed and a live "resets in" countdown.
-- **context** is this session's context-window fill (per-session; use it to decide whether to compact).
-- No dollar cost is shown — this is a **subscription** plan, so the API-equivalent $ is misleading. `usage --json` emits the raw fields for scripting.
+- **5-hour** and **weekly (7-day)** are the caps that throttle the plan. Each shows % consumed and a live "resets in" countdown. Both are **account-global** (shared across every session/agent on the plan), so burning either fast in a fan-out blocks everything.
+- **context** is this session's context-window fill (per-session; decide whether to compact).
+- No dollar cost — subscription plan, so the API-equivalent $ is misleading. `usage --json` emits raw fields.
+
+## Pacing a fan-out — `usage --guard`
+Before launching each wave of agents (and inside each agent before its batch), run **`usage --guard`**. It exits **0 = OK** or **3 = PAUSE**, and prints why:
+- **PAUSE if weekly% > 80** (env `WEEKLY_MAX`), or
+- **PAUSE if 5h% is ahead of its linear pace**: cap = `100 × elapsed/5h`, i.e. 4h-left → 20%, 3h → 40%, 2h → 60%, 1h → 80%. Burning the 5-hour faster than the clock = pause until it recovers or the window resets.
+
+Pattern: `usage --guard || { echo "paused — limit"; sleep 120; }` and re-check; or in an orchestrator, stop launching new agents until it returns 0.
 
 ## How it works / caveats
-- The 5h/weekly data exists **only** as Claude Code statusline stdin fields (`rate_limits.five_hour`, `.seven_day`) — not in the transcript or any API a script can call. The statusline writes each render to `~/roost/claude/usage/last-status.json`; `usage` reads that cache.
-- **Freshness:** the statusline re-renders on events and every `refreshInterval` seconds (set to 10 in `settings.json`), so the cache is usually ≤10s old. `rate_limits` are **account-global**, so any active session's render keeps it current. **Reset countdowns are computed live** and stay accurate even if the %s lag a few seconds; `usage` prints the cache age and warns if it's >60s old.
-- If it says "no cache yet", the statusline hasn't rendered since deploy — interact once or wait ~`refreshInterval` seconds, then retry.
-
-## Use it for budget-watching
-Before a multi-agent fan-out and between waves, run `usage`. If the **5-hour** or **weekly** % is climbing toward 100, slow the fan-out down or defer work — that limit is what stops the session.
+- The 5h/weekly data exists **only** as Claude Code statusline stdin fields (`rate_limits.five_hour`, `.seven_day`). The statusline writes each render to `~/roost/claude/usage/last-status.json`; `usage` reads that cache.
+- **Freshness:** the statusline re-renders on events and every `refreshInterval` seconds (10), so the cache is usually ≤10s old. **Reset countdowns + the pace cap are computed live** and stay accurate even if the %s lag; `usage` prints cache age and warns if >60s.
+- If it says "no cache yet", interact once or wait ~`refreshInterval` seconds (the statusline must render at least once).
