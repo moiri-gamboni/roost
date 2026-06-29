@@ -16,11 +16,15 @@
 #   usage --file PATH read a specific cache file
 #
 # Guard config — set EACH window independently (FIVE_GUARD / WEEK_GUARD) to:
-#   linear  (default)  pause if used% > 100*elapsed/window  (don't outrun the clock)
-#   <int>              flat threshold: pause if used% > N    (e.g. 80)
+#   linear  (default)  pause if used% > 100*x              (x = elapsed fraction)
+#   sqrt               concave/eased: pause if used% > 100*sqrt(x)  — permissive
+#                      early (fixes the just-after-reset strictness), tightens late
+#   pow:P              general power curve: cap = 100*x^P (0<P<=1 concave; P=1 is
+#                      linear; smaller P = more early slack). `sqrt` == pow:0.5
+#   <int>              flat threshold: pause if used% > N   (e.g. 80)
 #   off                disabled: never pause on this window
-# e.g.  WEEK_GUARD=80 FIVE_GUARD=linear  |  FIVE_GUARD=off WEEK_GUARD=90
-# Window sizes for linear mode: FIVE_WINDOW (s, 18000), WEEK_WINDOW (s, 604800).
+# e.g.  WEEK_GUARD=sqrt FIVE_GUARD=linear  |  FIVE_GUARD=off WEEK_GUARD=90
+# Window sizes for the curves: FIVE_WINDOW (s, 18000), WEEK_WINDOW (s, 604800).
 set -uo pipefail
 
 cache="${ROOST_USAGE_CACHE:-$HOME/roost/claude/usage/last-status.json}"
@@ -38,8 +42,8 @@ while [ $# -gt 0 ]; do
       printf 'usage [--json|--guard] [--file PATH]\n'
       printf '  default: 5-hour + weekly rate-limit %%s, reset times, context %%.\n'
       printf '  --guard: exit 0 (OK) / 3 (PAUSE).\n'
-      printf '  Per-window guard, set independently:\n'
-      printf '    FIVE_GUARD / WEEK_GUARD = linear (default) | <int %%> | off\n'
+      printf '  Per-window guard, set independently (FIVE_GUARD / WEEK_GUARD):\n'
+      printf '    linear (default) | sqrt | pow:P | <int %%> | off\n'
       exit 0 ;;
     *) echo "roost-usage: unknown arg '$1'" >&2; exit 2 ;;
   esac
@@ -48,14 +52,16 @@ done
 
 # validate guard specs up front (a typo errors instead of silently disabling)
 valid_spec() {
-  case "$(printf '%s' "$1" | tr 'A-Z' 'a-z')" in
-    linear|off|none|disabled|no) return 0 ;;
-    *) printf '%s' "$1" | grep -qE '^[0-9]+$' ;;
+  local s; s=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
+  case "$s" in
+    linear|off|none|disabled|no|sqrt) return 0 ;;
+    pow:*) printf '%s' "${s#pow:}" | grep -qE '^[0-9]+(\.[0-9]+)?$' ;;  # positive number
+    *)     printf '%s' "$s" | grep -qE '^[0-9]+$' ;;                    # flat int
   esac
 }
 for pair in "FIVE_GUARD=$FIVE_GUARD" "WEEK_GUARD=$WEEK_GUARD"; do
   if ! valid_spec "${pair#*=}"; then
-    echo "roost-usage: invalid ${pair%%=*}='${pair#*=}' (use: linear | <int> | off)" >&2; exit 2
+    echo "roost-usage: invalid ${pair%%=*}='${pair#*=}' (use: linear | sqrt | pow:P | <int> | off)" >&2; exit 2
   fi
 done
 
@@ -85,12 +91,21 @@ pct() { local v=${1%.*}; { [ -z "$v" ] || [ "$v" = "-1" ]; } && { echo "n/a"; re
 hm()  { local s=$(( $1<0 ? 0 : $1 )); printf '%dh%02dm' $(( s/3600 ))  $(( (s%3600)/60 )); }
 dh()  { local s=$(( $1<0 ? 0 : $1 )); printf '%dd%02dh' $(( s/86400 )) $(( (s%86400)/3600 )); }
 
+# cap for a power curve: round(100 * x^p), x=elapsed fraction, clamped [0,100]
+powcap() {  # $1=window $2=left $3=p
+  awk -v win="$1" -v left="$2" -v p="$3" 'BEGIN{
+    x=(win-left)/win; if(x<0)x=0; if(x>1)x=1;
+    c=100*(x^p); c=int(c+0.5); if(c<0)c=0; if(c>100)c=100; print c }'
+}
+
 # resolve a window's guard into GDIS (1=disabled), GCAP (int %), GLABEL (display)
 resolve() {  # $1=spec  $2=window_seconds  $3=left_seconds
-  local s; s=$(printf '%s' "$1" | tr 'A-Z' 'a-z'); local win=$2 left=$3
+  local s; s=$(printf '%s' "$1" | tr 'A-Z' 'a-z'); local win=$2 left=$3 p
   case "$s" in
     off|none|disabled|no) GDIS=1; GCAP=101; GLABEL="off" ;;
     linear|'')            GDIS=0; GCAP=$(( 100*(win-left)/win )); GLABEL="pace cap ${GCAP}%" ;;
+    sqrt)                 GDIS=0; GCAP=$(powcap "$win" "$left" 0.5); GLABEL="ease cap ${GCAP}% (sqrt)" ;;
+    pow:*)                p="${s#pow:}"; GDIS=0; GCAP=$(powcap "$win" "$left" "$p"); GLABEL="ease cap ${GCAP}% (pow $p)" ;;
     *)                    GDIS=0; GCAP=$s;  GLABEL="cap ${s}%" ;;   # integer (already validated)
   esac
 }

@@ -9,9 +9,9 @@ Run **`usage`** (alias `roost-usage`). Example:
 
 ```
 ── Claude usage limits ────────────────────────────
-  5-hour   ░░░░░░░░░░  9%    resets in 3h56m  (pace cap 21%)
-  weekly   █░░░░░░░░░  13%   resets in 0d18h  (pace cap 89%)
-  context  ██████░░░░  69%   (this session)
+  5-hour   ███░░░░░░░  33%   resets in 2h40m  (pace cap 46%)
+  weekly   █░░░░░░░░░  10%   resets in 6d12h  (ease cap 26% (sqrt))
+  context  ████████░░  83%   (this session)
 ──────────────────────────────────────────────────
   Opus 4.8 · cache 0s old
 ```
@@ -21,19 +21,21 @@ Run **`usage`** (alias `roost-usage`). Example:
 - No dollar cost — subscription plan, so the API-equivalent $ is misleading. `usage --json` emits raw fields (incl. each window's resolved guard).
 
 ## Pacing a fan-out — `usage --guard`
-Run **`usage --guard`** before each wave (and inside each agent). It exits **0 = OK** or **3 = PAUSE**, and prints which window tripped.
+Run **`usage --guard`** before each wave (and inside each agent). Exits **0 = OK** or **3 = PAUSE**, and prints which window tripped.
 
 **Each window is configured independently** via env — `FIVE_GUARD` and `WEEK_GUARD`, each one of:
-- **`linear`** (default) — pause if used% runs ahead of the clock: cap = `100 × elapsed/window` (5h: 4h-left→20%, 3h→40%, 2h→60%, 1h→80%; weekly: same shape over 7d, e.g. 18h-left→~89%).
-- **`<int>`** — a flat threshold: pause if used% > N (e.g. `80`).
+- **`linear`** (default) — pause if used% > `100 × x` (x = elapsed fraction). Theoretically-clean "don't outrun a constant burn", but **strict right after a reset** (cap ≈ 0 at x≈0).
+- **`sqrt`** — eased/concave: pause if used% > `100 × √x`. **Permissive early** (e.g. 1% into a window → ~10% allowed vs 1% for linear), tightening toward the cap as the window elapses; still hits 100% only at reset. Best for fan-outs that should run hot early.
+- **`pow:P`** — general power curve `100 × x^P` (0<P≤1 concave; P=1 = linear; smaller P = more early slack). `sqrt` ≡ `pow:0.5`.
+- **`<int>`** — flat threshold: pause if used% > N (e.g. `80`).
 - **`off`** — disabled; never pause on that window.
 
 ```
-WEEK_GUARD=80 FIVE_GUARD=linear  usage --guard   # weekly flat 80%, 5h linear
-FIVE_GUARD=off WEEK_GUARD=90       usage --guard   # ignore the 5h, weekly flat 90%
-FIVE_GUARD=40 WEEK_GUARD=off       usage --guard   # 5h flat 40%, ignore the weekly
+WEEK_GUARD=sqrt FIVE_GUARD=linear  usage --guard   # weekly eased, 5h linear
+WEEK_GUARD=80   FIVE_GUARD=off     usage --guard   # weekly flat 80%, ignore 5h
+FIVE_GUARD=pow:0.7 WEEK_GUARD=sqrt usage --guard   # both eased, 5h gentler
 ```
-An invalid spec **errors (exit 2)** rather than silently disabling. Window sizes for linear mode: `FIVE_WINDOW`, `WEEK_WINDOW` (seconds). Pattern: `usage --guard || { sleep 120; }` then re-check; or in an orchestrator, stop launching new agents until it returns 0.
+An invalid spec **errors (exit 2)** rather than silently disabling. Window sizes for the curves: `FIVE_WINDOW`, `WEEK_WINDOW` (seconds). Pattern: `usage --guard || { sleep 120; }` then re-check; or in an orchestrator, stop launching new agents until it returns 0.
 
 ## How it works / caveats
 - The 5h/weekly data exists **only** as Claude Code statusline stdin fields (`rate_limits.five_hour`, `.seven_day`). The statusline writes each render to `~/roost/claude/usage/last-status.json`; `usage` reads that cache.
