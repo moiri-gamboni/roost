@@ -83,7 +83,7 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
 - **`deploy.sh`** -- See Script Roles above
 - **`files/`** -- Config files and templates deployed to the server
   - `_setup-env.sh` -- Shared environment sourced by every setup script
-  - `settings.json` -- Claude Code settings with hook definitions (SessionStart/End, PreCompact, Stop, Notification)
+  - `settings.json` -- Claude Code settings: default model `claude-fable-5[1m]` with availability fallback to `claude-opus-4-8` (`fallbackModel`; Fable's content-flagged requests additionally auto-fall-back to Opus 4.8 natively), hook definitions (Notification), Notion permissions gate, cleanup policy
   - `private/` -- Separate git repo (`claude-mds`); commit changes there, then deploy with `roost-apply push`
     - `global-CLAUDE.md` -- Deployed to `$CLAUDE_CONFIG_DIR/CLAUDE.md` (`~/roost/claude/CLAUDE.md`); epistemic style, planning, search, agent, and writing conventions
     - `code-CLAUDE.md` -- Deployed to `~/roost/code/CLAUDE.md`; safety, planning, search, agent, and tool conventions

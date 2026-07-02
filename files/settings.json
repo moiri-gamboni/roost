@@ -69,7 +69,8 @@
     }
   },
   "effortLevel": "high",
-  "model": "claude-opus-4-8",
+  "model": "claude-fable-5[1m]",
+  "fallbackModel": ["claude-opus-4-8"],
   "tui": "fullscreen",
   "autoMemoryEnabled": true,
   "autoDreamEnabled": true,
