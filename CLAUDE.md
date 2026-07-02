@@ -146,10 +146,9 @@ The directory name `roost` is configurable via `ROOST_DIR_NAME` in `.env`.
 ```
 ~/roost/                    Managed root directory
 ├── claude/                 Claude Code config (CLAUDE_CONFIG_DIR)
-│   ├── settings.json       Hooks, cleanup policy
+│   ├── settings.json       Default model, hooks, cleanup policy
 │   ├── hooks/              Hook scripts + utilities (roost-apply, cloudflare-assemble)
 │   ├── skills/             Skills
-│   ├── locks/              Session lock files
 │   └── projects/           Session transcripts (auto-managed)
 ├── cloudflared/            Cloudflare Tunnel fragments
 │   └── apps/               Per-app ingress YAML fragments
@@ -167,8 +166,6 @@ Hooks are defined in `files/settings.json` and deployed to `~/roost/claude/hooks
 
 | Hook Event | Script | Purpose |
 |---|---|---|
-| SessionStart | `session-lock.sh` | Writes a lock file with hostname/tmux/PID metadata for multi-machine coordination |
-| SessionEnd | `session-unlock.sh` | Removes the lock file; auto-names unnamed sessions via `claude -p --model sonnet` (background) |
 | PreCompact | `reflect.sh` | Disabled (memory/reflection system not in use); previously injected a prompt to save learnings before context compaction |
 | Notification | `notify.sh` | Sends push notifications via local ntfy (with rate limiting and priority levels) |
 
@@ -303,7 +300,7 @@ Agent management functions (defined in `files/shell/bashrc.sh`, deployed to `~/.
 | `agent [path] [claude-args...]` | Launch interactive Claude in a tmux window (path defaults to cwd) |
 | `agent -c` | Continue last session in cwd |
 | `agents` | Interactive tmux window picker |
-| `agent_stop <index>` | Graceful stop (Ctrl-D, triggers SessionEnd hooks) |
+| `agent_stop <index>` | Graceful stop (Ctrl-D) |
 | `agent_kill <index>` | Force stop (double Ctrl-C) |
 
 Using `/rename` inside a session updates the tmux window name automatically.
