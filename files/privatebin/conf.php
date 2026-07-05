@@ -12,6 +12,16 @@ languageselection = false
 ; The public side is read-only (Caddy write gate), so comments could never be
 ; posted — drop the affordance entirely.
 discussion = false
+; CSP: PrivateBin's stock CSP sandboxes paste content with NO navigation allowed
+; (no allow-popups, no allow-top-navigation), so links rendered inside a paste
+; cannot be tapped — only copy/paste-into-the-address-bar works. Writes here are
+; loopback-gated (the public side 403s POSTs, so only this box ever authors a
+; paste — there is no untrusted paste content the sandbox defends against), so we
+; relax the sandbox just enough to let a *user tap* follow a link: we add
+; allow-popups + allow-top-navigation-by-user-activation (gesture-gated, no
+; auto-navigation). Everything else is PrivateBin's stock CSP verbatim, including
+; img-src data: which lets us embed diagrams inline as base64 data: URIs.
+cspheader = "default-src 'none'; base-uri 'self'; form-action 'none'; manifest-src 'self'; connect-src * blob:; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; font-src 'self'; frame-ancestors 'none'; frame-src blob:; img-src 'self' data: blob:; media-src blob:; object-src blob:; sandbox allow-same-origin allow-scripts allow-forms allow-modals allow-downloads allow-popups allow-top-navigation-by-user-activation"
 
 [expire]
 default = "1week"
