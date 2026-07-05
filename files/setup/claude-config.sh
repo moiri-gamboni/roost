@@ -32,18 +32,31 @@ else
     info "Code CLAUDE.md not found (files/private/ missing). Skipping."
 fi
 
-# --- Hook scripts ---
+# --- Bootstrap hook / lib / scheduled / CLI scripts into place ---
+mkdir -p "$CLAUDE_DIR/hooks" "$CLAUDE_DIR/lib" "$CLAUDE_DIR/scheduled" "$CLAUDE_DIR/scripts"
 
-# Install shared hook library
-cp "$REMOTE_DIR/files/hooks/_hook-env.sh" "$CLAUDE_DIR/hooks/_hook-env.sh"
+# Shared library (sourced by hooks, scheduled jobs, and CLIs via ../lib/)
+for f in _hook-env cloudflare-assemble; do
+    cp "$REMOTE_DIR/files/lib/${f}.sh" "$CLAUDE_DIR/lib/${f}.sh"
+    chmod +x "$CLAUDE_DIR/lib/${f}.sh"
+done
 
-for hook in session-lock session-unlock reflect notify \
-            health-check scheduled-task run-scheduled-task auto-update \
-            ram-monitor cloudflare-assemble roost-apply; do
-    cp "$REMOTE_DIR/files/hooks/${hook}.sh" "$CLAUDE_DIR/hooks/${hook}.sh"
-    chmod +x "$CLAUDE_DIR/hooks/${hook}.sh"
+# Claude Code event hooks
+for f in reflect notify; do
+    cp "$REMOTE_DIR/files/hooks/${f}.sh" "$CLAUDE_DIR/hooks/${f}.sh"
+    chmod +x "$CLAUDE_DIR/hooks/${f}.sh"
 done
 cp "$REMOTE_DIR/files/hooks/reflect.md" "$CLAUDE_DIR/hooks/reflect.md"
+
+# Scheduled jobs (cron + systemd timers)
+for f in health-check scheduled-task run-scheduled-task auto-update ram-monitor; do
+    cp "$REMOTE_DIR/files/scheduled/${f}.sh" "$CLAUDE_DIR/scheduled/${f}.sh"
+    chmod +x "$CLAUDE_DIR/scheduled/${f}.sh"
+done
+
+# CLIs (rest are symlinked into ~/bin by shell-config.sh)
+cp "$REMOTE_DIR/files/scripts/roost-apply.sh" "$CLAUDE_DIR/scripts/roost-apply.sh"
+chmod +x "$CLAUDE_DIR/scripts/roost-apply.sh"
 
 chown -R "$USERNAME:$USERNAME" "$CLAUDE_DIR/hooks"
 

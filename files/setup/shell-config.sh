@@ -52,6 +52,9 @@ echo "  [+] tmux and shell configured"
 
 for dir in \
     "$ROOST_DIR/claude/hooks" \
+    "$ROOST_DIR/claude/scripts" \
+    "$ROOST_DIR/claude/scheduled" \
+    "$ROOST_DIR/claude/lib" \
     "$ROOST_DIR/claude/skills" \
     "$ROOST_DIR/claude/locks" \
     "$ROOST_DIR/cloudflared/apps" \
@@ -79,15 +82,18 @@ chown "$USERNAME:$USERNAME" "$HOME_DIR/.bashrc.d/$ROOST_DIR_NAME.sh"
 echo "  [+] Shell config deployed to $HOME_DIR/.bashrc.d/$ROOST_DIR_NAME.sh"
 
 # Symlink roost-apply into ~/bin so it works in non-interactive shells (e.g. Claude Code Bash tool)
-ln -sf "$ROOST_DIR/claude/hooks/roost-apply.sh" "$HOME_DIR/bin/roost-apply"
+ln -sf "$ROOST_DIR/claude/scripts/roost-apply.sh" "$HOME_DIR/bin/roost-apply"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-apply"
-ln -sf "$ROOST_DIR/claude/hooks/roost-net.sh" "$HOME_DIR/bin/roost-net"
+ln -sf "$ROOST_DIR/claude/scripts/roost-net.sh" "$HOME_DIR/bin/roost-net"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-net"
 # usage / roost-usage: on-demand session token/cost/budget check
-ln -sf "$ROOST_DIR/claude/hooks/roost-usage.sh" "$HOME_DIR/bin/roost-usage"
+ln -sf "$ROOST_DIR/claude/scripts/roost-usage.sh" "$HOME_DIR/bin/roost-usage"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-usage"
-ln -sf "$ROOST_DIR/claude/hooks/roost-usage.sh" "$HOME_DIR/bin/usage"
+ln -sf "$ROOST_DIR/claude/scripts/roost-usage.sh" "$HOME_DIR/bin/usage"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/usage"
+# roost-session: print the current Claude Code session's id + auto-title
+ln -sf "$ROOST_DIR/claude/scripts/roost-session.sh" "$HOME_DIR/bin/roost-session"
+chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-session"
 
 # --- Git identity ---
 if [ -n "${GIT_USER_NAME:-}" ] && [ -n "${GIT_USER_EMAIL:-}" ]; then

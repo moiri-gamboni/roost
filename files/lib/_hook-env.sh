@@ -37,7 +37,8 @@ hook_input() {
 hook_json() { hook_input | jq -r "$1 // empty"; }
 
 # --- ROOST_DIR_NAME (derive from this script's path if unset, e.g. under systemd) ---
-# Script lives at $HOME/$ROOST_DIR_NAME/claude/hooks/_hook-env.sh
+# Script lives at $HOME/$ROOST_DIR_NAME/claude/lib/_hook-env.sh (lib/ is a direct
+# child of claude/, same depth as the old hooks/ path, so the walk still holds)
 if [ -z "${ROOST_DIR_NAME:-}" ]; then
     _hook_env_src="$(readlink -f "${BASH_SOURCE[0]}")"
     ROOST_DIR_NAME="$(basename "$(dirname "$(dirname "$(dirname "$_hook_env_src")")")")"

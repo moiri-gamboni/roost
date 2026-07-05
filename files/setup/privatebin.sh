@@ -107,7 +107,7 @@ if [ -f "$FRAG" ] && [ "$(cat "$FRAG")" = "$FRAG_RENDERED" ]; then
 else
     echo "$FRAG_RENDERED" > "$FRAG"
     chown "$USERNAME:$USERNAME" "$FRAG"
-    bash "$ROOST_DIR/claude/hooks/cloudflare-assemble.sh"
+    bash "$ROOST_DIR/claude/lib/cloudflare-assemble.sh"
     systemctl restart cloudflared
     ok "cloudflared ingress for paste.$DOMAIN assembled"
 fi

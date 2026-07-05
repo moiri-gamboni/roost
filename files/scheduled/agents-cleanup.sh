@@ -36,7 +36,7 @@
 #   AGENTS_CLEANUP_ACTIVITY_HOURS  override 24h connection-marker threshold
 
 set -euo pipefail
-source "$(dirname "$(readlink -f "$0")")/_hook-env.sh"
+source "$(dirname "$(readlink -f "$0")")/../lib/_hook-env.sh"
 
 DRY_RUN=0
 MARKER="$CLAUDE_CONFIG_DIR/last-connection-activity"

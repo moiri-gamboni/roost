@@ -52,7 +52,7 @@ Configured in `.env` (copy from `.env.example`). Hetzner API token is stored by 
 ## Script Roles
 
 - **`deploy.sh`** -- Full provisioning and setup, run from your laptop. Sources `.env`, logs to `logs/` (gitignored). Idempotent and safe to re-run.
-- **`roost-apply`** (`~/bin/` symlink to `hooks/roost-apply.sh`) -- Single tool for deploying config changes and reloading services. Subcommand mode (`diff`/`push`/`list`) handles manifest-based file deployment, `systemctl daemon-reload`, and batched service restarts. Flag mode (`--caddy`/`--cloudflare`/`--ntfy`/`--systemd`/`--cron`/`--all`) reloads specific services directly. Environment from `.sync-env`.
+- **`roost-apply`** (`~/bin/` symlink to `scripts/roost-apply.sh`) -- Single tool for deploying config changes and reloading services. Subcommand mode (`diff`/`push`/`list`) handles manifest-based file deployment, `systemctl daemon-reload`, and batched service restarts. Flag mode (`--caddy`/`--cloudflare`/`--ntfy`/`--systemd`/`--cron`/`--all`) reloads specific services directly. Environment from `.sync-env`.
 
 ## Key Design Patterns
 
@@ -102,12 +102,14 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
   - `bashrc-append.sh` -- Stub appended to `~/.bashrc`; sources `~/.bashrc.d/$ROOST_DIR_NAME.sh`
   - `profile-append.sh` -- Stub appended to `~/.profile`; sources the same file for non-interactive shells
   - `shell/bashrc.sh` -- Shell configuration (PATH, tmux, agent helpers); deployed to `~/.bashrc.d/roost.sh`
-  - `hooks/` -- Shell scripts for Claude Code hooks and cron jobs
-    - `_hook-env.sh` -- Shared library: JSON input parsing (`hook_json`), ntfy helpers, rate limiting, logging
-    - `reflect.md` -- Prompt for the `reflect.sh` PreCompact hook (currently disabled)
+  - `hooks/` -- Claude Code **event hooks** (deployed to `$CLAUDE_CONFIG_DIR/hooks/`, wired in `settings.json`): `notify.sh` (Notification), `statusline.sh`, `reflect.sh` + `reflect.md` (PreCompact, disabled)
+  - `scripts/` -- User **CLIs**, symlinked into `~/bin` (deployed to `claude/scripts/`)
     - `roost-apply.sh` -- Config deployment and service reload (manifest-based + flag mode)
     - `roost-net.sh` -- Travel VPN control CLI: `status`, `travel on/off`, `vpn on/off`, `test`, `client {android|laptop|ssh}`, `rotate-keys`; symlinked as `~/bin/roost-net`
-    - `cloudflare-assemble.sh` -- Assembles cloudflare config from base header + app fragments
+    - `roost-usage.sh` -- Live 5h/weekly usage limits + context fill; `usage`/`roost-usage`
+    - `roost-session.sh` -- Print the current Claude Code session's id + auto-title; `roost-session`
+  - `scheduled/` -- **Cron + systemd-timer jobs** (deployed to `claude/scheduled/`): `health-check.sh`, `auto-update.sh`, `scheduled-task.sh`/`run-scheduled-task.sh`, `agents-cleanup.sh`, `track-ssh-activity.sh`, `ram-monitor.sh`, `vision-abuse-watch.sh`
+  - `lib/` -- **Shared**, sourced by the above via `../lib/` (deployed to `claude/lib/`): `_hook-env.sh` (JSON input `hook_json`, ntfy helpers, rate limiting, logging), `cloudflare-assemble.sh` (assembles cloudflare config from base header + app fragments)
   - `skills/` -- Claude Code skills deployed to `$CLAUDE_CONFIG_DIR/skills/`
     - `html2markdown/SKILL.md`, `havelock-api/SKILL.md`, `humanizer/SKILL.md`, `pastebin/SKILL.md` (publish encrypted pastes to PrivateBin via pbincli)
   - `sshd/` -- sshd drop-in configs (`50-clip-forward.conf`: `StreamLocalBindUnlink yes`)
@@ -147,7 +149,10 @@ The directory name `roost` is configurable via `ROOST_DIR_NAME` in `.env`.
 ~/roost/                    Managed root directory
 ├── claude/                 Claude Code config (CLAUDE_CONFIG_DIR)
 │   ├── settings.json       Default model, hooks, cleanup policy
-│   ├── hooks/              Hook scripts + utilities (roost-apply, cloudflare-assemble)
+│   ├── hooks/              Claude Code event hooks (notify, statusline, reflect)
+│   ├── scripts/            User CLIs → ~/bin (roost-apply, roost-net, roost-usage, roost-session)
+│   ├── scheduled/          Cron + timer jobs (health-check, auto-update, ram-monitor, …)
+│   ├── lib/                Shared: _hook-env.sh, cloudflare-assemble.sh
 │   ├── skills/             Skills
 │   └── projects/           Session transcripts (auto-managed)
 ├── cloudflared/            Cloudflare Tunnel fragments
@@ -160,28 +165,28 @@ The directory name `roost` is configurable via `ROOST_DIR_NAME` in `.env`.
 └── roost.sh                Shell configuration (PATH, tmux, agent helpers)
 ```
 
-## Hook Architecture
+## Hook, Scheduled-Job & CLI Architecture
 
-Hooks are defined in `files/settings.json` and deployed to `~/roost/claude/hooks/`:
+Scripts split by role under `~/roost/claude/`: **`hooks/`** (Claude Code event hooks, wired in `files/settings.json`), **`scheduled/`** (cron + timer jobs), **`scripts/`** (user CLIs → `~/bin`), **`lib/`** (shared code). Event hooks (`hooks/`):
 
 | Hook Event | Script | Purpose |
 |---|---|---|
 | PreCompact | `reflect.sh` | Disabled (memory/reflection system not in use); previously injected a prompt to save learnings before context compaction |
 | Notification | `notify.sh` | Sends push notifications via local ntfy (with rate limiting and priority levels) |
 
-Hook scripts source `_hook-env.sh` (except `reflect.sh` which just cats a prompt file) which provides `hook_json()` for parsing Claude Code's JSON input, `ntfy_send()` for notifications (with journald fallback), `rate_limit_ok()` to prevent notification floods, and journald logging via `logger -t "$_HOOK_TAG"` (tags: `roost/<script-name>`).
+All these scripts source `_hook-env.sh` from `../lib/` (except `reflect.sh`, which just cats a prompt file) which provides `hook_json()` for parsing Claude Code's JSON input, `ntfy_send()` for notifications (with journald fallback), `rate_limit_ok()` to prevent notification floods, and journald logging via `logger -t "$_HOOK_TAG"` (tags: `roost/<script-name>`).
 
-Cron-triggered hooks (not Claude Code events):
+Scheduled jobs (`scheduled/`, cron-triggered via `cron-roost`; not Claude Code events):
 - `health-check.sh` -- Checks Ollama, Caddy, ntfy, Tailscale, cloudflared, disk; hard failures bundle into a high-priority `Service health alert`, cooled down by failure-set hash (notify on set change, else at most hourly). Soft signals (sustained swap >3GB high-priority, pending reboot via `/var/run/reboot-required` default-priority) send their own ntfy with per-event cooldowns (swap: 1h; reboot: 7d reminder, re-arms on new mtime). Sources `health-check-apps.sh` if present for app-specific checks.
 - `scheduled-task.sh` / `run-scheduled-task.sh` -- Runs Claude Code tasks in tmux windows as headless `claude -p` in a `cron` tmux session. One active: daily 8:00 morning summary (ntfy history). (A weekly memory-cleanup task is defined but disabled in `cron-roost`.)
 - `auto-update.sh` -- Weekly updates (Sunday 3am) with btrfs snapshot before, ntfy summary after. Safeguards: 7-day release cooldown, major version guard (blocked and reported via ntfy). Updated tools: Claude Code, claude-code-tools, aichat-search, claude-code-transcripts, Go, fnm, Node.js LTS, uv, Ollama models, grepai, gitleaks, dufs, PrivateBin, acme.sh, rodney, OS packages. Logs: `journalctl -t roost/auto-update`.
 - `track-ssh-activity.sh` -- Every minute. Touches `~/roost/claude/last-connection-activity` if `ss` shows any SSH (22) or ET (2022) connection established. Read by `agents-cleanup.sh` to gate "is the user around." No journal access or group memberships needed.
 - `agents-cleanup.sh` -- Daily 3:30am. Drops agent sessions from the dashboard list via `rm -rf $CLAUDE_CONFIG_DIR/jobs/<id>/`. Does NOT touch the conversation transcript (`projects/<encoded-cwd>/<sessionId>.jsonl` stays put → session remains `claude --resume`-able) or the session's worktree/branch. Criteria: state in `{done, stopped, failed, crashed}`, `tempo=idle`, no live worker pid (roster entries with `pid=0` or dead pids don't count as live), idle ≥48 weekday hours (weekends skipped), and the connection-activity marker is ≤24h old. The marker gate ensures cleanup only fires when you've been on the box recently — vacation days don't churn the list. `--dry-run` previews decisions; `--marker FILE` overrides the marker for testing. Env: `AGENTS_CLEANUP_IDLE_HOURS` (default 48), `AGENTS_CLEANUP_ACTIVITY_HOURS` (default 24). Logs: `journalctl -t roost/agents-cleanup`.
 
-Systemd timer (not cron):
+Systemd timer (in `scheduled/`, not cron):
 - `ram-monitor.sh` -- Alerts when any process exceeds 3GB RSS (runs every 30s via `ram-monitor.timer`, tracks notified PIDs to avoid repeats)
 
-Server-side utilities (manually triggered, not hooks):
+CLIs (`scripts/`, symlinked into `~/bin`) and shared lib (`lib/`):
 - `roost-apply.sh` -- Config deployment and service reload. Subcommand mode (`diff`/`push`/`list`) deploys files from the repo manifest; flag mode (`--caddy`/`--cloudflare`/etc.) reloads specific services. Aliased as `roost-apply` in bashrc.
 - `cloudflare-assemble.sh` -- Assembles `/etc/cloudflared/config.yml` from `/etc/cloudflared/config.yml.base` (tunnel header) + per-app fragments in `~/roost/cloudflared/apps/*.yml`. Invoked by `roost-apply push files/cloudflare-config.yml` and by `roost-apply --cloudflare`; also safe to run standalone.
 
@@ -243,7 +248,7 @@ acme.sh persists the token into its account config so subsequent `--cron` renewa
 
 ### Known operational notes
 
-**DNS bootstrap loop class** (fixed 2026-04-30 in `plans/singbox-dns-bootstrap-fix.md`): sing-box's cf-doh DNS server must have `detour: "urltest"` and Path A's outbound must use a render-time-baked CF IP, otherwise sing-box's internal DoH client gets captured by its own tun and can't bootstrap on networks where the underlying interface can't reach 1.1.1.1 directly. Diagnostic: `journalctl -u roost-travel | grep "1.1.1.1:443: i/o timeout"` while raw `nc -zv 1.1.1.1 443` succeeds = bootstrap loop. Render fix lives in `render_android` (`files/hooks/roost-net.sh`); `travel-test.sh` includes a regression assertion (`test_dns_via_tunnel`).
+**DNS bootstrap loop class** (fixed 2026-04-30 in `plans/singbox-dns-bootstrap-fix.md`): sing-box's cf-doh DNS server must have `detour: "urltest"` and Path A's outbound must use a render-time-baked CF IP, otherwise sing-box's internal DoH client gets captured by its own tun and can't bootstrap on networks where the underlying interface can't reach 1.1.1.1 directly. Diagnostic: `journalctl -u roost-travel | grep "1.1.1.1:443: i/o timeout"` while raw `nc -zv 1.1.1.1 443` succeeds = bootstrap loop. Render fix lives in `render_android` (`files/scripts/roost-net.sh`); `travel-test.sh` includes a regression assertion (`test_dns_via_tunnel`).
 
 **All-paths-fail DNS hang**: with cf-doh `detour: "urltest"`, if every urltest member fails simultaneously, DNS hangs at the urltest-selection stage (sing-box's DoH server has no per-query timeout field; `connect_timeout` would only bound TCP connect, not the full query). If observed in normal operation, all paths are likely GFW-blocked simultaneously → fall back to eSIM-bypass routing (different operator route) or direct internet.
 
@@ -252,11 +257,11 @@ acme.sh persists the token into its account config so subsequent `--cron` renewa
 ### Sing-box client deploy procedure (in-country safe)
 
 1. Pre-flight: `dpkg -s sing-box | awk '/^Version:/ {print $2}'` on laptop; manually note Android version from sing-box-app's About screen.
-2. Deploy server-side via existing eSIM-routed sing-box (or Tailscale): `roost-apply push files/hooks/roost-net.sh`. No service restart required server-side; effect on next client refresh.
+2. Deploy server-side via existing eSIM-routed sing-box (or Tailscale): `roost-apply push files/scripts/roost-net.sh`. No service restart required server-side; effect on next client refresh.
 3. Refresh laptop: `roost-travel config` (auto-restarts unit if active; ~3-15s gap; the atomic-swap fallback keeps the previous config if the new one fails `sing-box check`).
 4. Refresh Android: `roost-net client android --send-tailscale <peer>` from laptop, then re-import in the sing-box-for-android app. Verify the active profile name in the app.
 5. Verify post-deploy: `bash files/laptop/travel-test.sh` includes a `DNS via tunnel: example.com -> ...` PASS line. Curl through tunnel works.
-6. Rollback if needed: `git revert <commit>` + `roost-apply push files/hooks/roost-net.sh` + `roost-travel config` on laptop. Realistic 60-120s. Tailscale stays up throughout (independent transport).
+6. Rollback if needed: `git revert <commit>` + `roost-apply push files/scripts/roost-net.sh` + `roost-travel config` on laptop. Realistic 60-120s. Tailscale stays up throughout (independent transport).
 
 ### 30-day post-deploy review
 
@@ -267,7 +272,7 @@ Scrape `journalctl -u roost-travel --since '30 days ago' | grep -iE 'i/o timeout
 If Path D fails or sing-box urltest never picks it:
 
 1. Cert health: `sudo openssl x509 -checkend 604800 -noout -in /etc/roost-travel/vision-cert/fullchain.cer && echo OK` — fail = cert renewal stuck; check `journalctl -u vision-cert-renew` for the last run, or rerun manually with `sudo systemctl start vision-cert-renew.service`. If the timer hasn't fired at all, `systemctl list-timers vision-cert-renew.timer`.
-2. Listener health: `sudo "$ROOST_DIR/claude/hooks/roost-net.sh" test` (or `sudo roost-net test` via the `~/bin` symlink) exercises the loopback + fallback chain. The `[PASS] vision fallback responds` line is end-to-end.
+2. Listener health: `sudo "$ROOST_DIR/claude/scripts/roost-net.sh" test` (or `sudo roost-net test` via the `~/bin` symlink) exercises the loopback + fallback chain. The `[PASS] vision fallback responds` line is end-to-end.
 3. xray-side errors: `journalctl -u xray --since '5 minutes ago' | grep -iE 'vision|tls|cert'`. Cert path mismatch and chmod issues (xray needs read access via group=xray) are the typical first-deploy bugs.
 4. Abuse signals: `sudo cat /var/lib/roost-travel/vision-seen-ips.txt` lists every IP that has ever connected to the Vision inbound. The daily `vision-abuse-watch.sh` ntfys novel IPs; if you see a sudden spike, rotate `XRAY_UUID` via `roost-net rotate-keys`.
 
@@ -285,7 +290,7 @@ The base infrastructure configs are generic and stay in the repo. Server-specifi
 | Caddy Tailscale-only apps | `/etc/caddy/apps-enabled/<app>.caddy` | Per-app `handle_path` fragments imported by `sites-enabled/apps.caddy` (see below) |
 | Cloudflare ingress | `~/roost/cloudflared/apps/<app>.yml` | Assembled by `cloudflare-assemble.sh`; each file contains ingress rule lines |
 | App cron jobs | `/etc/cron.d/${ROOST_DIR_NAME}-apps` | Separate file from the base cron; filenames must not contain dots |
-| App health checks | `~/roost/claude/hooks/health-check-apps.sh` | Sourced by `health-check.sh` if present; uses same `check()` and `check_service()` helpers. Deployed from `files/travel/travel-health.sh` (currently hosts travel-vpn + PrivateBin checks); append additional app-specific checks there rather than overwrite. |
+| App health checks | `~/roost/claude/scheduled/health-check-apps.sh` | Sourced by `health-check.sh` if present; uses same `check()` and `check_service()` helpers. Deployed from `files/travel/travel-health.sh` (currently hosts travel-vpn + PrivateBin checks); append additional app-specific checks there rather than overwrite. |
 
 ### Tailscale-Only Static Apps
 

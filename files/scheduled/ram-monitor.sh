@@ -1,7 +1,7 @@
 #!/bin/bash
 # Alert when any process exceeds 3GB RSS.
 # Tracks notified PIDs to avoid repeat alerts until the process restarts.
-source "$(dirname "$0")/_hook-env.sh"
+source "$(dirname "$0")/../lib/_hook-env.sh"
 
 THRESHOLD_KB=$((3072 * 1024))  # 3GB
 GROWTH_KB=$((512 * 1024))     # re-alert if grown 512MB since last alert

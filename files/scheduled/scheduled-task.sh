@@ -5,7 +5,7 @@ PROJECT="${2:-$HOME/${ROOST_DIR_NAME}/code/life}"
 TASKFILE=$(mktemp /tmp/claude-task-XXXXXX.txt)
 printf '%s' "$TASK" > "$TASKFILE"
 WIN="cron-$(date +%H%M)"
-CMD="$CLAUDE_CONFIG_DIR/hooks/run-scheduled-task.sh \"$TASKFILE\" \"$PROJECT\""
+CMD="$CLAUDE_CONFIG_DIR/scheduled/run-scheduled-task.sh \"$TASKFILE\" \"$PROJECT\""
 # Create the session WITH the task window directly. `new-session -d -s cron`
 # alone would attach a default `bash` window, which persists after the task
 # window exits — leaving an idle cron session forever (visible at the top of

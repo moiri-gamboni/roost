@@ -3,11 +3,11 @@
 # per-app ingress fragments in ~/roost/cloudflared/apps/*.yml.
 # Called by roost-apply.sh --cloudflare; can also be run standalone.
 set -euo pipefail
-source "$(dirname "$0")/_hook-env.sh"
+source "$(dirname "$0")/../lib/_hook-env.sh"
 
 CONFIG="/etc/cloudflared/config.yml"
 BASE="/etc/cloudflared/config.yml.base"
-# Derive APPS_DIR from the script's own path (/.../$ROOST_DIR_NAME/claude/hooks/
+# Derive APPS_DIR from the script's own path (/.../$ROOST_DIR_NAME/claude/lib/
 # -> /.../$ROOST_DIR_NAME/cloudflared/apps) rather than $HOME, which is /root
 # when roost-net invokes this via `sudo cloudflare-assemble.sh`.
 _SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
