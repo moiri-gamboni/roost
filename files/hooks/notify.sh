@@ -1,5 +1,5 @@
 #!/bin/bash
-source "$(dirname "$0")/_hook-env.sh"
+source "$(dirname "$0")/../lib/_hook-env.sh"
 
 MESSAGE=$(hook_json '.message // "Input needed"')
 TITLE=$(hook_json '.title')

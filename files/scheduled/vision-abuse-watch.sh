@@ -16,7 +16,7 @@
 # We grep for "[vision -> " to filter Vision-tagged lines and pull the SRC_IP.
 set -uo pipefail
 HOOK_DROP_TO_SUDO_USER=1
-source "$(dirname "$0")/_hook-env.sh"
+source "$(dirname "$0")/../lib/_hook-env.sh"
 
 ACCESS_LOG=/var/log/xray/access.log
 SEEN_DIR=/var/lib/roost-travel

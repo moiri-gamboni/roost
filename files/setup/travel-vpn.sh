@@ -114,7 +114,7 @@ ok "Caddy reloaded with vision-fallback site"
 install -d -m 0755 /etc/xray
 set -a; source "$STATE_DIR/state.env"; set +a
 # Sourced helper defines $XRAY_ENVSUBST_VARS — kept identical with the
-# refresh path in files/hooks/roost-apply.sh to avoid silent allowlist drift.
+# refresh path in files/scripts/roost-apply.sh to avoid silent allowlist drift.
 # shellcheck disable=SC1091
 source "$REMOTE_DIR/files/travel/_envsubst-vars.sh"
 # mktemp (mode 0600) keeps secrets out of world-readable /tmp; shell > redirect

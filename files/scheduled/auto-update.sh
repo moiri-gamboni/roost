@@ -3,7 +3,7 @@
 # Creates a btrfs snapshot before updating, logs everything, sends summary via ntfy.
 # Major version bumps are blocked and reported; only minor/patch updates proceed.
 HOOK_DROP_TO_SUDO_USER=1
-source "$(dirname "$0")/_hook-env.sh"
+source "$(dirname "$0")/../lib/_hook-env.sh"
 
 UPDATED=""
 FAILED=""

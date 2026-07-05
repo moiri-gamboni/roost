@@ -10,7 +10,7 @@
 # Options:
 #   -y, --yes    Skip confirmation prompts (push only)
 set -euo pipefail
-source "$(dirname "$(readlink -f "$0")")/_hook-env.sh"
+source "$(dirname "$(readlink -f "$0")")/../lib/_hook-env.sh"
 
 # --- Paths ---
 _HOOKS_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
@@ -99,25 +99,26 @@ define_manifest() {
     # Category A: User files under ~/roost/ (no root needed)
     cat <<'MANIFEST_A'
 files/settings.json|$ROOST_DIR/claude/settings.json|sed-roost|
-files/hooks/_hook-env.sh|$ROOST_DIR/claude/hooks/_hook-env.sh|plain+x|
+files/lib/_hook-env.sh|$ROOST_DIR/claude/lib/_hook-env.sh|plain+x|
+files/lib/cloudflare-assemble.sh|$ROOST_DIR/claude/lib/cloudflare-assemble.sh|plain+x|
 files/hooks/reflect.sh|$ROOST_DIR/claude/hooks/reflect.sh|plain+x|
 files/hooks/notify.sh|$ROOST_DIR/claude/hooks/notify.sh|plain+x|
 files/hooks/statusline.sh|$ROOST_DIR/claude/hooks/statusline.sh|plain+x|
-files/hooks/health-check.sh|$ROOST_DIR/claude/hooks/health-check.sh|plain+x|
-files/hooks/scheduled-task.sh|$ROOST_DIR/claude/hooks/scheduled-task.sh|plain+x|
-files/hooks/run-scheduled-task.sh|$ROOST_DIR/claude/hooks/run-scheduled-task.sh|plain+x|
-files/hooks/auto-update.sh|$ROOST_DIR/claude/hooks/auto-update.sh|plain+x|
-files/hooks/ram-monitor.sh|$ROOST_DIR/claude/hooks/ram-monitor.sh|plain+x|
-files/hooks/cloudflare-assemble.sh|$ROOST_DIR/claude/hooks/cloudflare-assemble.sh|plain+x|
-files/hooks/agents-cleanup.sh|$ROOST_DIR/claude/hooks/agents-cleanup.sh|plain+x|
-files/hooks/track-ssh-activity.sh|$ROOST_DIR/claude/hooks/track-ssh-activity.sh|plain+x|
 files/hooks/reflect.md|$ROOST_DIR/claude/hooks/reflect.md|sed-roost|
-files/hooks/roost-apply.sh|$ROOST_DIR/claude/hooks/roost-apply.sh|plain+x|
-files/hooks/roost-net.sh|$ROOST_DIR/claude/hooks/roost-net.sh|plain+x|
-files/hooks/roost-usage.sh|$ROOST_DIR/claude/hooks/roost-usage.sh|plain+x|
-files/hooks/vision-abuse-watch.sh|$ROOST_DIR/claude/hooks/vision-abuse-watch.sh|plain+x|
-files/travel/travel-health.sh|$ROOST_DIR/claude/hooks/health-check-apps.sh|plain+x|
-files/private/health-check-apps-private.sh|$ROOST_DIR/claude/hooks/health-check-apps-private.sh|plain+x|
+files/scheduled/health-check.sh|$ROOST_DIR/claude/scheduled/health-check.sh|plain+x|
+files/scheduled/scheduled-task.sh|$ROOST_DIR/claude/scheduled/scheduled-task.sh|plain+x|
+files/scheduled/run-scheduled-task.sh|$ROOST_DIR/claude/scheduled/run-scheduled-task.sh|plain+x|
+files/scheduled/auto-update.sh|$ROOST_DIR/claude/scheduled/auto-update.sh|plain+x|
+files/scheduled/ram-monitor.sh|$ROOST_DIR/claude/scheduled/ram-monitor.sh|plain+x|
+files/scheduled/agents-cleanup.sh|$ROOST_DIR/claude/scheduled/agents-cleanup.sh|plain+x|
+files/scheduled/track-ssh-activity.sh|$ROOST_DIR/claude/scheduled/track-ssh-activity.sh|plain+x|
+files/scheduled/vision-abuse-watch.sh|$ROOST_DIR/claude/scheduled/vision-abuse-watch.sh|plain+x|
+files/scripts/roost-apply.sh|$ROOST_DIR/claude/scripts/roost-apply.sh|plain+x|
+files/scripts/roost-net.sh|$ROOST_DIR/claude/scripts/roost-net.sh|plain+x|
+files/scripts/roost-usage.sh|$ROOST_DIR/claude/scripts/roost-usage.sh|plain+x|
+files/scripts/roost-session.sh|$ROOST_DIR/claude/scripts/roost-session.sh|plain+x|
+files/travel/travel-health.sh|$ROOST_DIR/claude/scheduled/health-check-apps.sh|plain+x|
+files/private/health-check-apps-private.sh|$ROOST_DIR/claude/scheduled/health-check-apps-private.sh|plain+x|
 files/shell/bashrc.sh|$HOME_DIR/.bashrc.d/roost.sh|plain|
 files/private/code-CLAUDE.md|$ROOST_DIR/code/CLAUDE.md|plain|
 files/private/global-CLAUDE.md|$ROOST_DIR/claude/CLAUDE.md|plain|
@@ -126,14 +127,15 @@ files/skills/havelock-api/SKILL.md|$ROOST_DIR/claude/skills/havelock-api/SKILL.m
 files/skills/humanizer/SKILL.md|$ROOST_DIR/claude/skills/humanizer/SKILL.md|plain|
 files/skills/pastebin/SKILL.md|$ROOST_DIR/claude/skills/pastebin/SKILL.md|envsubst:DOMAIN|
 files/skills/usage-limits/SKILL.md|$ROOST_DIR/claude/skills/usage-limits/SKILL.md|plain|
-files/privatebin/privatebin-cloudflare.yml.tmpl|$ROOST_DIR/cloudflared/apps/privatebin.yml|envsubst:DOMAIN|run:~/roost/claude/hooks/cloudflare-assemble.sh,restart:cloudflared
+files/skills/roost-session/SKILL.md|$ROOST_DIR/claude/skills/roost-session/SKILL.md|plain|
+files/privatebin/privatebin-cloudflare.yml.tmpl|$ROOST_DIR/cloudflared/apps/privatebin.yml|envsubst:DOMAIN|run:~/roost/claude/lib/cloudflare-assemble.sh,restart:cloudflared
 MANIFEST_A
 
     # Category B: System files (root needed, may require service restarts)
     cat <<'MANIFEST_B'
 files/Caddyfile|/etc/caddy/Caddyfile|envsubst:TAILSCALE_IP,DOMAIN|reload-or-restart:caddy
 files/apps.caddy|/etc/caddy/sites-enabled/apps.caddy|plain|reload-or-restart:caddy
-files/cloudflare-config.yml|/etc/cloudflared/config.yml.base|envsubst:TUNNEL_ID,TUNNEL_NAME|run:~/roost/claude/hooks/cloudflare-assemble.sh,restart:cloudflared
+files/cloudflare-config.yml|/etc/cloudflared/config.yml.base|envsubst:TUNNEL_ID,TUNNEL_NAME|run:~/roost/claude/lib/cloudflare-assemble.sh,restart:cloudflared
 files/cloudflare-config.yml|$HOME_DIR/.cloudflared/config.yml|envsubst:TUNNEL_ID,TUNNEL_NAME|
 files/ntfy-server.yml|/etc/ntfy/server.yml|plain|restart:ntfy
 files/et.cfg|/etc/et.cfg|envsubst:TAILSCALE_IP|restart:et
@@ -575,9 +577,9 @@ cmd_flag_reload() {
     local reload_failed=()
 
     if $FLAG_ALL || $FLAG_CLOUDFLARE; then
-        if [ -x "$_HOOKS_DIR/cloudflare-assemble.sh" ]; then
+        if [ -x "$_HOOKS_DIR/../lib/cloudflare-assemble.sh" ]; then
             info "Running cloudflare assembly..."
-            "$_HOOKS_DIR/cloudflare-assemble.sh"
+            "$_HOOKS_DIR/../lib/cloudflare-assemble.sh"
             ok "Cloudflare config assembled"
         fi
         info "Restarting cloudflared..."

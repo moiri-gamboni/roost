@@ -2,7 +2,7 @@
 # roost-net — travel-VPN control CLI.
 # Env sources: .sync-env (DOMAIN, USERNAME), state.env (Xray keys, 0600 root).
 set -euo pipefail
-source "$(dirname "$(readlink -f "$0")")/_hook-env.sh"
+source "$(dirname "$(readlink -f "$0")")/../lib/_hook-env.sh"
 
 STATE_DIR=/etc/roost-travel
 SYNC_ENV="$HOME/$ROOST_DIR_NAME/.sync-env"
@@ -248,7 +248,7 @@ cmd_travel() {
     local action="${1:-}"
     local cf_fragment="$STATE_DIR/travel-cloudflare.yml"
     local cf_target="$ROOST_DIR/cloudflared/apps/travel.yml"
-    local assemble="$ROOST_DIR/claude/hooks/cloudflare-assemble.sh"
+    local assemble="$ROOST_DIR/claude/lib/cloudflare-assemble.sh"
 
     # Path D (VLESS-Vision) listens on TCP 8443 only when the cert is in place;
     # the firewall rule is conditional so cert-init failures don't expose a port
@@ -977,7 +977,7 @@ cmd_client() {
 
 cmd_rotate_keys() {
     local keys_init="$STATE_DIR/keys-init.sh"
-    local roost_apply="$ROOST_DIR/claude/hooks/roost-apply.sh"
+    local roost_apply="$ROOST_DIR/claude/scripts/roost-apply.sh"
     sudo test -x "$keys_init" || die "$keys_init missing or not executable"
     [ -x "$roost_apply" ] || die "$roost_apply missing; can't re-render xray config"
     sudo "$keys_init" --force
