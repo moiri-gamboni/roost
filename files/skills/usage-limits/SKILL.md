@@ -1,6 +1,6 @@
 ---
 name: usage-limits
-description: Check this Claude plan's live usage limits — the 5-hour and weekly (7-day) rate-limit %s and reset times that actually gate the session, plus context-window fill. Has a `--guard` pacing gate (per-window configurable) for multi-agent fan-outs. Use mid-task to decide whether to keep spawning subagents, before/between waves of a big job, or when the user asks "how close are we to the limit", "how much is left", "when does it reset", or "how full is the context". Runs the `usage` command (alias `roost-usage`).
+description: Check this Claude plan's live usage limits — the 5-hour and weekly (7-day) rate-limit %s and reset times that actually gate the session, plus context-window fill. Has a `--guard` pacing gate (per-window configurable) for multi-agent fan-outs. Use mid-task to decide whether to keep spawning subagents, before/between waves of a big job, or when the user asks "how close are we to the limit", "how much is left", "when does it reset", or "how full is the context". A compact one-liner (date/time + 5h & weekly %s) is wired as a per-turn hook (`usage --hook`, transcript-suppressed), so every prompt already carries the current time and live usage. Runs the `usage` command (alias `roost-usage`).
 ---
 
 # usage-limits — check the 5-hour & weekly limits on demand
@@ -19,6 +19,17 @@ Run **`usage`** (alias `roost-usage`). Example:
 - **5-hour** and **weekly (7-day)** are the caps that throttle the plan. Each shows % consumed and a live "resets in" countdown. Both are **account-global** (shared across every session/agent on the plan), so burning either fast in a fan-out blocks everything.
 - **context** is this session's context-window fill (per-session; decide whether to compact).
 - No dollar cost — subscription plan, so the API-equivalent $ is misleading. `usage --json` emits raw fields (incl. each window's resolved guard).
+
+## Compact one-liner — `usage --compact` / `usage --hook` (the per-turn hook)
+`usage --compact` (alias `--oneline`) prints a single token-frugal line: current date/time, then the 5-hour and weekly %s with their **live** reset countdowns (no context/session tokens). It **always exits 0**, so it is safe wherever a non-blocking status line is wanted.
+
+```
+Claude usage limits · 2026-07-06 02:04 UTC · 5h 3% used (resets in 4h35m) · wk 1% used (resets in 6d16h)
+```
+
+The leading `Claude usage limits` tag makes the line self-identifying: because the injected `additionalContext` reaches the model as a bare string (labelled only by the generic `UserPromptSubmit hook` wrapper), the tag is what tells a cold reader it's the plan's rate limits rather than some other 5h/weekly metric.
+
+`usage --hook` emits that same line wrapped in the `UserPromptSubmit` hook JSON (`hookSpecificOutput.additionalContext` + `suppressOutput: true`), and this is what the **per-turn hook** runs (`files/settings.json`, `timeout: 2`). Each submitted prompt injects the line into the model's context — so Claude always knows the current date/time and how close the plan is to its caps — while `suppressOutput` keeps it out of the user's transcript. Degrades to `<date/time> · usage n/a` if the statusline hasn't rendered a cache yet, and appends `· cache <N>s stale` only when the cache is >120s old (the countdowns stay live regardless). The %s are *consumed* toward each cap.
 
 ## Pacing a fan-out — `usage --guard`
 Run **`usage --guard`** before each wave (and inside each agent). Exits **0 = OK** or **3 = PAUSE**, and prints which window tripped.
