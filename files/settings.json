@@ -34,6 +34,17 @@
     "SessionStart": [],
     "PreCompact": [],
     "Stop": [],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/scripts/roost-usage.sh --hook",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
     "Notification": [
       {
         "matcher": "permission_prompt",
