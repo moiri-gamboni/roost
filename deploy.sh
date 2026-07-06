@@ -1115,7 +1115,7 @@ ok "Unattended security upgrades configured"
 # ============================================
 
 section "Initial Snapshot"
-remote "$ROOT_CMD snapper -c root create --description 'post-deploy $(date +%Y-%m-%d)'"
+remote "$ROOT_CMD snapper -c root create --description 'post-deploy $(date +%Y-%m-%d)' --cleanup-algorithm number --userdata 'important=yes'"
 ok "Initial btrfs snapshot created"
 
 # Write non-secret env for sync.sh local mode
