@@ -11,6 +11,12 @@
 #
 # Modes:
 #   usage             human-readable limits (default)
+#   usage --compact   one line: date/time + 5h & weekly %s (token-frugal, always
+#                     exits 0 so it can never block a prompt)
+#   usage --hook      the same one line wrapped as UserPromptSubmit hook JSON
+#                     (hookSpecificOutput.additionalContext + suppressOutput:true,
+#                     so it injects into the model's context but stays out of the
+#                     user's transcript). This is what the per-turn hook runs.
 #   usage --json      raw fields for scripting
 #   usage --guard     pacing gate: prints OK/PAUSE, exits 0 (ok) or 3 (pause)
 #   usage --file PATH read a specific cache file
@@ -35,12 +41,17 @@ WEEK_WINDOW="${WEEK_WINDOW:-604800}"
 mode=text
 while [ $# -gt 0 ]; do
   case "$1" in
+    --compact|--oneline) mode=compact ;;
+    --hook)  mode=hook ;;
     --json)  mode=json ;;
     --guard) mode=guard ;;
     --file)  shift; cache="${1:?--file needs a path}" ;;
     -h|--help)
-      printf 'usage [--json|--guard] [--file PATH]\n'
+      printf 'usage [--compact|--hook|--json|--guard] [--file PATH]\n'
       printf '  default: 5-hour + weekly rate-limit %%s, reset times, context %%.\n'
+      printf '  --compact: one line (date/time + 5h & weekly %%s); always exits 0.\n'
+      printf '  --hook: --compact wrapped as UserPromptSubmit JSON (context-injected,\n'
+      printf '          suppressed from transcript); the per-turn hook runs this.\n'
       printf '  --guard: exit 0 (OK) / 3 (PAUSE).\n'
       printf '  Per-window guard, set independently (FIVE_GUARD / WEEK_GUARD):\n'
       printf '    linear (default) | sqrt | pow:P | <int %%> | off\n'
@@ -65,7 +76,24 @@ for pair in "FIVE_GUARD=$FIVE_GUARD" "WEEK_GUARD=$WEEK_GUARD"; do
   fi
 done
 
+# emit a status line either plain (compact) or wrapped in the UserPromptSubmit hook
+# JSON (hook): additionalContext is injected into the model's context; suppressOutput
+# keeps the JSON envelope out of the user's transcript.
+emit() {  # $1 = the status line
+  if [ "$mode" = hook ]; then
+    jq -cn --arg c "$1" \
+      '{suppressOutput: true, hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $c}}'
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
 if [ ! -s "$cache" ]; then
+  # compact/hook are display-only for a per-turn hook: still emit date/time, never block/error.
+  if [ "$mode" = compact ] || [ "$mode" = hook ]; then
+    emit "Claude usage limits · $(date '+%Y-%m-%d %H:%M %Z') · n/a (no statusline render yet)"
+    exit 0
+  fi
   echo "roost-usage: no cache at $cache" >&2
   echo "  The statusline writes it on each render — interact once or wait ~refreshInterval seconds, then retry." >&2
   exit 1
@@ -113,6 +141,27 @@ resolve() {  # $1=spec  $2=window_seconds  $3=left_seconds
 fp=$(num "$five"); wp=$(num "$week")
 left5=$(( fivereset - now )); (( left5<0 )) && left5=0; (( left5>FIVE_WINDOW )) && left5=FIVE_WINDOW
 leftw=$(( weekreset - now )); (( leftw<0 )) && leftw=0; (( leftw>WEEK_WINDOW )) && leftw=WEEK_WINDOW
+
+if [ "$mode" = compact ] || [ "$mode" = hook ]; then
+  # One frugal, self-identifying line for a per-turn hook:
+  #   "Claude usage limits · <date> <time> TZ · 5h X% used (resets in ..) · wk Y% ..".
+  # The leading tag is what lets a cold reader (a fresh model) know this is the Claude
+  # plan's rate limits, not some other 5h/weekly metric. %s are % consumed toward each
+  # cap; the parenthetical is the live reset countdown.
+  seg() {  # $1=label  $2=pct-source  $3=reset-countdown ; drop countdown when %s missing
+    local p; p=$(pct "$2")
+    if [ "$p" = "n/a" ]; then printf '%s n/a' "$1"
+    else printf '%s %s used (resets in %s)' "$1" "$p" "$3"; fi
+  }
+  stale=""; (( age > 120 )) && stale=" · cache ${age}s stale"
+  emit "$(printf 'Claude usage limits · %s · %s · %s%s' \
+    "$(date '+%Y-%m-%d %H:%M %Z')" \
+    "$(seg 5h "$five" "$(hm "$left5")")" \
+    "$(seg wk "$week" "$(dh "$leftw")")" \
+    "$stale")"
+  exit 0
+fi
+
 resolve "$FIVE_GUARD" "$FIVE_WINDOW" "$left5"; F_DIS=$GDIS; F_CAP=$GCAP; F_LBL=$GLABEL
 resolve "$WEEK_GUARD" "$WEEK_WINDOW" "$leftw"; W_DIS=$GDIS; W_CAP=$GCAP; W_LBL=$GLABEL
 
