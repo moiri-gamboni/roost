@@ -148,16 +148,21 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
   # The leading tag is what lets a cold reader (a fresh model) know this is the Claude
   # plan's rate limits, not some other 5h/weekly metric. %s are % consumed toward each
   # cap; the parenthetical is the live reset countdown.
-  seg() {  # $1=label  $2=pct-source  $3=reset-countdown ; drop countdown when %s missing
+  # A resets_at in the PAST means this snapshot predates a reset (stale cache): show
+  # "(stale)" rather than a confidently-wrong "resets in 0h00m".
+  f_stale=0; (( fivereset > 0 && fivereset < now )) && f_stale=1
+  w_stale=0; (( weekreset > 0 && weekreset < now )) && w_stale=1
+  seg() {  # $1=label  $2=pct  $3=reset-countdown  $4=stale(1) ; honest when data missing/stale
     local p; p=$(pct "$2")
     if [ "$p" = "n/a" ]; then printf '%s n/a' "$1"
+    elif [ "$4" = 1 ]; then printf '%s %s used (stale — reset already elapsed)' "$1" "$p"
     else printf '%s %s used (resets in %s)' "$1" "$p" "$3"; fi
   }
   stale=""; (( age > 120 )) && stale=" · cache ${age}s stale"
   emit "$(printf 'Claude usage limits · %s · %s · %s%s' \
     "$(date '+%Y-%m-%d %H:%M %Z')" \
-    "$(seg 5h "$five" "$(hm "$left5")")" \
-    "$(seg wk "$week" "$(dh "$leftw")")" \
+    "$(seg 5h "$five" "$(hm "$left5")" "$f_stale")" \
+    "$(seg wk "$week" "$(dh "$leftw")" "$w_stale")" \
     "$stale")"
   exit 0
 fi
