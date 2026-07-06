@@ -87,7 +87,7 @@ logger -t "$_HOOK_TAG" "=== Auto-update started ==="
 
 # Pre-update snapshot
 if command -v snapper &>/dev/null && snapper list-configs 2>/dev/null | grep -q root; then
-    sudo snapper create --description "pre-auto-update $(date +%Y-%m-%d)" 2>&1 | logger -t "$_HOOK_TAG"
+    sudo snapper create --description "pre-auto-update $(date +%Y-%m-%d)" --cleanup-algorithm number --userdata "important=yes" 2>&1 | logger -t "$_HOOK_TAG"
     logger -t "$_HOOK_TAG" "Snapshot created"
 fi
 
