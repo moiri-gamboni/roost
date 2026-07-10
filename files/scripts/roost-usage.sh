@@ -19,6 +19,10 @@
 #                     user's transcript). This is what the per-turn hook runs.
 #   usage --json      raw fields for scripting
 #   usage --guard     pacing gate: prints OK/PAUSE, exits 0 (ok) or 3 (pause)
+#   usage --wait [5h|week]  block until that window resets, then print one line and
+#                     exit 0 (default 5h). Run in the background (e.g. Bash
+#                     run_in_background) so the exit notifies you exactly at the
+#                     reset — cleaner than polling or ScheduleWakeup hops.
 #   usage --file PATH read a specific cache file
 #
 # Guard config — set EACH window independently (FIVE_GUARD / WEEK_GUARD) to:
@@ -38,21 +42,25 @@ FIVE_GUARD="${FIVE_GUARD:-linear}"
 WEEK_GUARD="${WEEK_GUARD:-linear}"
 FIVE_WINDOW="${FIVE_WINDOW:-18000}"
 WEEK_WINDOW="${WEEK_WINDOW:-604800}"
-mode=text
+mode=text; waitwin=five
 while [ $# -gt 0 ]; do
   case "$1" in
     --compact|--oneline) mode=compact ;;
     --hook)  mode=hook ;;
     --json)  mode=json ;;
     --guard) mode=guard ;;
+    --wait)  mode=wait
+             case "${2:-}" in 5h|five) waitwin=five; shift ;; week|weekly|7d) waitwin=week; shift ;; esac ;;
     --file)  shift; cache="${1:?--file needs a path}" ;;
     -h|--help)
-      printf 'usage [--compact|--hook|--json|--guard] [--file PATH]\n'
+      printf 'usage [--compact|--hook|--json|--guard|--wait [5h|week]] [--file PATH]\n'
       printf '  default: 5-hour + weekly rate-limit %%s, reset times, context %%.\n'
       printf '  --compact: one line (date/time + 5h & weekly %%s); always exits 0.\n'
       printf '  --hook: --compact wrapped as UserPromptSubmit JSON (context-injected,\n'
       printf '          suppressed from transcript); the per-turn hook runs this.\n'
       printf '  --guard: exit 0 (OK) / 3 (PAUSE).\n'
+      printf '  --wait [5h|week]: block until that window resets, print one line, exit 0\n'
+      printf '          (default 5h). Run in the background so the exit notifies you.\n'
       printf '  Per-window guard, set independently (FIVE_GUARD / WEEK_GUARD):\n'
       printf '    linear (default) | sqrt | pow:P | <int %%> | off\n'
       exit 0 ;;
@@ -164,6 +172,25 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
     "$(seg 5h "$five" "$(hm "$left5")" "$f_stale")" \
     "$(seg wk "$week" "$(dh "$leftw")" "$w_stale")" \
     "$stale")"
+  exit 0
+fi
+
+if [ "$mode" = wait ]; then
+  # Block until the chosen rate-limit window resets, then emit one line and exit 0.
+  # Intended for the background (e.g. Bash run_in_background): the *exit* is the
+  # notification, so you get woken exactly at the reset — no ScheduleWakeup hops,
+  # no transcript polling. resets_at is a fixed future timestamp, so even a stale
+  # cache (the statusline won't re-render while we sleep) still has the right target.
+  target=$fivereset; label="5-hour"
+  [ "$waitwin" = week ] && { target=$weekreset; label="weekly"; }
+  if ! [ "$target" -gt 0 ] 2>/dev/null; then
+    echo "roost-usage: no ${label} reset timestamp in cache ($cache); cannot wait" >&2; exit 1
+  fi
+  while now=$(date +%s); (( now < target )); do
+    r=$(( target - now )); (( r > 300 )) && r=300; sleep "$r"
+  done
+  printf 'Claude %s usage window reset (was due %s) — fresh window available.\n' \
+    "$label" "$(date -d "@$target" '+%Y-%m-%d %H:%M %Z' 2>/dev/null || echo "@$target")"
   exit 0
 fi
 
