@@ -16,7 +16,7 @@ Run **`usage`** (alias `roost-usage`). Example:
   Opus 4.8 · cache 0s old
 ```
 
-- **5-hour** and **weekly (7-day)** are the caps that throttle the plan. Each shows % consumed and a live "resets in" countdown. Both are **account-global** (shared across every session/agent on the plan), so burning either fast in a fan-out blocks everything.
+- **5-hour** and **weekly (7-day)** are the caps that throttle the plan. Each shows % consumed and a live "resets in" countdown. Both are **account-global** — shared across every session/agent **and model** on the plan (Fable and Opus draw from the same 5h/weekly pool; the statusline payload has no per-model breakdown, verified: Fable- and Opus-rendered snapshots report identical `resets_at` and %s), so burning either fast in a fan-out blocks everything.
 - **context** is this session's context-window fill (per-session; decide whether to compact).
 - No dollar cost — subscription plan, so the API-equivalent $ is misleading. `usage --json` emits raw fields (incl. each window's resolved guard).
 
@@ -47,6 +47,11 @@ WEEK_GUARD=80   FIVE_GUARD=off     usage --guard   # weekly flat 80%, ignore 5h
 FIVE_GUARD=pow:0.7 WEEK_GUARD=sqrt usage --guard   # both eased, 5h gentler
 ```
 An invalid spec **errors (exit 2)** rather than silently disabling. Window sizes for the curves: `FIVE_WINDOW`, `WEEK_WINDOW` (seconds). Pattern: `usage --guard || { sleep 120; }` then re-check; or in an orchestrator, stop launching new agents until it returns 0.
+
+## Auto-resume after a reset — `usage --wait` + the high-usage advisory
+`usage --wait [5h|week]` **blocks until that window resets** (default 5h), then prints one line and exits 0. Run it in the **background** (e.g. Bash `run_in_background`) so its *exit* wakes you exactly at the reset — cleaner than polling or `ScheduleWakeup` hops. Use it to park a long job at the cap and pick it back up the moment the 5-hour window frees.
+
+The per-turn hook nudges you toward this automatically: when a window crosses **`USAGE_WARN_PCT`** (default 90; set `>100` to disable), `usage --hook` appends a `⚠` advisory to the injected context. For the **5-hour** cap it tells you to launch `roost-usage --wait 5h` in the background and auto-resume after the reset; for the **weekly** cap (which resets in *days*) it advises winding down rather than waiting. The advisory is hook-only — plain `--compact` stays clean.
 
 ## How it works / caveats
 - The 5h/weekly data exists **only** as Claude Code statusline stdin fields (`rate_limits.five_hour`, `.seven_day`) — it is **not** passed to hooks. The statusline writes each render to `~/roost/claude/usage/last-status.json`; `usage` reads that cache.
