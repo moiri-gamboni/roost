@@ -16,7 +16,9 @@
 #   usage --hook      the same one line wrapped as UserPromptSubmit hook JSON
 #                     (hookSpecificOutput.additionalContext + suppressOutput:true,
 #                     so it injects into the model's context but stays out of the
-#                     user's transcript). This is what the per-turn hook runs.
+#                     user's transcript). This is what the per-turn hook runs. Near a
+#                     hard cap (>= USAGE_WARN_PCT, default 90) it also appends a ⚠
+#                     advisory: for 5h, resume via a background `--wait 5h`.
 #   usage --json      raw fields for scripting
 #   usage --guard     pacing gate: prints OK/PAUSE, exits 0 (ok) or 3 (pause)
 #   usage --wait [5h|week]  block until that window resets, then print one line and
@@ -167,11 +169,25 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
     else printf '%s %s used (resets in %s)' "$1" "$p" "$3"; fi
   }
   stale=""; (( age > 120 )) && stale=" · cache ${age}s stale"
-  emit "$(printf 'Claude usage limits · %s · %s · %s%s' \
+  line=$(printf 'Claude usage limits · %s · %s · %s%s' \
     "$(date '+%Y-%m-%d %H:%M %Z')" \
     "$(seg 5h "$five" "$(hm "$left5")" "$f_stale")" \
     "$(seg wk "$week" "$(dh "$leftw")" "$w_stale")" \
-    "$stale")"
+    "$stale")
+  # Hook only: when a window nears its hard cap, tell Claude how to pause + auto-resume.
+  # The 5-hour window resets within hours, so a background `--wait` that wakes you at the
+  # reset is practical; the weekly cap resets in days, so advise winding down instead.
+  # Threshold configurable via USAGE_WARN_PCT (default 90; set >100 to disable).
+  if [ "$mode" = hook ]; then
+    thr=${USAGE_WARN_PCT:-90}
+    if [ "$f_stale" = 0 ] && (( fp >= thr )); then
+      line="$line"$'\n'"⚠ 5h rate limit at ${fp}% — you may be paused soon. To resume automatically after the window resets (in $(hm "$left5")), launch \`roost-usage --wait 5h\` in the background (e.g. Bash run_in_background): it blocks until the reset and its exit wakes you to continue. Hold off on new parallel/fan-out work until then."
+    fi
+    if [ "$w_stale" = 0 ] && (( wp >= thr )); then
+      line="$line"$'\n'"⚠ weekly (7-day) rate limit at ${wp}% — near the hard cap, resets in $(dh "$leftw"). A wait would block for days, so wind down rather than waiting; pace new work with \`roost-usage --guard\`."
+    fi
+  fi
+  emit "$line"
   exit 0
 fi
 
