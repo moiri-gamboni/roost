@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install development tools: fnm + Node.js + pnpm, Go, uv, gitleaks.
+# Install development tools: fnm + Node.js + pnpm, Go, uv, pytest, gitleaks.
 source "$(dirname "$0")/../_setup-env.sh"
 
 # --- fnm + Node.js 22 ---
@@ -70,6 +70,15 @@ if as_user "command -v uv" &>/dev/null; then
 else
     as_user "curl -LsSf https://astral.sh/uv/install.sh | sh"
     ok "uv installed"
+fi
+
+# --- pytest (via uv tool; standing test runner for Python projects) ---
+
+if as_user "command -v pytest" &>/dev/null; then
+    skip "pytest already installed"
+else
+    as_user "uv tool install pytest --with pytest-mock"
+    ok "pytest installed"
 fi
 
 # --- gitleaks ---
