@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install development tools: fnm + Node.js + pnpm, Go, uv, pytest, gitleaks.
+# Install development tools: fnm + Node.js + pnpm, Go, uv, pytest, pipenv, Docker, gitleaks.
 source "$(dirname "$0")/../_setup-env.sh"
 
 # --- fnm + Node.js 22 ---
@@ -80,6 +80,34 @@ else
     as_user "uv tool install pytest --with pytest-mock"
     ok "pytest installed"
 fi
+
+# --- pipenv (via uv tool; for repos that use a Pipfile) ---
+
+if as_user "command -v pipenv" &>/dev/null; then
+    skip "pipenv already installed"
+else
+    as_user "uv tool install pipenv"
+    ok "pipenv installed"
+fi
+
+# --- Docker Engine + buildx (build/push container images) ---
+
+if command -v docker &>/dev/null; then
+    skip "Docker already installed"
+else
+    info "Installing Docker Engine + buildx..."
+    apt-get install -y ca-certificates curl gnupg >/dev/null
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
+    chmod a+r /etc/apt/keyrings/docker.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
+    apt-get update -qq
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    systemctl enable --now docker
+    ok "Docker installed"
+fi
+# Let the deploy user run docker without sudo (idempotent)
+usermod -aG docker "$USERNAME"
 
 # --- gitleaks ---
 
