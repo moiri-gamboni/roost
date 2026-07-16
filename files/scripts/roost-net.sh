@@ -980,7 +980,9 @@ cmd_rotate_keys() {
     local roost_apply="$ROOST_DIR/claude/scripts/roost-apply.sh"
     sudo test -x "$keys_init" || die "$keys_init missing or not executable"
     [ -x "$roost_apply" ] || die "$roost_apply missing; can't re-render xray config"
-    sudo "$keys_init" --force
+    [ -n "$DOMAIN" ] || die "DOMAIN not set (expected in $SYNC_ENV); keys-init needs it for VISION_SNI"
+    # sudo env_reset strips DOMAIN, which keys-init needs to derive VISION_SNI.
+    sudo DOMAIN="$DOMAIN" "$keys_init" --force
     # Restarting xray alone reloads the SAME /etc/xray/config.json, which still
     # carries the pre-rotation credentials. --xray re-renders from state.env
     # and installs with 0640 root:xray before restarting.
