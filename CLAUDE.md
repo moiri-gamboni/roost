@@ -87,6 +87,7 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
   - `private/` -- Separate git repo (`claude-mds`); commit changes there, then deploy with `roost-apply push`
     - `global-CLAUDE.md` -- Deployed to `$CLAUDE_CONFIG_DIR/CLAUDE.md` (`~/roost/claude/CLAUDE.md`); epistemic style, planning, search, agent, and writing conventions
     - `code-CLAUDE.md` -- Deployed to `~/roost/code/CLAUDE.md`; safety, planning, search, agent, and tool conventions
+    - `cron-mirrors` -- Private cron fragments (personal data-mirror refresh jobs); envsubst-rendered and deployed to `/etc/cron.d/$ROOST_DIR_NAME-mirrors` (job specifics stay in the private repo)
   - `Caddyfile` -- Caddy reverse proxy config template (envsubst-expanded); imports `/etc/caddy/sites-enabled/*` for app routes
   - `caddy-tailscale.conf` -- Systemd drop-in for Caddy to wait for Tailscale
   - `cloudflare-config.yml` -- Cloudflare Tunnel base template (envsubst-expanded). Deployed to `/etc/cloudflared/config.yml.base`; `cloudflare-assemble.sh` reads its tunnel header and merges per-app fragments into the live `/etc/cloudflared/config.yml`. Never write the repo template directly to the live path — you'd clobber the assembled ingress.
