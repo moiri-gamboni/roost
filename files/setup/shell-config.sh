@@ -94,6 +94,13 @@ chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/usage"
 # roost-session: print the current Claude Code session's id + auto-title
 ln -sf "$ROOST_DIR/claude/scripts/roost-session.sh" "$HOME_DIR/bin/roost-session"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-session"
+# granola: meeting-notes mirror tooling. granola-digest ships from files/private/,
+# so skip any that aren't deployed (public-repo-only checkouts won't have it).
+for g in granola granola-transcripts granola-refresh granola-digest; do
+    [ -f "$ROOST_DIR/claude/scripts/$g.sh" ] || continue
+    ln -sf "$ROOST_DIR/claude/scripts/$g.sh" "$HOME_DIR/bin/$g"
+    chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/$g"
+done
 
 # --- Git identity ---
 if [ -n "${GIT_USER_NAME:-}" ] && [ -n "${GIT_USER_EMAIL:-}" ]; then

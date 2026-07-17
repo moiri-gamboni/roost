@@ -117,6 +117,10 @@ files/scripts/roost-apply.sh|$ROOST_DIR/claude/scripts/roost-apply.sh|plain+x|
 files/scripts/roost-net.sh|$ROOST_DIR/claude/scripts/roost-net.sh|plain+x|
 files/scripts/roost-usage.sh|$ROOST_DIR/claude/scripts/roost-usage.sh|plain+x|
 files/scripts/roost-session.sh|$ROOST_DIR/claude/scripts/roost-session.sh|plain+x|
+files/scripts/granola.sh|$ROOST_DIR/claude/scripts/granola.sh|plain+x|
+files/scripts/granola-transcripts.sh|$ROOST_DIR/claude/scripts/granola-transcripts.sh|plain+x|
+files/scripts/granola-refresh.sh|$ROOST_DIR/claude/scripts/granola-refresh.sh|plain+x|
+files/private/granola-digest.sh|$ROOST_DIR/claude/scripts/granola-digest.sh|plain+x|
 files/travel/travel-health.sh|$ROOST_DIR/claude/scheduled/health-check-apps.sh|plain+x|
 files/private/health-check-apps-private.sh|$ROOST_DIR/claude/scheduled/health-check-apps-private.sh|plain+x|
 files/shell/bashrc.sh|$HOME_DIR/.bashrc.d/roost.sh|plain|
