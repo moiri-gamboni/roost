@@ -21,6 +21,17 @@ MCP, PROTO = "https://mcp.granola.ai/mcp", "2025-06-18"
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 MARK = "\n## Transcript\n"
 
+# Granola returns a transcript as ONE run-on string, with turns delimited by two spaces
+# before '<Speaker>: '. Split one turn per line: readable, and gives git meaningful
+# line-level diffs instead of a single ~80k-char line. Requiring the colon keeps ordinary
+# sentences (". And so...") from being split.
+_SPEAKER = r"[A-ZÀ-Ý][A-Za-zÀ-ÿ0-9'’.\-]*(?: [A-ZÀ-Ý][A-Za-zÀ-ÿ0-9'’.\-]*){0,3}"
+TURN_RE = re.compile(r"[ \t]{2,}(?=" + _SPEAKER + r": )")
+
+
+def split_turns(t):
+    return TURN_RE.sub("\n", (t or "").strip())
+
 
 def _jwt_exp(at):
     try:
@@ -124,7 +135,7 @@ def cmd_sync(a):
         t = transcript(m.group(0), tok)
         base = body.split(MARK)[0].rstrip()
         if t and not BAD.search(t):
-            open(f, "w").write(base + "\n" + MARK + "\n" + t.strip() + "\n")
+            open(f, "w").write(base + "\n" + MARK + "\n" + split_turns(t) + "\n")
             done += 1
         else:
             empty += 1
@@ -137,9 +148,27 @@ def cmd_get(a):
     print(transcript(a.uuid, token()) or "(no transcript)")
 
 
+def cmd_reformat(a):
+    """Re-split already-fetched transcripts one turn per line. Local only — no MCP
+    calls, so it doesn't touch the transcript rate limit."""
+    files = sorted(glob.glob(os.path.join(a.dir, "*.md")))
+    n = 0
+    for f in files:
+        body = open(f).read()
+        if MARK not in body:
+            continue
+        head, _, tail = body.partition(MARK)
+        new = split_turns(tail)
+        if new != tail.strip():
+            open(f, "w").write(head.rstrip() + "\n" + MARK + "\n" + new + "\n")
+            n += 1
+    print(f"granola-transcripts: reformatted {n} transcript(s) ({len(files)} files)")
+
+
 p = argparse.ArgumentParser(prog="granola-transcripts")
 sub = p.add_subparsers(dest="cmd", required=True)
 ps = sub.add_parser("sync"); ps.add_argument("dir"); ps.add_argument("--force", action="store_true"); ps.set_defaults(fn=cmd_sync)
 pg = sub.add_parser("get"); pg.add_argument("uuid"); pg.set_defaults(fn=cmd_get)
+pr = sub.add_parser("reformat"); pr.add_argument("dir"); pr.set_defaults(fn=cmd_reformat)
 args = p.parse_args()
 args.fn(args)
