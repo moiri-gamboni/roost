@@ -86,15 +86,10 @@ ln -sf "$ROOST_DIR/claude/scripts/roost-apply.sh" "$HOME_DIR/bin/roost-apply"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-apply"
 ln -sf "$ROOST_DIR/claude/scripts/roost-net.sh" "$HOME_DIR/bin/roost-net"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-net"
-# usage / roost-usage: on-demand session token/cost/budget check
-ln -sf "$ROOST_DIR/claude/scripts/roost-usage.sh" "$HOME_DIR/bin/roost-usage"
-chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-usage"
-ln -sf "$ROOST_DIR/claude/scripts/roost-usage.sh" "$HOME_DIR/bin/usage"
-chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/usage"
-# roost-session: session id + auto-title — same multi-call script as usage;
-# invoking it under this name (argv0) selects identity mode (= `usage whoami`)
-ln -sf "$ROOST_DIR/claude/scripts/roost-usage.sh" "$HOME_DIR/bin/roost-session"
-chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-session"
+# session: the session CLI — identity (`session whoami`), plan usage limits +
+# per-session attribution (`session` / `session usage [--all]`), guard/wait
+ln -sf "$ROOST_DIR/claude/scripts/session.sh" "$HOME_DIR/bin/session"
+chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/session"
 # granola: meeting-notes mirror tooling. granola-digest ships from files/private/,
 # so skip any that aren't deployed (public-repo-only checkouts won't have it).
 for g in granola granola-transcripts granola-refresh granola-digest; do

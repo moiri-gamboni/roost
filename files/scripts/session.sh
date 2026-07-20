@@ -1,42 +1,40 @@
 #!/usr/bin/env bash
-# roost-usage — on-demand view of this Claude plan's usage limits, with a guard
-# mode for pacing multi-agent jobs. Multi-call: also installed as `roost-session`
-# (and reachable as `usage whoami`) — session identity mode, printing the
-# invoking session's id + auto-title.
+# session — the session CLI: this Claude Code session's identity and its usage
+# of the plan's rate limits, with a guard mode for pacing multi-agent jobs.
 #
 # Shows the 5-hour and weekly (7-day) rate-limit %s + reset countdowns (the caps
 # that actually gate the session), plus context-window fill. Source: the cache the
 # statusline writes (~/roost/claude/usage/last-status.json) from its stdin
 # `rate_limits`. Reset countdowns and pace caps are computed live.
 #
-# No dollar cost: subscription plan, so the API-equivalent $ is misleading.
+# No dollar cost display: subscription plan, so the API-equivalent $ would be
+# misleading as money; it is used internally as the attribution weight.
 #
 # Modes:
-#   usage             human-readable limits (default)
-#   usage --compact   one line: date/time + 5h & weekly %s (token-frugal, always
+#   session           overview (default): invoking session's id · name, the 5h +
+#                     weekly limits, context fill, and this session's share
+#   session whoami [--id|--name|--json]  identity only: id + auto-title
+#   session usage [ID] [--json]  one session's tracked in-window burn ($, counted
+#                     from the statusline's per-session cost samples) and its
+#                     estimated share of the 5h/weekly limits. ID defaults to
+#                     the invoking session.
+#   session usage --all [--json]  per-session breakdown of all tracked burn in
+#                     the current windows, plus totals
+#   session --compact one line: date/time + 5h & weekly %s (token-frugal, always
 #                     exits 0 so it can never block a prompt)
-#   usage --hook      the same one line wrapped as UserPromptSubmit hook JSON
+#   session --hook    the same one line wrapped as UserPromptSubmit hook JSON
 #                     (hookSpecificOutput.additionalContext + suppressOutput:true,
 #                     so it injects into the model's context but stays out of the
 #                     user's transcript). This is what the per-turn hook runs. Near a
 #                     hard cap (>= USAGE_WARN_PCT, default 90) it also appends a ⚠
 #                     advisory: for 5h, resume via a background `--wait 5h`.
-#   usage --json      raw fields for scripting
-#   usage --guard     pacing gate: prints OK/PAUSE, exits 0 (ok) or 3 (pause)
-#   usage --wait [5h|week]  block until that window resets, then print one line and
-#                     exit 0 (default 5h). Run in the background (e.g. Bash
+#   session --json    raw fields for scripting
+#   session --guard   pacing gate: prints OK/PAUSE, exits 0 (ok) or 3 (pause)
+#   session --wait [5h|week]  block until that window resets, then print one line
+#                     and exit 0 (default 5h). Run in the background (e.g. Bash
 #                     run_in_background) so the exit notifies you exactly at the
 #                     reset — cleaner than polling or ScheduleWakeup hops.
-#   usage session [ID]  one session's tracked in-window burn ($, counted from the
-#                     statusline's per-session cost samples) and its estimated
-#                     share of the 5h/weekly limits. ID defaults to the invoking
-#                     session. --json for raw fields.
-#   usage sessions    per-session breakdown of all tracked burn in the current
-#                     windows, plus totals. --json for raw fields.
-#   usage whoami [--id|--name|--json]  session identity: the invoking session's
-#                     id + auto-title. Identical to invoking this script by its
-#                     `roost-session` name (argv0 selects the mode).
-#   usage --file PATH read a specific cache file
+#   session --file PATH  read a specific cache file
 #
 # Guard config — set EACH window independently (FIVE_GUARD / WEEK_GUARD) to:
 #   linear  (default)  pause if used% > 100*x              (x = elapsed fraction)
@@ -56,7 +54,7 @@ WEEK_GUARD="${WEEK_GUARD:-linear}"
 FIVE_WINDOW="${FIVE_WINDOW:-18000}"
 WEEK_WINDOW="${WEEK_WINDOW:-604800}"
 
-# ── Session identity (the former roost-session CLI) ──────────────────────────
+# ── Session identity (`session whoami`) ──────────────────────────
 # Pane-safe by construction: the id comes from $CLAUDE_CODE_SESSION_ID, which
 # Claude Code exports into each session's own process tree; every concurrent
 # tmux pane runs a distinct claude process with its own value. Fallback: walk
@@ -93,7 +91,7 @@ session_title() {  # $1=sid ; empty output if no title yet
 }
 whoami_usage() {
   cat >&2 <<'EOF'
-Usage: roost-session [--id | --name | --json | -h]      (= usage whoami [...])
+Usage: session whoami [--id | --name | --json | -h]
   (no args)  two lines: "id:" and "name:"
   --id       print only the session UUID
   --name     print only the auto-generated title
@@ -110,7 +108,7 @@ whoami_main() {
     *) whoami_usage; exit 2 ;;
   esac
   if ! sid=$(resolve_sid); then
-    echo "roost-session: not inside a Claude Code session (CLAUDE_CODE_SESSION_ID unset)" >&2
+    echo "session whoami: not inside a Claude Code session (CLAUDE_CODE_SESSION_ID unset)" >&2
     exit 1
   fi
   name=$(session_title "$sid")
@@ -122,12 +120,9 @@ whoami_main() {
   esac
   exit 0
 }
-# Multi-call dispatch: `~/bin/roost-session` symlinks to this script, so argv0
-# selects identity mode; `usage whoami` reaches it under the primary name.
-case "$(basename "$0")" in roost-session|roost-session.sh) whoami_main "$@" ;; esac
-if [ "${1:-}" = whoami ]; then shift; whoami_main "$@"; fi
+[ "${1:-}" = whoami ] && { shift; whoami_main "$@"; }
 
-mode=text; waitwin=five; submode=""; target_sid=""
+mode=text; waitwin=five; submode=""; target_sid=""; all=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --compact|--oneline) mode=compact ;;
@@ -136,29 +131,29 @@ while [ $# -gt 0 ]; do
     --guard) mode=guard ;;
     --wait)  mode=wait
              case "${2:-}" in 5h|five) waitwin=five; shift ;; week|weekly|7d) waitwin=week; shift ;; esac ;;
-    session) submode=session
+    usage)   submode=usage
              if [ $# -gt 1 ] && [ "${2#-}" = "${2:-}" ]; then target_sid="$2"; shift; fi ;;
-    sessions) submode=sessions ;;
+    --all)   all=1 ;;
     --file)  shift; cache="${1:?--file needs a path}" ;;
     -h|--help)
-      printf 'usage [--compact|--hook|--json|--guard|--wait [5h|week]] [--file PATH]\n'
-      printf 'usage session [ID] [--json] | usage sessions [--json]\n'
-      printf '  default: 5-hour + weekly rate-limit %%s, reset times, context %%.\n'
+      printf 'session [--compact|--hook|--json|--guard|--wait [5h|week]] [--file PATH]\n'
+      printf 'session whoami [--id|--name|--json] | session usage [ID|--all] [--json]\n'
+      printf '  default: session id · name, 5-hour + weekly rate-limit %%s, reset\n'
+      printf '          times, context %%, this session'"'"'s share.\n'
+      printf '  whoami: identity only — the invoking session'"'"'s id + auto-title.\n'
+      printf '  usage [ID]: one session'"'"'s tracked burn + estimated share of each\n'
+      printf '          window (ID defaults to the invoking session).\n'
+      printf '  usage --all: per-session breakdown of tracked burn, with totals.\n'
       printf '  --compact: one line (date/time + 5h & weekly %%s); always exits 0.\n'
       printf '  --hook: --compact wrapped as UserPromptSubmit JSON (context-injected,\n'
       printf '          suppressed from transcript); the per-turn hook runs this.\n'
       printf '  --guard: exit 0 (OK) / 3 (PAUSE).\n'
       printf '  --wait [5h|week]: block until that window resets, print one line, exit 0\n'
       printf '          (default 5h). Run in the background so the exit notifies you.\n'
-      printf '  session [ID]: this session'"'"'s tracked burn + estimated share of each\n'
-      printf '          window (ID defaults to the invoking session).\n'
-      printf '  sessions: per-session breakdown of tracked burn, with totals.\n'
-      printf '  whoami [--id|--name|--json]: the invoking session'"'"'s id + auto-title\n'
-      printf '          (identity mode; also what the `roost-session` name runs).\n'
       printf '  Per-window guard, set independently (FIVE_GUARD / WEEK_GUARD):\n'
       printf '    linear (default) | sqrt | pow:P | <int %%> | off\n'
       exit 0 ;;
-    *) echo "roost-usage: unknown arg '$1'" >&2; exit 2 ;;
+    *) echo "session: unknown arg '$1'" >&2; exit 2 ;;
   esac
   shift
 done
@@ -174,7 +169,7 @@ valid_spec() {
 }
 for pair in "FIVE_GUARD=$FIVE_GUARD" "WEEK_GUARD=$WEEK_GUARD"; do
   if ! valid_spec "${pair#*=}"; then
-    echo "roost-usage: invalid ${pair%%=*}='${pair#*=}' (use: linear | sqrt | pow:P | <int> | off)" >&2; exit 2
+    echo "session: invalid ${pair%%=*}='${pair#*=}' (use: linear | sqrt | pow:P | <int> | off)" >&2; exit 2
   fi
 done
 
@@ -196,7 +191,7 @@ if [ ! -s "$cache" ]; then
     emit "Claude usage limits · $(date '+%Y-%m-%d %H:%M %Z') · n/a (no statusline render yet)"
     exit 0
   fi
-  echo "roost-usage: no cache at $cache" >&2
+  echo "session: no cache at $cache" >&2
   echo "  The statusline writes it on each render — interact once or wait ~refreshInterval seconds, then retry." >&2
   exit 1
 fi
@@ -318,7 +313,7 @@ money()   { LC_ALL=C printf '$%.2f' "$1"; }
 
 if [ -n "$submode" ]; then
   if ! est=$(est_sessions); then
-    echo "roost-usage: no session log yet at $slog" >&2
+    echo "session: no session log yet at $slog" >&2
     echo "  The statusline appends it on each render — interact in a session once, then retry." >&2
     exit 1
   fi
@@ -330,10 +325,10 @@ if [ -n "$submode" ]; then
     else LC_ALL=C printf '(%.1f%% while tracked)' "$1"; fi
   }
 
-  if [ "$submode" = session ]; then
+  if [ "$all" = 0 ]; then
     sid="$target_sid"
     if [ -z "$sid" ]; then
-      sid=$(resolve_sid) || { echo "roost-usage: could not resolve the current session — pass an ID (usage session <id>)" >&2; exit 1; }
+      sid=$(resolve_sid) || { echo "session: could not resolve the current session — pass an ID (session usage <id>)" >&2; exit 1; }
     fi
     IFS=$'\t' read -r o5 ow olts < <(awk -F'\t' -v s="$sid" \
       '$1==s {printf "%s\t%s\t%s\n", $2, $3, $4; found=1} END{if (!found) print "0\t0\t0"}' <<<"$est")
@@ -373,7 +368,7 @@ if [ -n "$submode" ]; then
     exit 0
   fi
 
-  # sessions: breakdown of every tracked session with in-window burn
+  # --all: breakdown of every tracked session with in-window burn
   cur=${CLAUDE_CODE_SESSION_ID:-}
   if [ "$mode" = json ]; then
     { printf '%s\n' "$est" | awk -F'\t' -v t5="$t5" -v tw="$tw" -v c5="$cov5" -v cw="$covw" \
@@ -448,7 +443,7 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
   # carries "how much of the burn is mine" alongside the global %s. The session id
   # comes from the hook's stdin JSON (the -t guard keeps a manual TTY run from
   # hanging on a stdin read). ≈ marks it as a tracked-share estimate; see
-  # `usage sessions` for the method and its caveats. Silent on any failure —
+  # `session usage --all` for the method and its caveats. Silent on any failure —
   # this segment must never break the injected line.
   if [ "$mode" = hook ] && [ ! -t 0 ]; then
     hsid=$(jq -r '.session_id // empty' 2>/dev/null || true)  # quiet: stdin may be empty/non-JSON
@@ -472,10 +467,10 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
   if [ "$mode" = hook ]; then
     thr=${USAGE_WARN_PCT:-90}
     if [ "$f_stale" = 0 ] && (( fp >= thr )); then
-      line="$line"$'\n'"⚠ 5h rate limit at ${fp}% — you may be paused soon. To resume automatically after the window resets (in $(hm "$left5")), launch \`roost-usage --wait 5h\` in the background (e.g. Bash run_in_background): it blocks until the reset and its exit wakes you to continue. Hold off on new parallel/fan-out work until then."
+      line="$line"$'\n'"⚠ 5h rate limit at ${fp}% — you may be paused soon. To resume automatically after the window resets (in $(hm "$left5")), launch \`session --wait 5h\` in the background (e.g. Bash run_in_background): it blocks until the reset and its exit wakes you to continue. Hold off on new parallel/fan-out work until then."
     fi
     if [ "$w_stale" = 0 ] && (( wp >= thr )); then
-      line="$line"$'\n'"⚠ weekly (7-day) rate limit at ${wp}% — near the hard cap, resets in $(dh "$leftw"). A wait would block for days, so wind down rather than waiting; pace new work with \`roost-usage --guard\`."
+      line="$line"$'\n'"⚠ weekly (7-day) rate limit at ${wp}% — near the hard cap, resets in $(dh "$leftw"). A wait would block for days, so wind down rather than waiting; pace new work with \`session --guard\`."
     fi
   fi
   emit "$line"
@@ -491,7 +486,7 @@ if [ "$mode" = wait ]; then
   target=$fivereset; label="5-hour"
   [ "$waitwin" = week ] && { target=$weekreset; label="weekly"; }
   if ! [ "$target" -gt 0 ] 2>/dev/null; then
-    echo "roost-usage: no ${label} reset timestamp in cache ($cache); cannot wait" >&2; exit 1
+    echo "session: no ${label} reset timestamp in cache ($cache); cannot wait" >&2; exit 1
   fi
   while now=$(date +%s); (( now < target )); do
     r=$(( target - now )); (( r > 300 )) && r=300; sleep "$r"
@@ -520,18 +515,23 @@ if [ "$mode" = json ]; then
   exit 0
 fi
 
-echo   "── Claude usage limits ────────────────────────────"
+echo   "── session overview ───────────────────────────────"
+# identity header when invoked from inside a session (quiet skip otherwise)
+if sid=$(resolve_sid) && [ -n "$sid" ]; then
+  sname=$(snap_name "$sid"); [ -n "$sname" ] || sname=$(session_title "$sid")
+  printf "  id       %s\n" "$sid"
+  [ -n "$sname" ] && printf "  name     %s\n" "$sname"
+fi
 printf "  5-hour   %s  %-4s  resets in %s  (%s)\n" "$(bar "$five")" "$(pct "$five")" "$(hm "$left5")" "$F_LBL"
 printf "  weekly   %s  %-4s  resets in %s  (%s)\n" "$(bar "$week")" "$(pct "$week")" "$(dh "$leftw")" "$W_LBL"
 printf "  context  %s  %-4s  (this session)\n"     "$(bar "$ctx")"  "$(pct "$ctx")"
-# this session's tracked share, when invoked from inside a session (quiet skip otherwise)
-if sid=$(resolve_sid) && [ -n "$sid" ] && sest=$(est_sessions); then
+if [ -n "${sid:-}" ] && sest=$(est_sessions); then
   IFS=$'\t' read -r st5 stw so5 sow < <(awk -F'\t' -v s="$sid" \
     '{t5+=$2; tw+=$3; if ($1==s) {o5=$2; ow=$3}} END{printf "%.4f\t%.4f\t%.4f\t%.4f\n", t5, tw, o5, ow}' <<<"$sest")
   IFS=$'\t' read -r db5 dbw < <(base_pcts)
   e5=$(estpct "$(covered "$five" "$db5")" "$so5" "$st5" "$f_stale")
   ew=$(estpct "$(covered "$week" "$dbw")" "$sow" "$stw" "$w_stale")
-  printf "  session  %-7s of 5h · %-7s of wk   (%s this 5h window; \`usage sessions\`)\n" \
+  printf "  share    %-7s of 5h · %-7s of wk   (%s this 5h window; \`session usage --all\`)\n" \
     "$(fmt_est "$e5")" "$(fmt_est "$ew")" "$(money "$so5")"
 fi
 echo   "──────────────────────────────────────────────────"

@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/roost/claude/scripts/roost-usage.sh --hook",
+            "command": "~/roost/claude/scripts/session.sh --hook",
             "timeout": 2
           }
         ]
