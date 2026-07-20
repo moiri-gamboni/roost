@@ -16,8 +16,12 @@ _u="$HOME/roost/claude/usage"
 [ -d "$_u" ] || mkdir -p "$_u"
 _cache="$_u/last-status.json"
 _intonly() { local v="${1%%.*}"; case "$v" in ''|*[!0-9]*) printf 0 ;; *) printf '%s' "$v" ;; esac; }
-IFS=$'\t' read -r _new_fr _new_wr < <(
-  jq -r '[(.rate_limits.five_hour.resets_at//0),(.rate_limits.seven_day.resets_at//0)]|map(floor)|@tsv' <<<"$input")
+IFS=$'\t' read -r _sid _cost _f5 _w7 _new_fr _new_wr < <(
+  jq -r '[(.session_id//""),(.cost.total_cost_usd//0),
+          (.rate_limits.five_hour.used_percentage//-1),
+          (.rate_limits.seven_day.used_percentage//-1),
+          ((.rate_limits.five_hour.resets_at//0)|floor),
+          ((.rate_limits.seven_day.resets_at//0)|floor)]|@tsv' <<<"$input")
 _new_fr=$(_intonly "$_new_fr"); _new_wr=$(_intonly "$_new_wr")
 _write=1
 if [ -s "$_cache" ]; then
@@ -31,6 +35,44 @@ if [ -s "$_cache" ]; then
   fi
 fi
 [ "$_write" = 1 ] && printf '%s' "$input" > "$_u/.last-status.tmp" && mv -f "$_u/.last-status.tmp" "$_cache"
+
+# --- Per-session usage sampling (read by `roost-usage session[s]`) ---
+# cost.total_cost_usd is the session's CUMULATIVE API-equivalent spend, delivered
+# on every render (~10s while active). Append a sample to session-log.tsv whenever
+# it moved (plus a 10-min idle heartbeat), so per-session in-window burn can be
+# counted from deltas. A per-session snapshot keeps name/model readable without
+# scanning transcripts; the .cost sidecar is the dedup state (content = last
+# logged cost, mtime = last sample time).
+_slog="$_u/session-log.tsv"
+_snapdir="$_u/sessions"
+_now=$(date +%s)
+if [ -n "$_sid" ] && _costf=$(LC_ALL=C printf '%.4f' "$_cost" 2>/dev/null); then
+  [ -d "$_snapdir" ] || mkdir -p "$_snapdir"
+  _side="$_snapdir/$_sid.cost"
+  _prevf=""; _side_age=999999
+  if [ -e "$_side" ]; then
+    _prevf=$(cat "$_side")
+    _side_age=$(( _now - $(stat -c %Y "$_side") ))
+  fi
+  if [ "$_costf" != "$_prevf" ] || [ "$_side_age" -ge 600 ]; then
+    LC_ALL=C printf '%s\t%s\t%s\t%.3f\t%.3f\t%s\t%s\n' \
+      "$_now" "$_sid" "$_costf" "$_f5" "$_w7" "$_new_fr" "$_new_wr" >> "$_slog"
+    printf '%s' "$_costf" > "$_side"
+    printf '%s' "$input" > "$_snapdir/.$_sid.tmp" && mv -f "$_snapdir/.$_sid.tmp" "$_snapdir/$_sid.json"
+  fi
+fi
+# Daily prune: keep 8 days (covers the 7d window), drop stale snapshots/sidecars.
+# Marker is touched first so a failed prune just retries tomorrow; flock guards
+# concurrent statuslines (a racing append can lose at most one sample at the mv).
+_pm="$_u/.session-log-pruned"
+if [ ! -e "$_pm" ] || [ $(( _now - $(stat -c %Y "$_pm") )) -ge 86400 ]; then
+  touch "$_pm"
+  if [ -s "$_slog" ]; then
+    { flock -n 9 && awk -F'\t' -v cut=$(( _now - 8*86400 )) '$1+0 >= cut' "$_slog" > "$_slog.tmp" \
+        && mv -f "$_slog.tmp" "$_slog"; } 9>>"$_slog.lock"
+  fi
+  [ -d "$_snapdir" ] && find "$_snapdir" -type f -mtime +8 -delete
+fi
 
 jq -r '
   (.context_window.current_usage // {}) as $cu |
