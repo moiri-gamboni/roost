@@ -27,6 +27,9 @@ name: Explore Granola API or MCP for Ubuntu access
 - Build a resume pointer: `agent <dir> -r "$(roost-session --id)"`.
 - Label output / logs / notes with which conversation produced them.
 - Answer "what's my session id / name" without grepping transcripts.
+- Per-session usage: `usage session` (usage-limits skill) resolves the invoking
+  session through `roost-session --id`, then reports that session's tracked burn
+  and estimated share of the 5h/weekly limits.
 
 ## Why it's pane-safe (how it works)
 

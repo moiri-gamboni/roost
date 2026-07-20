@@ -25,6 +25,12 @@
 #                     exit 0 (default 5h). Run in the background (e.g. Bash
 #                     run_in_background) so the exit notifies you exactly at the
 #                     reset — cleaner than polling or ScheduleWakeup hops.
+#   usage session [ID]  one session's tracked in-window burn ($, counted from the
+#                     statusline's per-session cost samples) and its estimated
+#                     share of the 5h/weekly limits. ID defaults to the invoking
+#                     session, resolved via roost-session. --json for raw fields.
+#   usage sessions    per-session breakdown of all tracked burn in the current
+#                     windows, plus totals. --json for raw fields.
 #   usage --file PATH read a specific cache file
 #
 # Guard config — set EACH window independently (FIVE_GUARD / WEEK_GUARD) to:
@@ -44,7 +50,7 @@ FIVE_GUARD="${FIVE_GUARD:-linear}"
 WEEK_GUARD="${WEEK_GUARD:-linear}"
 FIVE_WINDOW="${FIVE_WINDOW:-18000}"
 WEEK_WINDOW="${WEEK_WINDOW:-604800}"
-mode=text; waitwin=five
+mode=text; waitwin=five; submode=""; target_sid=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --compact|--oneline) mode=compact ;;
@@ -53,9 +59,13 @@ while [ $# -gt 0 ]; do
     --guard) mode=guard ;;
     --wait)  mode=wait
              case "${2:-}" in 5h|five) waitwin=five; shift ;; week|weekly|7d) waitwin=week; shift ;; esac ;;
+    session) submode=session
+             if [ $# -gt 1 ] && [ "${2#-}" = "${2:-}" ]; then target_sid="$2"; shift; fi ;;
+    sessions) submode=sessions ;;
     --file)  shift; cache="${1:?--file needs a path}" ;;
     -h|--help)
       printf 'usage [--compact|--hook|--json|--guard|--wait [5h|week]] [--file PATH]\n'
+      printf 'usage session [ID] [--json] | usage sessions [--json]\n'
       printf '  default: 5-hour + weekly rate-limit %%s, reset times, context %%.\n'
       printf '  --compact: one line (date/time + 5h & weekly %%s); always exits 0.\n'
       printf '  --hook: --compact wrapped as UserPromptSubmit JSON (context-injected,\n'
@@ -63,6 +73,9 @@ while [ $# -gt 0 ]; do
       printf '  --guard: exit 0 (OK) / 3 (PAUSE).\n'
       printf '  --wait [5h|week]: block until that window resets, print one line, exit 0\n'
       printf '          (default 5h). Run in the background so the exit notifies you.\n'
+      printf '  session [ID]: this session'"'"'s tracked burn + estimated share of each\n'
+      printf '          window (ID defaults to the invoking session via roost-session).\n'
+      printf '  sessions: per-session breakdown of tracked burn, with totals.\n'
       printf '  Per-window guard, set independently (FIVE_GUARD / WEEK_GUARD):\n'
       printf '    linear (default) | sqrt | pow:P | <int %%> | off\n'
       exit 0 ;;
@@ -151,6 +164,187 @@ resolve() {  # $1=spec  $2=window_seconds  $3=left_seconds
 fp=$(num "$five"); wp=$(num "$week")
 left5=$(( fivereset - now )); (( left5<0 )) && left5=0; (( left5>FIVE_WINDOW )) && left5=FIVE_WINDOW
 leftw=$(( weekreset - now )); (( leftw<0 )) && leftw=0; (( leftw>WEEK_WINDOW )) && leftw=WEEK_WINDOW
+# a resets_at in the PAST means the snapshot predates a reset (stale cache)
+f_stale=0; (( fivereset > 0 && fivereset < now )) && f_stale=1
+w_stale=0; (( weekreset > 0 && weekreset < now )) && w_stale=1
+
+# ── Per-session attribution ──────────────────────────────────────────────────
+# The statusline appends (ts, session_id, cumulative cost_usd, 5h%, wk%, resets)
+# to session-log.tsv on each render where the session's spend moved (~10s cadence
+# while generating, 10-min heartbeat while idle). A session's in-window burn is
+# COUNTED: the sum of its positive cost deltas at sample times inside the window
+# (cost is cumulative per session; a --resume restarts it at 0, absorbed by the
+# clamp). The ESTIMATED step is $ → % of limit: the global %-movement observed
+# while sampling was live ("covered": live % minus the % at the first in-window
+# sample) is split by each session's share of tracked dollars. Burn from before
+# coverage began is deliberately left unattributed rather than smeared over
+# whoever happens to be tracked. Residual bias: headless `claude -p` runs (no
+# statusline) and off-box usage (claude.ai, other devices) during coverage are
+# invisible and inflate every share, so treat the %s as upper bounds then.
+slog="${ROOST_USAGE_SLOG:-$HOME/roost/claude/usage/session-log.tsv}"
+snapdir="${ROOST_USAGE_SNAPDIR:-$HOME/roost/claude/usage/sessions}"
+ws5=$(( fivereset - FIVE_WINDOW )); wsw=$(( weekreset - WEEK_WINDOW ))
+
+# emit one "sid<TAB>in-window-5h$<TAB>in-window-wk$<TAB>last-sample-ts" per session, 5h$ desc
+est_sessions() {
+  [ -s "$slog" ] || return 1
+  LC_ALL=C sort -t$'\t' -k1,1n "$slog" | awk -F'\t' -v ws5="$ws5" -v wsw="$wsw" '
+    $2 != "" {
+      ts=$1+0; sid=$2; c=$3+0; d=0
+      if (sid in last) { d=c-last[sid]; if (d<0) d=0 }
+      if (ts>=ws5) d5[sid]+=d
+      if (ts>=wsw) dw[sid]+=d
+      last[sid]=c; lts[sid]=ts
+    }
+    END { for (s in last) printf "%s\t%.4f\t%.4f\t%d\n", s, d5[s], dw[s], lts[s] }' \
+  | LC_ALL=C sort -t$'\t' -k2,2nr
+}
+snap_name() { [ -s "$snapdir/$1.json" ] && jq -r '.session_name // empty' "$snapdir/$1.json" || true; }
+# Global % already consumed when in-window sampling began, one value per window
+# ("-1" = no usable basis). Only lines whose logged resets_at matches the LIVE
+# window count (a long-idle session logs the current ts with an old snapshot),
+# and the baseline is the MAX % over the first 5 minutes of coverage: per-line
+# %s are snapshot-lagged lower bounds, so an early stale line would understate
+# the base and inflate everyone's estimate.
+base_pcts() {
+  [ -s "$slog" ] || { printf '%s\t%s\n' -1 -1; return; }
+  LC_ALL=C sort -t$'\t' -k1,1n "$slog" | awk -F'\t' \
+    -v ws5="$ws5" -v wsw="$wsw" -v fr="$fivereset" -v wr="$weekreset" '
+    $1+0>=ws5 && $6==fr && $4+0>=0 { if (!g5) t5=$1+0; g5=1; if ($1+0<=t5+300 && $4+0>b5) b5=$4+0 }
+    $1+0>=wsw && $7==wr && $5+0>=0 { if (!gw) tw=$1+0; gw=1; if ($1+0<=tw+300 && $5+0>bw) bw=$5+0 }
+    END { printf "%s\t%s\n", (g5?b5:-1), (gw?bw:-1) }'
+}
+covered() {  # $1=live-pct(-1 n/a)  $2=base-pct(-1 n/a) -> %-movement during coverage
+  awk -v g="$1" -v b="$2" 'BEGIN{
+    if (g+0<0 || b+0<0) { print -1; exit }
+    c=g-b; if (c<0) c=0; printf "%.3f", c }'
+}
+ago() { local s=$(( now - $1 )); (( s<0 )) && s=0
+        if   (( s<3600 ));  then printf '%dm ago' $(( s/60 ))
+        elif (( s<86400 )); then printf '%dh%02dm ago' $(( s/3600 )) $(( (s%3600)/60 ))
+        else printf '%dd%02dh ago' $(( s/86400 )) $(( (s%86400)/3600 )); fi; }
+# resolve the invoking session's id via the sibling roost-session CLI (the
+# pane-safe env-var walk lives there — single source of truth for "my session")
+own_sid() {
+  local rs; rs="$(dirname "$(readlink -f "$0")")/roost-session.sh"
+  [ -x "$rs" ] || rs=$(command -v roost-session || true)
+  [ -n "$rs" ] && "$rs" --id
+}
+# estimated % of a window's limit: covered-% × own$/tracked$ (n/a without data)
+estpct() {  # $1=covered-pct-or--1  $2=own$  $3=tracked-total$  $4=stale-flag
+  awk -v g="$1" -v o="$2" -v t="$3" -v st="$4" 'BEGIN{
+    if (st==0 && g+0>=0 && t+0>0) printf "%.1f", g*o/t; else printf "n/a" }'
+}
+shr() { awk -v o="$1" -v t="$2" 'BEGIN{ if (t+0>0) printf "%.0f%%", 100*o/t; else printf "n/a" }'; }
+fmt_est() { if [ "$1" = "n/a" ]; then printf 'n/a'; else printf '≈%s%%' "$1"; fi; }
+money()   { LC_ALL=C printf '$%.2f' "$1"; }
+
+if [ -n "$submode" ]; then
+  if ! est=$(est_sessions); then
+    echo "roost-usage: no session log yet at $slog" >&2
+    echo "  The statusline appends it on each render — interact in a session once, then retry." >&2
+    exit 1
+  fi
+  read -r t5 tw < <(awk -F'\t' '{a+=$2; b+=$3} END{printf "%.4f %.4f\n", a+0, b+0}' <<<"$est")
+  IFS=$'\t' read -r b5 bw < <(base_pcts)
+  cov5=$(covered "$five" "$b5"); covw=$(covered "$week" "$bw")
+  covnote() {  # "(X% while tracked)" | "(no tracked span yet)"
+    if [ "$1" = "-1" ]; then printf '(no tracked span yet)'
+    else LC_ALL=C printf '(%.1f%% while tracked)' "$1"; fi
+  }
+
+  if [ "$submode" = session ]; then
+    sid="$target_sid"
+    if [ -z "$sid" ]; then
+      sid=$(own_sid) || { echo "roost-usage: could not resolve the current session — pass an ID (usage session <id>)" >&2; exit 1; }
+    fi
+    IFS=$'\t' read -r o5 ow olts < <(awk -F'\t' -v s="$sid" \
+      '$1==s {printf "%s\t%s\t%s\n", $2, $3, $4; found=1} END{if (!found) print "0\t0\t0"}' <<<"$est")
+    name=$(snap_name "$sid")
+    e5=$(estpct "$cov5" "$o5" "$t5" "$f_stale"); ew=$(estpct "$covw" "$ow" "$tw" "$w_stale")
+    s5=$(shr "$o5" "$t5"); sw=$(shr "$ow" "$tw")
+    if [ "$mode" = json ]; then
+      jq -n --arg id "$sid" --arg name "$name" \
+            --arg o5 "$o5" --arg ow "$ow" --arg t5 "$t5" --arg tw "$tw" \
+            --arg e5 "$e5" --arg ew "$ew" --arg g5 "$five" --arg gw "$week" \
+            --arg c5 "$cov5" --arg cw "$covw" --arg lts "$olts" \
+        '{id: $id, name: $name,
+          five_hour: {tracked_usd: ($o5|tonumber), tracked_total_usd: ($t5|tonumber),
+                      est_pct_of_limit: (if $e5=="n/a" then null else ($e5|tonumber) end),
+                      covered_pct: (if ($c5|tonumber)<0 then null else ($c5|tonumber) end),
+                      global_pct: (if ($g5|tonumber)<0 then null else ($g5|tonumber) end)},
+          seven_day: {tracked_usd: ($ow|tonumber), tracked_total_usd: ($tw|tonumber),
+                      est_pct_of_limit: (if $ew=="n/a" then null else ($ew|tonumber) end),
+                      covered_pct: (if ($cw|tonumber)<0 then null else ($cw|tonumber) end),
+                      global_pct: (if ($gw|tonumber)<0 then null else ($gw|tonumber) end)},
+          last_sample: (if ($lts|tonumber)>0 then ($lts|tonumber) else null end),
+          caveat: "est splits the global %-movement observed while sampling was live (covered_pct) by tracked-$ share; pre-coverage burn is unattributed; headless -p and off-box usage during coverage are not sampled"}'
+      exit 0
+    fi
+    fst=""; [ "$f_stale" = 1 ] && fst=" (stale)"
+    wst=""; [ "$w_stale" = 1 ] && wst=" (stale)"
+    printf '── Session usage · %s ──\n' "$sid"
+    [ -n "$name" ] && printf '  %s\n' "$name"
+    printf '  5-hour   %-7s of limit   %s of %s tracked (%s)   global %s used %s%s\n' \
+      "$(fmt_est "$e5")" "$(money "$o5")" "$(money "$t5")" "$s5" "$(pct "$five")" "$(covnote "$cov5")" "$fst"
+    printf '  weekly   %-7s of limit   %s of %s tracked (%s)   global %s used %s%s\n' \
+      "$(fmt_est "$ew")" "$(money "$ow")" "$(money "$tw")" "$sw" "$(pct "$week")" "$(covnote "$covw")" "$wst"
+    [ "${olts:-0}" != 0 ] && printf '  last sample %s\n' "$(ago "$olts")"
+    printf '  (est %% = the global %%-movement seen while sampling was live, split by\n'
+    printf '   tracked-$ share; pre-coverage burn stays unattributed. Headless `claude -p`\n'
+    printf '   and off-box usage during coverage are invisible and inflate the shares)\n'
+    exit 0
+  fi
+
+  # sessions: breakdown of every tracked session with in-window burn
+  cur=${CLAUDE_CODE_SESSION_ID:-}
+  if [ "$mode" = json ]; then
+    { printf '%s\n' "$est" | awk -F'\t' -v t5="$t5" -v tw="$tw" -v c5="$cov5" -v cw="$covw" \
+        -v fs="$f_stale" -v ws="$w_stale" -v cur="$cur" 'BEGIN{OFS="\t"}
+      $2+0>0 || $3+0>0 {
+        e5="null"; ew="null"
+        if (fs==0 && c5+0>=0 && t5+0>0) e5=sprintf("%.1f", c5*$2/t5)
+        if (ws==0 && cw+0>=0 && tw+0>0) ew=sprintf("%.1f", cw*$3/tw)
+        print $1, $2, e5, $3, ew, $4, ($1==cur ? 1 : 0)
+      }'
+    } | jq -Rn --arg t5 "$t5" --arg tw "$tw" --arg c5 "$cov5" --arg cw "$covw" \
+        '{sessions: [inputs | split("\t") |
+           {id: .[0], five_usd: (.[1]|tonumber),
+            five_est_pct: (if .[2]=="null" then null else (.[2]|tonumber) end),
+            week_usd: (.[3]|tonumber),
+            week_est_pct: (if .[4]=="null" then null else (.[4]|tonumber) end),
+            last_sample: (.[5]|tonumber), current: (.[6]=="1")}],
+          tracked_total_usd: {five_hour: ($t5|tonumber), seven_day: ($tw|tonumber)},
+          covered_pct: {five_hour: (if ($c5|tonumber)<0 then null else ($c5|tonumber) end),
+                        seven_day: (if ($cw|tonumber)<0 then null else ($cw|tonumber) end)},
+          caveat: "est splits the global %-movement observed while sampling was live (covered_pct) by tracked-$ share; pre-coverage burn is unattributed; headless -p and off-box usage during coverage are not sampled"}'
+    exit 0
+  fi
+  printf '── Per-session usage · tracked burn in the current windows ──\n'
+  # ASCII ~ in the header, bare %s in cells: printf pads by bytes, so a multibyte
+  # ≈ inside a %Ns field would wreck the column alignment
+  printf '  %-9s %6s %8s  %6s %8s  %-11s %s\n' SESSION '~5H%' '5H$' '~WK%' 'WK$' LAST NAME
+  rows=0
+  while IFS=$'\t' read -r sid d5 dw lts; do
+    [ -z "$sid" ] && continue
+    awk -v a="$d5" -v b="$dw" 'BEGIN{exit !(a+0>0 || b+0>0)}' || continue
+    rows=$(( rows+1 ))
+    e5=$(estpct "$cov5" "$d5" "$t5" "$f_stale"); ew=$(estpct "$covw" "$dw" "$tw" "$w_stale")
+    [ "$e5" != n/a ] && e5="$e5%"; [ "$ew" != n/a ] && ew="$ew%"
+    name=$(snap_name "$sid"); mark=""; [ -n "$cur" ] && [ "$sid" = "$cur" ] && mark=" ←this"
+    printf '  %-9.8s %6s %8s  %6s %8s  %-11s %.42s%s\n' \
+      "$sid" "$e5" "$(money "$d5")" "$ew" "$(money "$dw")" \
+      "$(ago "$lts")" "${name:-—}" "$mark"
+  done <<<"$est"
+  [ "$rows" = 0 ] && printf '  (no tracked burn inside the current windows yet)\n'
+  printf '  %-9s %6s %8s  %6s %8s  global: 5h %s %s · wk %s %s\n' \
+    'tracked' '' "$(money "$t5")" '' "$(money "$tw")" \
+    "$(pct "$five")" "$(covnote "$cov5")" "$(pct "$week")" "$(covnote "$covw")"
+  printf '  (est %% = the global %%-movement seen while sampling was live, split by\n'
+  printf '   tracked-$ share; pre-coverage burn stays unattributed. Headless `claude -p`\n'
+  printf '   and off-box usage during coverage are invisible and inflate the shares)\n'
+  exit 0
+fi
 
 if [ "$mode" = compact ] || [ "$mode" = hook ]; then
   # One frugal, self-identifying line for a per-turn hook:
@@ -158,10 +352,9 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
   # The leading tag is what lets a cold reader (a fresh model) know this is the Claude
   # plan's rate limits, not some other 5h/weekly metric. %s are % consumed toward each
   # cap; the parenthetical is the live reset countdown.
-  # A resets_at in the PAST means this snapshot predates a reset (stale cache): show
-  # "(stale)" rather than a confidently-wrong "resets in 0h00m".
-  f_stale=0; (( fivereset > 0 && fivereset < now )) && f_stale=1
-  w_stale=0; (( weekreset > 0 && weekreset < now )) && w_stale=1
+  # A resets_at in the PAST means this snapshot predates a reset (stale cache,
+  # f_stale/w_stale above): show "(stale)" rather than a confidently-wrong
+  # "resets in 0h00m".
   seg() {  # $1=label  $2=pct  $3=reset-countdown  $4=stale(1) ; honest when data missing/stale
     local p; p=$(pct "$2")
     if [ "$p" = "n/a" ]; then printf '%s n/a' "$1"
@@ -174,6 +367,27 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
     "$(seg 5h "$five" "$(hm "$left5")" "$f_stale")" \
     "$(seg wk "$week" "$(dh "$leftw")" "$w_stale")" \
     "$stale")
+  # Hook only: append this session's estimated share of each window, so every turn
+  # carries "how much of the burn is mine" alongside the global %s. The session id
+  # comes from the hook's stdin JSON (the -t guard keeps a manual TTY run from
+  # hanging on a stdin read). ≈ marks it as a tracked-share estimate; see
+  # `usage sessions` for the method and its caveats. Silent on any failure —
+  # this segment must never break the injected line.
+  if [ "$mode" = hook ] && [ ! -t 0 ]; then
+    hsid=$(jq -r '.session_id // empty' 2>/dev/null || true)  # quiet: stdin may be empty/non-JSON
+    if [ -n "$hsid" ] && sest=$(est_sessions); then
+      IFS=$'\t' read -r hb5 hbw < <(base_pcts)
+      hc5=$(covered "$five" "$hb5"); hcw=$(covered "$week" "$hbw")
+      line="$line$(awk -F'\t' -v s="$hsid" -v c5="$hc5" -v cw="$hcw" -v fs="$f_stale" -v ws="$w_stale" '
+        {t5+=$2; tw+=$3; if ($1==s) {o5=$2; ow=$3}}
+        END {
+          out=""
+          if (fs==0 && c5+0>=0 && t5>0) out = sprintf("≈%.1f%%/5h", c5*o5/t5)
+          if (ws==0 && cw+0>=0 && tw>0) out = out (out=="" ? "" : " ") sprintf("≈%.1f%%/wk", cw*ow/tw)
+          if (out != "") printf " · this session %s", out
+        }' <<<"$sest")"
+    fi
+  fi
   # Hook only: when a window nears its hard cap, tell Claude how to pause + auto-resume.
   # The 5-hour window resets within hours, so a background `--wait` that wakes you at the
   # reset is practical; the weekly cap resets in days, so advise winding down instead.
@@ -233,6 +447,17 @@ echo   "── Claude usage limits ───────────────
 printf "  5-hour   %s  %-4s  resets in %s  (%s)\n" "$(bar "$five")" "$(pct "$five")" "$(hm "$left5")" "$F_LBL"
 printf "  weekly   %s  %-4s  resets in %s  (%s)\n" "$(bar "$week")" "$(pct "$week")" "$(dh "$leftw")" "$W_LBL"
 printf "  context  %s  %-4s  (this session)\n"     "$(bar "$ctx")"  "$(pct "$ctx")"
+# this session's tracked share, when invoked from inside a session (quiet skip
+# otherwise — roost-session's "not inside a session" stderr isn't news here)
+if sid=$(own_sid 2>/dev/null) && [ -n "$sid" ] && sest=$(est_sessions); then
+  IFS=$'\t' read -r st5 stw so5 sow < <(awk -F'\t' -v s="$sid" \
+    '{t5+=$2; tw+=$3; if ($1==s) {o5=$2; ow=$3}} END{printf "%.4f\t%.4f\t%.4f\t%.4f\n", t5, tw, o5, ow}' <<<"$sest")
+  IFS=$'\t' read -r db5 dbw < <(base_pcts)
+  e5=$(estpct "$(covered "$five" "$db5")" "$so5" "$st5" "$f_stale")
+  ew=$(estpct "$(covered "$week" "$dbw")" "$sow" "$stw" "$w_stale")
+  printf "  session  %-7s of 5h · %-7s of wk   (%s this 5h window; \`usage sessions\`)\n" \
+    "$(fmt_est "$e5")" "$(fmt_est "$ew")" "$(money "$so5")"
+fi
 echo   "──────────────────────────────────────────────────"
 printf "  %s · cache %ds old\n" "$model" "$age"
 (( age > 60 )) && echo "  (cache ${age}s old — the %s may lag; caps + countdowns are live)"
