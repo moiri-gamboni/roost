@@ -22,6 +22,10 @@ name: Explore Granola API or MCP for Ubuntu access
 | `roost-session --name` | just the title |
 | `roost-session --json` | `{"id": "...", "name": "..."}` |
 
+`roost-session` is a multi-call name of the merged `roost-usage` CLI (argv0
+selects identity mode), so `usage whoami [--id|--name|--json]` is the exact
+same thing under the primary name.
+
 ## When to use
 
 - Build a resume pointer: `agent <dir> -r "$(roost-session --id)"`.
@@ -33,6 +37,9 @@ name: Explore Granola API or MCP for Ubuntu access
 
 ## Why it's pane-safe (how it works)
 
+- Implementation-wise this is the `roost-usage.sh` script: `~/bin/roost-session`
+  symlinks to it, and the invocation name picks identity mode. Same resolver
+  powers `usage session` (per-session usage attribution).
 - **id** comes from `$CLAUDE_CODE_SESSION_ID`, which Claude Code exports into each
   session's own process tree. Every concurrent pane runs a distinct claude process
   with its own value, so the tool never guesses among them — it returns the session
