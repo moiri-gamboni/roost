@@ -18,12 +18,14 @@ _cache="$_u/last-status.json"
 _intonly() { local v="${1%%.*}"; case "$v" in ''|*[!0-9]*) printf 0 ;; *) printf '%s' "$v" ;; esac; }
 # "-" sentinel for a missing session_id: an empty leading field would be eaten
 # by `read` under IFS=tab (leading IFS whitespace), shifting every field left
-IFS=$'\t' read -r _sid _cost _f5 _w7 _new_fr _new_wr < <(
+IFS=$'\t' read -r _sid _cost _f5 _w7 _new_fr _new_wr _dur _apidur < <(
   jq -r '[(.session_id//"-"),(.cost.total_cost_usd//0),
           (.rate_limits.five_hour.used_percentage//-1),
           (.rate_limits.seven_day.used_percentage//-1),
           ((.rate_limits.five_hour.resets_at//0)|floor),
-          ((.rate_limits.seven_day.resets_at//0)|floor)]|@tsv' <<<"$input")
+          ((.rate_limits.seven_day.resets_at//0)|floor),
+          ((.cost.total_duration_ms//0)|floor),
+          ((.cost.total_api_duration_ms//0)|floor)]|@tsv' <<<"$input")
 _new_fr=$(_intonly "$_new_fr"); _new_wr=$(_intonly "$_new_wr")
 _write=1
 if [ -s "$_cache" ]; then
@@ -38,13 +40,17 @@ if [ -s "$_cache" ]; then
 fi
 [ "$_write" = 1 ] && printf '%s' "$input" > "$_u/.last-status.tmp" && mv -f "$_u/.last-status.tmp" "$_cache"
 
-# --- Per-session usage sampling (read by `roost-usage session[s]`) ---
+# --- Per-session usage sampling (read by `session usage`) ---
 # cost.total_cost_usd is the session's CUMULATIVE API-equivalent spend, delivered
 # on every render (~10s while active). Append a sample to session-log.tsv whenever
 # it moved (plus a 10-min idle heartbeat), so per-session in-window burn can be
 # counted from deltas. A per-session snapshot keeps name/model readable without
 # scanning transcripts; the .cost sidecar is the dedup state (content = last
 # logged cost, mtime = last sample time).
+# TSV columns: ts sid cost_usd five% week% five_reset week_reset duration_ms
+# api_duration_ms — the two cumulative duration columns are logged for a future
+# `session time` view; nothing reads them yet (readers must tolerate old 7-column
+# lines).
 _slog="$_u/session-log.tsv"
 _snapdir="$_u/sessions"
 _now=$(date +%s)
@@ -57,8 +63,8 @@ if [ -n "$_sid" ] && [ "$_sid" != "-" ] && _costf=$(LC_ALL=C printf '%.4f' "$_co
     _side_age=$(( _now - $(stat -c %Y "$_side") ))
   fi
   if [ "$_costf" != "$_prevf" ] || [ "$_side_age" -ge 600 ]; then
-    LC_ALL=C printf '%s\t%s\t%s\t%.3f\t%.3f\t%s\t%s\n' \
-      "$_now" "$_sid" "$_costf" "$_f5" "$_w7" "$_new_fr" "$_new_wr" >> "$_slog"
+    LC_ALL=C printf '%s\t%s\t%s\t%.3f\t%.3f\t%s\t%s\t%s\t%s\n' \
+      "$_now" "$_sid" "$_costf" "$_f5" "$_w7" "$_new_fr" "$_new_wr" "$_dur" "$_apidur" >> "$_slog"
     printf '%s' "$_costf" > "$_side"
     printf '%s' "$input" > "$_snapdir/.$_sid.tmp" && mv -f "$_snapdir/.$_sid.tmp" "$_snapdir/$_sid.json"
   fi

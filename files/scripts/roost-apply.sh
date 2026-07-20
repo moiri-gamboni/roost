@@ -115,7 +115,7 @@ files/scheduled/track-ssh-activity.sh|$ROOST_DIR/claude/scheduled/track-ssh-acti
 files/scheduled/vision-abuse-watch.sh|$ROOST_DIR/claude/scheduled/vision-abuse-watch.sh|plain+x|
 files/scripts/roost-apply.sh|$ROOST_DIR/claude/scripts/roost-apply.sh|plain+x|
 files/scripts/roost-net.sh|$ROOST_DIR/claude/scripts/roost-net.sh|plain+x|
-files/scripts/roost-usage.sh|$ROOST_DIR/claude/scripts/roost-usage.sh|plain+x|
+files/scripts/session.sh|$ROOST_DIR/claude/scripts/session.sh|plain+x|
 files/scripts/granola.sh|$ROOST_DIR/claude/scripts/granola.sh|plain+x|
 files/scripts/granola-transcripts.sh|$ROOST_DIR/claude/scripts/granola-transcripts.sh|plain+x|
 files/scripts/granola-refresh.sh|$ROOST_DIR/claude/scripts/granola-refresh.sh|plain+x|
@@ -129,8 +129,7 @@ files/skills/html2markdown/SKILL.md|$ROOST_DIR/claude/skills/html2markdown/SKILL
 files/skills/havelock-api/SKILL.md|$ROOST_DIR/claude/skills/havelock-api/SKILL.md|plain|
 files/skills/humanizer/SKILL.md|$ROOST_DIR/claude/skills/humanizer/SKILL.md|plain|
 files/skills/pastebin/SKILL.md|$ROOST_DIR/claude/skills/pastebin/SKILL.md|envsubst:DOMAIN|
-files/skills/usage-limits/SKILL.md|$ROOST_DIR/claude/skills/usage-limits/SKILL.md|plain|
-files/skills/roost-session/SKILL.md|$ROOST_DIR/claude/skills/roost-session/SKILL.md|plain|
+files/skills/session/SKILL.md|$ROOST_DIR/claude/skills/session/SKILL.md|plain|
 files/privatebin/privatebin-cloudflare.yml.tmpl|$ROOST_DIR/cloudflared/apps/privatebin.yml|envsubst:DOMAIN|run:~/roost/claude/lib/cloudflare-assemble.sh,restart:cloudflared
 MANIFEST_A
 
