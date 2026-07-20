@@ -91,8 +91,9 @@ ln -sf "$ROOST_DIR/claude/scripts/roost-usage.sh" "$HOME_DIR/bin/roost-usage"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-usage"
 ln -sf "$ROOST_DIR/claude/scripts/roost-usage.sh" "$HOME_DIR/bin/usage"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/usage"
-# roost-session: print the current Claude Code session's id + auto-title
-ln -sf "$ROOST_DIR/claude/scripts/roost-session.sh" "$HOME_DIR/bin/roost-session"
+# roost-session: session id + auto-title — same multi-call script as usage;
+# invoking it under this name (argv0) selects identity mode (= `usage whoami`)
+ln -sf "$ROOST_DIR/claude/scripts/roost-usage.sh" "$HOME_DIR/bin/roost-session"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-session"
 # granola: meeting-notes mirror tooling. granola-digest ships from files/private/,
 # so skip any that aren't deployed (public-repo-only checkouts won't have it).

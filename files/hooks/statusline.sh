@@ -16,8 +16,10 @@ _u="$HOME/roost/claude/usage"
 [ -d "$_u" ] || mkdir -p "$_u"
 _cache="$_u/last-status.json"
 _intonly() { local v="${1%%.*}"; case "$v" in ''|*[!0-9]*) printf 0 ;; *) printf '%s' "$v" ;; esac; }
+# "-" sentinel for a missing session_id: an empty leading field would be eaten
+# by `read` under IFS=tab (leading IFS whitespace), shifting every field left
 IFS=$'\t' read -r _sid _cost _f5 _w7 _new_fr _new_wr < <(
-  jq -r '[(.session_id//""),(.cost.total_cost_usd//0),
+  jq -r '[(.session_id//"-"),(.cost.total_cost_usd//0),
           (.rate_limits.five_hour.used_percentage//-1),
           (.rate_limits.seven_day.used_percentage//-1),
           ((.rate_limits.five_hour.resets_at//0)|floor),
@@ -46,7 +48,7 @@ fi
 _slog="$_u/session-log.tsv"
 _snapdir="$_u/sessions"
 _now=$(date +%s)
-if [ -n "$_sid" ] && _costf=$(LC_ALL=C printf '%.4f' "$_cost" 2>/dev/null); then
+if [ -n "$_sid" ] && [ "$_sid" != "-" ] && _costf=$(LC_ALL=C printf '%.4f' "$_cost" 2>/dev/null); then
   [ -d "$_snapdir" ] || mkdir -p "$_snapdir"
   _side="$_snapdir/$_sid.cost"
   _prevf=""; _side_age=999999

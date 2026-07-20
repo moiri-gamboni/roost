@@ -33,7 +33,8 @@ $ usage sessions
   tracked             $8.45           $21.85  global: 5h 63% (16.5% while tracked) · wk 47% (3.4% while tracked)
 ```
 
-- **`usage session [ID] [--json]`** — one session, defaulting to the *invoking* session: the id is resolved through **`roost-session --id`** (pane-safe `$CLAUDE_CODE_SESSION_ID` walk), so any Claude session can ask "how much have *I* used" without knowing its own id.
+- **`usage session [ID] [--json]`** — one session, defaulting to the *invoking* session (pane-safe `$CLAUDE_CODE_SESSION_ID` + ancestor walk — the same resolver behind `roost-session`), so any Claude session can ask "how much have *I* used" without knowing its own id.
+- **`usage whoami [--id|--name|--json]`** — session *identity*: the invoking session's id + auto-title. `roost-session` is a multi-call name of this same CLI, so both commands are one script (see the roost-session skill).
 - **`usage sessions [--json]`** — every tracked session with in-window burn, sorted by 5h spend; `←this` marks the invoking session. `--json` emits raw fields (`five_usd`, `five_est_pct`, `covered_pct`, …).
 
 **How the numbers are made** (counted where possible, estimated only at the last step):

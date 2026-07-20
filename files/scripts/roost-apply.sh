@@ -116,7 +116,6 @@ files/scheduled/vision-abuse-watch.sh|$ROOST_DIR/claude/scheduled/vision-abuse-w
 files/scripts/roost-apply.sh|$ROOST_DIR/claude/scripts/roost-apply.sh|plain+x|
 files/scripts/roost-net.sh|$ROOST_DIR/claude/scripts/roost-net.sh|plain+x|
 files/scripts/roost-usage.sh|$ROOST_DIR/claude/scripts/roost-usage.sh|plain+x|
-files/scripts/roost-session.sh|$ROOST_DIR/claude/scripts/roost-session.sh|plain+x|
 files/scripts/granola.sh|$ROOST_DIR/claude/scripts/granola.sh|plain+x|
 files/scripts/granola-transcripts.sh|$ROOST_DIR/claude/scripts/granola-transcripts.sh|plain+x|
 files/scripts/granola-refresh.sh|$ROOST_DIR/claude/scripts/granola-refresh.sh|plain+x|

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # roost-usage — on-demand view of this Claude plan's usage limits, with a guard
-# mode for pacing multi-agent jobs.
+# mode for pacing multi-agent jobs. Multi-call: also installed as `roost-session`
+# (and reachable as `usage whoami`) — session identity mode, printing the
+# invoking session's id + auto-title.
 #
 # Shows the 5-hour and weekly (7-day) rate-limit %s + reset countdowns (the caps
 # that actually gate the session), plus context-window fill. Source: the cache the
@@ -28,9 +30,12 @@
 #   usage session [ID]  one session's tracked in-window burn ($, counted from the
 #                     statusline's per-session cost samples) and its estimated
 #                     share of the 5h/weekly limits. ID defaults to the invoking
-#                     session, resolved via roost-session. --json for raw fields.
+#                     session. --json for raw fields.
 #   usage sessions    per-session breakdown of all tracked burn in the current
 #                     windows, plus totals. --json for raw fields.
+#   usage whoami [--id|--name|--json]  session identity: the invoking session's
+#                     id + auto-title. Identical to invoking this script by its
+#                     `roost-session` name (argv0 selects the mode).
 #   usage --file PATH read a specific cache file
 #
 # Guard config — set EACH window independently (FIVE_GUARD / WEEK_GUARD) to:
@@ -50,6 +55,78 @@ FIVE_GUARD="${FIVE_GUARD:-linear}"
 WEEK_GUARD="${WEEK_GUARD:-linear}"
 FIVE_WINDOW="${FIVE_WINDOW:-18000}"
 WEEK_WINDOW="${WEEK_WINDOW:-604800}"
+
+# ── Session identity (the former roost-session CLI) ──────────────────────────
+# Pane-safe by construction: the id comes from $CLAUDE_CODE_SESSION_ID, which
+# Claude Code exports into each session's own process tree; every concurrent
+# tmux pane runs a distinct claude process with its own value. Fallback: walk
+# up to the nearest ancestor that has it (env var not inherited is unusual).
+resolve_sid() {
+  local sid pid ppid v
+  sid="${CLAUDE_CODE_SESSION_ID:-}"
+  if [ -z "$sid" ]; then
+    pid=$$
+    while [ "${pid:-0}" -gt 1 ]; do
+      ppid=$(ps -o ppid= -p "$pid" | tr -d ' ' || true)
+      [ -z "$ppid" ] && break
+      if [ -r "/proc/$ppid/environ" ]; then
+        v=$(tr '\0' '\n' < "/proc/$ppid/environ" | sed -n 's/^CLAUDE_CODE_SESSION_ID=//p' | head -n1 || true)
+        [ -n "$v" ] && { sid="$v"; break; }
+      fi
+      pid="$ppid"
+    done
+  fi
+  [ -n "$sid" ] || return 1
+  printf '%s\n' "$sid"
+}
+# Auto-title: the newest {"type":"ai-title","aiTitle":"..."} entry in the
+# session transcript under $CLAUDE_CONFIG_DIR/projects/<encoded-cwd>/<sid>.jsonl
+session_title() {  # $1=sid ; empty output if no title yet
+  local cfg jsonl line
+  cfg="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  [ -d "$cfg/projects" ] || return 0
+  jsonl=$(find "$cfg/projects" -name "$1.jsonl" -print -quit)
+  { [ -n "$jsonl" ] && [ -r "$jsonl" ]; } || return 0
+  line=$(grep '"type":"ai-title"' "$jsonl" | tail -n1 || true)
+  [ -n "$line" ] || return 0
+  printf '%s' "$line" | jq -r '.aiTitle // empty'
+}
+whoami_usage() {
+  cat >&2 <<'EOF'
+Usage: roost-session [--id | --name | --json | -h]      (= usage whoami [...])
+  (no args)  two lines: "id:" and "name:"
+  --id       print only the session UUID
+  --name     print only the auto-generated title
+  --json     print {"id": "...", "name": "..."}
+
+Run from inside a Claude Code session (any tmux pane / any subshell of it).
+EOF
+}
+whoami_main() {
+  local sid name
+  case "${1:-}" in
+    -h|--help) whoami_usage; exit 0 ;;
+    ""|--id|--name|--json) ;;
+    *) whoami_usage; exit 2 ;;
+  esac
+  if ! sid=$(resolve_sid); then
+    echo "roost-session: not inside a Claude Code session (CLAUDE_CODE_SESSION_ID unset)" >&2
+    exit 1
+  fi
+  name=$(session_title "$sid")
+  case "${1:-}" in
+    --id)   printf '%s\n' "$sid" ;;
+    --name) printf '%s\n' "$name" ;;
+    --json) jq -cn --arg id "$sid" --arg name "$name" '{id: $id, name: $name}' ;;
+    "")     printf 'id:   %s\nname: %s\n' "$sid" "${name:-<untitled>}" ;;
+  esac
+  exit 0
+}
+# Multi-call dispatch: `~/bin/roost-session` symlinks to this script, so argv0
+# selects identity mode; `usage whoami` reaches it under the primary name.
+case "$(basename "$0")" in roost-session|roost-session.sh) whoami_main "$@" ;; esac
+if [ "${1:-}" = whoami ]; then shift; whoami_main "$@"; fi
+
 mode=text; waitwin=five; submode=""; target_sid=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -74,8 +151,10 @@ while [ $# -gt 0 ]; do
       printf '  --wait [5h|week]: block until that window resets, print one line, exit 0\n'
       printf '          (default 5h). Run in the background so the exit notifies you.\n'
       printf '  session [ID]: this session'"'"'s tracked burn + estimated share of each\n'
-      printf '          window (ID defaults to the invoking session via roost-session).\n'
+      printf '          window (ID defaults to the invoking session).\n'
       printf '  sessions: per-session breakdown of tracked burn, with totals.\n'
+      printf '  whoami [--id|--name|--json]: the invoking session'"'"'s id + auto-title\n'
+      printf '          (identity mode; also what the `roost-session` name runs).\n'
       printf '  Per-window guard, set independently (FIVE_GUARD / WEEK_GUARD):\n'
       printf '    linear (default) | sqrt | pow:P | <int %%> | off\n'
       exit 0 ;;
@@ -208,28 +287,26 @@ snap_name() { [ -s "$snapdir/$1.json" ] && jq -r '.session_name // empty' "$snap
 # the base and inflate everyone's estimate.
 base_pcts() {
   [ -s "$slog" ] || { printf '%s\t%s\n' -1 -1; return; }
+  # baseline is ASSIGNED on the first match (a window can open at 0.000%, and
+  # `0 > uninit` would never fire, leaking an empty field — which bash read
+  # under IFS=tab would then swallow as leading whitespace, shifting b5/bw)
   LC_ALL=C sort -t$'\t' -k1,1n "$slog" | awk -F'\t' \
     -v ws5="$ws5" -v wsw="$wsw" -v fr="$fivereset" -v wr="$weekreset" '
-    $1+0>=ws5 && $6==fr && $4+0>=0 { if (!g5) t5=$1+0; g5=1; if ($1+0<=t5+300 && $4+0>b5) b5=$4+0 }
-    $1+0>=wsw && $7==wr && $5+0>=0 { if (!gw) tw=$1+0; gw=1; if ($1+0<=tw+300 && $5+0>bw) bw=$5+0 }
+    $1+0>=ws5 && $6==fr && $4+0>=0 {
+      if (!g5) { g5=1; t5=$1+0; b5=$4+0 } else if ($1+0<=t5+300 && $4+0>b5) b5=$4+0 }
+    $1+0>=wsw && $7==wr && $5+0>=0 {
+      if (!gw) { gw=1; tw=$1+0; bw=$5+0 } else if ($1+0<=tw+300 && $5+0>bw) bw=$5+0 }
     END { printf "%s\t%s\n", (g5?b5:-1), (gw?bw:-1) }'
 }
-covered() {  # $1=live-pct(-1 n/a)  $2=base-pct(-1 n/a) -> %-movement during coverage
+covered() {  # $1=live-pct(-1 n/a)  $2=base-pct(-1/'' n/a) -> %-movement during coverage
   awk -v g="$1" -v b="$2" 'BEGIN{
-    if (g+0<0 || b+0<0) { print -1; exit }
+    if (g+0<0 || b=="" || b+0<0) { print -1; exit }
     c=g-b; if (c<0) c=0; printf "%.3f", c }'
 }
 ago() { local s=$(( now - $1 )); (( s<0 )) && s=0
         if   (( s<3600 ));  then printf '%dm ago' $(( s/60 ))
         elif (( s<86400 )); then printf '%dh%02dm ago' $(( s/3600 )) $(( (s%3600)/60 ))
         else printf '%dd%02dh ago' $(( s/86400 )) $(( (s%86400)/3600 )); fi; }
-# resolve the invoking session's id via the sibling roost-session CLI (the
-# pane-safe env-var walk lives there — single source of truth for "my session")
-own_sid() {
-  local rs; rs="$(dirname "$(readlink -f "$0")")/roost-session.sh"
-  [ -x "$rs" ] || rs=$(command -v roost-session || true)
-  [ -n "$rs" ] && "$rs" --id
-}
 # estimated % of a window's limit: covered-% × own$/tracked$ (n/a without data)
 estpct() {  # $1=covered-pct-or--1  $2=own$  $3=tracked-total$  $4=stale-flag
   awk -v g="$1" -v o="$2" -v t="$3" -v st="$4" 'BEGIN{
@@ -256,11 +333,11 @@ if [ -n "$submode" ]; then
   if [ "$submode" = session ]; then
     sid="$target_sid"
     if [ -z "$sid" ]; then
-      sid=$(own_sid) || { echo "roost-usage: could not resolve the current session — pass an ID (usage session <id>)" >&2; exit 1; }
+      sid=$(resolve_sid) || { echo "roost-usage: could not resolve the current session — pass an ID (usage session <id>)" >&2; exit 1; }
     fi
     IFS=$'\t' read -r o5 ow olts < <(awk -F'\t' -v s="$sid" \
       '$1==s {printf "%s\t%s\t%s\n", $2, $3, $4; found=1} END{if (!found) print "0\t0\t0"}' <<<"$est")
-    name=$(snap_name "$sid")
+    name=$(snap_name "$sid"); [ -n "$name" ] || name=$(session_title "$sid")
     e5=$(estpct "$cov5" "$o5" "$t5" "$f_stale"); ew=$(estpct "$covw" "$ow" "$tw" "$w_stale")
     s5=$(shr "$o5" "$t5"); sw=$(shr "$ow" "$tw")
     if [ "$mode" = json ]; then
@@ -447,9 +524,8 @@ echo   "── Claude usage limits ───────────────
 printf "  5-hour   %s  %-4s  resets in %s  (%s)\n" "$(bar "$five")" "$(pct "$five")" "$(hm "$left5")" "$F_LBL"
 printf "  weekly   %s  %-4s  resets in %s  (%s)\n" "$(bar "$week")" "$(pct "$week")" "$(dh "$leftw")" "$W_LBL"
 printf "  context  %s  %-4s  (this session)\n"     "$(bar "$ctx")"  "$(pct "$ctx")"
-# this session's tracked share, when invoked from inside a session (quiet skip
-# otherwise — roost-session's "not inside a session" stderr isn't news here)
-if sid=$(own_sid 2>/dev/null) && [ -n "$sid" ] && sest=$(est_sessions); then
+# this session's tracked share, when invoked from inside a session (quiet skip otherwise)
+if sid=$(resolve_sid) && [ -n "$sid" ] && sest=$(est_sessions); then
   IFS=$'\t' read -r st5 stw so5 sow < <(awk -F'\t' -v s="$sid" \
     '{t5+=$2; tw+=$3; if ($1==s) {o5=$2; ow=$3}} END{printf "%.4f\t%.4f\t%.4f\t%.4f\n", t5, tw, o5, ow}' <<<"$sest")
   IFS=$'\t' read -r db5 dbw < <(base_pcts)
