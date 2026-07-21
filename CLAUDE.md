@@ -104,7 +104,7 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
   - `bashrc-append.sh` -- Stub appended to `~/.bashrc`; sources `~/.bashrc.d/$ROOST_DIR_NAME.sh`
   - `profile-append.sh` -- Stub appended to `~/.profile`; sources the same file for non-interactive shells
   - `shell/bashrc.sh` -- Shell configuration (PATH, tmux, agent helpers); deployed to `~/.bashrc.d/roost.sh`
-  - `hooks/` -- Claude Code **event hooks** (deployed to `$CLAUDE_CONFIG_DIR/hooks/`, wired in `settings.json`): `notify.sh` (Notification), `statusline.sh` (TUI status line; also persists the shared usage cache + per-session cost/duration samples under `~/roost/claude/usage/` for the `session` CLI), `reflect.sh` + `reflect.md` (PreCompact, disabled)
+  - `hooks/` -- Claude Code **event hooks** (deployed to `$CLAUDE_CONFIG_DIR/hooks/`, wired in `settings.json`): `notify.sh` (Notification), `statusline.sh` (TUI status line; also persists the shared usage cache + a per-session 20-column sample log (cost, rate-limit %s, durations, cumulative tokens, context composition, lines added/removed, model, prompt_id) under `~/roost/claude/usage/` for the `session` CLI), `reflect.sh` + `reflect.md` (PreCompact, disabled)
   - `scripts/` -- User **CLIs**, symlinked into `~/bin` (deployed to `claude/scripts/`)
     - `roost-apply.sh` -- Config deployment and service reload (manifest-based + flag mode)
     - `roost-net.sh` -- Travel VPN control CLI: `status`, `travel on/off`, `vpn on/off`, `test`, `client {android|laptop|ssh}`, `rotate-keys`; symlinked as `~/bin/roost-net`
