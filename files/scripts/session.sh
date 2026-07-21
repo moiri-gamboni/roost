@@ -152,6 +152,17 @@ whoami_main() {
 # (the hooks run async via run-shell -b). Always exits 0.
 if [ "${1:-}" = --focus-mark ]; then
   ev="${2:-}"; fcl="${3:--}"; fts="${4:--}"
+  # "switch SESSION": that session's current window changed (prefix-switch
+  # inside an attach-style client — VS Code attach-main, termux/et). Only
+  # meaningful when a FOCUSED client is viewing that session: resolve the
+  # client and log an "in", which supersedes its previous span in the reader.
+  # Unfocused switches (background activity, tab-pinning) log nothing.
+  if [ "$ev" = switch ]; then
+    fts="${3:--}"
+    fcl=$(tmux list-clients -t "$fts" -F '#{?client_focused,#{client_name},}' 2>/dev/null | awk 'NF {print; exit}')
+    [ -n "$fcl" ] || exit 0
+    ev=in
+  fi
   if [ "$ev" = in ] || [ "$ev" = out ]; then
     fpn="-"; fsid="-"
     if [ "$fts" != "-" ]; then
@@ -331,36 +342,73 @@ if [ "${submode:-}" = time ]; then
     END { for (s in seen) printf "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
             s, n[s], act[s], mx[s], uncl[s], pend[s], lastev[s], nf[s], np[s], na[s], asum[s], ended[s] }' \
     | LC_ALL=C sort -t$'\t' -k3,3nr)
-  # Attended time: tmux client-focus spans, attributed to the Claude session id
-  # resolved at log time (row col 6; pane-map fallback for rows logged before
-  # the session's first statusline render). Per client: an "in" opens a span (a
-  # new "in" first closes any open one), "out"/detach closes it, and a still-
-  # open span closes at now. Caveat: two clients focused on the same pane
-  # double-count — small in practice, noted for honesty.
-  fatt=""
+  # ── Correlating the two streams ─────────────────────────────────────────────
+  # Turn spans (Claude working) and focus spans (you looking) are independent
+  # interval sets over the same timeline. Their per-session overlap is WATCHED:
+  #   working ∧ watching  = watched (supervised work)
+  #   working ∧ ¬watching = autonomous work (turn ran while you were elsewhere)
+  #   ¬working ∧ watching = attended idle (reading/reviewing/typing)
+  # Focus spans: per client, an "in" opens (a new "in" first closes any open
+  # one), "out"/detach closes, still-open closes at now; sid comes from the row
+  # (log-time resolution; pane-map fallback for pre-first-render rows). Turn
+  # spans use CLOSED turns only, matching ACTIVE's floor semantics. Caveat: two
+  # clients focused on the same pane double-count attended (not watched depth).
+  tspans=$(LC_ALL=C sort -t$'\t' -k1,1n "$tlog" | awk -F'\t' -v mid="$midnight" '
+    $1+0>=mid && $2!="" {
+      if ($3=="s") pend[$2]=$1+0
+      else if (($3=="e" || $3=="f") && pend[$2]) {
+        if ($1+0>=pend[$2]) printf "%s\t%s\t%s\n", $2, pend[$2], $1+0
+        pend[$2]=0 }
+      else if ($3=="x") pend[$2]=0
+    }')
+  fspans=""
   if [ -s "$flog" ]; then
     pmap=""
     if [ -d "$panedir" ]; then
       pmap=$(for f in "$panedir"/*; do [ -e "$f" ] || continue; printf '%%%s\t%s\n' "${f##*/}" "$(cat "$f")"; done)
     fi
-    fatt=$(LC_ALL=C sort -t$'\t' -k1,1n "$flog" | awk -F'\t' -v mid="$midnight" -v now="$now" -v pm="$pmap" '
+    fspans=$(LC_ALL=C sort -t$'\t' -k1,1n "$flog" | awk -F'\t' -v mid="$midnight" -v now="$now" -v pm="$pmap" '
       BEGIN { n=split(pm, L, "\n"); for (i=1;i<=n;i++) if (split(L[i], kv, "\t")==2) sid[kv[1]]=kv[2] }
       NF>=6 && $1+0>=mid {
         ts=$1+0; ev=$2; cl=$3; pn=$5; s=$6
         if (s=="" || s=="-") s=sid[pn]
-        if (open[cl]) { if (osid[cl]!="") att[osid[cl]]+=ts-open[cl]; open[cl]=0 }
+        if (open[cl]) { if (osid[cl]!="") printf "%s\t%s\t%s\n", osid[cl], open[cl], ts; open[cl]=0 }
         if (ev=="in") { open[cl]=ts; osid[cl]=s }
       }
-      END { for (c in open) if (open[c]) { if (osid[c]!="") att[osid[c]]+=now-open[c] }
-            for (s2 in att) printf "%s\t%d\n", s2, att[s2] }')
+      END { for (c in open) if (open[c] && osid[c]!="") printf "%s\t%s\t%s\n", osid[c], open[c], now }')
   fi
+  # attended total + last-focus ts per sid (from the focus spans)
+  fatt=$(awk -F'\t' 'NF==3 { att[$1]+=$3-$2; if ($3+0>last[$1]) last[$1]=$3+0 }
+    END { for (s in att) printf "%s\t%d\t%d\n", s, att[s], last[s] }' <<<"$fspans")
+  # watched = per-sid overlap of the two interval sets (sweep line over flanks)
+  wov=$({ awk -F'\t' 'NF==3 {printf "%s\t%s\t+T\n%s\t%s\t-T\n", $1,$2,$1,$3}' <<<"$tspans"
+          awk -F'\t' 'NF==3 {printf "%s\t%s\t+F\n%s\t%s\t-F\n", $1,$2,$1,$3}' <<<"$fspans"
+        } | LC_ALL=C sort -t$'\t' -k1,1 -k2,2n | awk -F'\t' '
+      NF==3 {
+        if ($1!=cur) { cur=$1; dT=0; dF=0; last=0 }
+        t=$2+0
+        if (dT>0 && dF>0) ov[cur]+=t-last
+        last=t
+        if ($3=="+T") dT++; else if ($3=="-T") dT--
+        else if ($3=="+F") dF++; else dF--
+      }
+      END { for (s in ov) if (ov[s]>0) printf "%s\t%d\n", s, ov[s] }')
   att_of() {  # $1=sid -> attended seconds today (0 if none)
     if [ -n "$fatt" ]; then awk -F'\t' -v s="$1" '$1==s{print $2; f=1} END{if(!f) print 0}' <<<"$fatt"
     else printf 0; fi
   }
+  wov_of() {  # $1=sid -> watched (active ∩ attended) seconds today
+    if [ -n "$wov" ]; then awk -F'\t' -v s="$1" '$1==s{print $2; f=1} END{if(!f) print 0}' <<<"$wov"
+    else printf 0; fi
+  }
+  # attended-only sessions (focus but no turns today) still get a row
+  extra=$(awk -F'\t' 'NR==FNR { if ($1!="") seen[$1]=1; next }
+    $1!="" && !seen[$1] { printf "%s\t0\t0\t0\t0\t0\t%d\t0\t0\t0\t0\t0\n", $1, $3 }' \
+    <(printf '%s\n' "$rows") <(printf '%s\n' "$fatt"))
+  [ -n "$extra" ] && rows=$(printf '%s\n%s\n' "$rows" "$extra")
   if [ "$all" = 1 ]; then
     printf '── session time · today since %s ──\n' "$(date -d "@$midnight" '+%H:%M %Z')"
-    printf '  %-9s %6s %8s %8s %8s  %-19s %s\n' SESSION TURNS ACTIVE LONGEST ATTEND 'STATE' LAST
+    printf '  %-9s %6s %8s %8s %8s  %-19s %s\n' SESSION TURNS ACTIVE WATCHED ATTEND 'STATE' LAST
     while IFS=$'\t' read -r tsid tn tact tmx tuncl tpend tlast tnf tnp tna tasum tended; do
       [ -z "$tsid" ] && continue
       if   [ "$tpend" != 0 ];  then st="open $(fmt_d $((now-tpend)))"
@@ -368,12 +416,14 @@ if [ "${submode:-}" = time ]; then
       else st="-"; fi
       [ "$tuncl" != 0 ] && st="$st +$tuncl uncl"
       ta=$(att_of "$tsid"); tad="-"; [ "$ta" != 0 ] && tad=$(fmt_d "$ta")
+      tw=$(wov_of "$tsid"); twd="-"; [ "$tw" != 0 ] && twd=$(fmt_d "$tw")
       printf '  %-9.8s %6s %8s %8s %8s  %-19s %s\n' "$tsid" "$tn" "$(fmt_d "$tact")" \
-        "$(fmt_d "$tmx")" "$tad" "$st" "$(date -d "@$tlast" '+%H:%M')"
+        "$twd" "$tad" "$st" "$(date -d "@$tlast" '+%H:%M')"
     done <<<"$rows"
-    printf '  (active = closed turn spans only; gaps between turns never count and\n'
-    printf '   unclosed starts add no time, so active is a floor. attend = focused-\n'
-    printf '   tab spans on the session'"'"'s pane, from tmux client-focus events)\n'
+    printf '  (active = Claude working (closed turn spans; gaps and unclosed starts\n'
+    printf '   never count, so it is a floor) · attend = your focused-tab time on the\n'
+    printf '   session · watched = their overlap, active ∩ attended: supervised work.\n'
+    printf '   active−watched ran autonomously; attend−watched is reading/typing time)\n'
     exit 0
   fi
   sid=$(resolve_sid) || { echo "session: not inside a session — use \`session time --all\`" >&2; exit 1; }
@@ -395,8 +445,12 @@ if [ "${submode:-}" = time ]; then
     [ "$tna" != 0 ] && { [ "$tnp" != 0 ] && printf ' · '; printf '%d subagent(s), Σ %s' "$tna" "$(fmt_d "$tasum")"; }
     printf '\n'
   fi
-  ta=$(att_of "$sid")
-  [ "$ta" != 0 ] && printf '  attended %s   (focused-tab spans on this session'"'"'s pane)\n' "$(fmt_d "$ta")"
+  ta=$(att_of "$sid"); tw=$(wov_of "$sid")
+  if [ "$ta" != 0 ]; then
+    ridle=$(( ta - tw )); (( ridle < 0 )) && ridle=0
+    printf '  attended %s   (watched %s of the active time · %s reading/idle)\n' \
+      "$(fmt_d "$ta")" "$(fmt_d "$tw")" "$(fmt_d "$ridle")"
+  fi
   LC_ALL=C sort -t$'\t' -k1,1n "$tlog" | awk -F'\t' -v mid="$midnight" -v s="$sid" '
     $1+0>=mid && $2==s {
       if ($3=="s") pend=$1+0
