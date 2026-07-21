@@ -208,7 +208,7 @@ case "${1:-}" in
     exit 0 ;;
 esac
 
-mode=text; waitwin=five; submode=""; target_sid=""; all=0
+mode=text; waitwin=five; submode=""; target_sid=""; all=0; yday=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --compact|--oneline) mode=compact ;;
@@ -221,6 +221,7 @@ while [ $# -gt 0 ]; do
              if [ $# -gt 1 ] && [ "${2#-}" = "${2:-}" ]; then target_sid="$2"; shift; fi ;;
     time)    submode='time' ;;
     --all)   all=1 ;;
+    --yesterday) yday=1 ;;
     --file)  shift; cache="${1:?--file needs a path}" ;;
     -h|--help)
       cat <<'HELP'
@@ -244,9 +245,10 @@ Usage attribution (who is burning the shared 5h/weekly caps):
   session usage [ID|--all] --json  raw fields
 
 Time tracking (hook-fed turn boundaries; gaps between turns never count):
-  session time                     today: closed turns, active time, longest/avg,
-                                   open/unclosed turns, waits (this session)
+  session time                     today: closed turns, active time, watched +
+                                   attended (focus), waits (this session)
   session time --all               the same, one row per session
+  session time ... --yesterday     the same over yesterday's full day
 
 Limits & pacing:
   session --compact                one frugal line: date/time + 5h & wk %s; exit 0
@@ -319,13 +321,20 @@ emit() {  # $1 = the status line
 # "unclosed" (interrupt/crash) and add no time, so active is a floor.
 if [ "${submode:-}" = time ]; then
   [ -s "$tlog" ] || { echo "session: no turn log yet at $tlog (the per-turn hooks append it)" >&2; exit 1; }
-  now=$(date +%s); midnight=$(date -d 00:00 +%s)
+  now=$(date +%s)
+  if [ "$yday" = 1 ]; then  # yesterday's full day; dangling spans clip at day end
+    midnight=$(date -d 'yesterday 00:00' +%s); dayend=$(date -d 00:00 +%s)
+    daylabel="yesterday $(date -d yesterday +%F)"
+  else
+    midnight=$(date -d 00:00 +%s); dayend=$now
+    daylabel="today since $(date -d "@$midnight" '+%H:%M %Z')"
+  fi
   fmt_d() { local s=$1; (( s<0 )) && s=0
             if (( s>=3600 )); then printf '%dh%02dm' $((s/3600)) $(((s%3600)/60))
             elif (( s>=60 )); then printf '%dm%02ds' $((s/60)) $((s%60))
             else printf '%ds' "$s"; fi; }
-  rows=$(LC_ALL=C sort -t$'\t' -k1,1n "$tlog" | awk -F'\t' -v mid="$midnight" '
-    $1+0>=mid && $2!="" {
+  rows=$(LC_ALL=C sort -t$'\t' -k1,1n "$tlog" | awk -F'\t' -v mid="$midnight" -v dend="$dayend" '
+    $1+0>=mid && $1+0<dend && $2!="" {
       ts=$1+0; sid=$2; ev=$3
       if (ev=="s") { if (pend[sid]) uncl[sid]++; pend[sid]=ts }
       else if ((ev=="e" || ev=="f") && pend[sid]) {
@@ -353,8 +362,8 @@ if [ "${submode:-}" = time ]; then
   # (log-time resolution; pane-map fallback for pre-first-render rows). Turn
   # spans use CLOSED turns only, matching ACTIVE's floor semantics. Caveat: two
   # clients focused on the same pane double-count attended (not watched depth).
-  tspans=$(LC_ALL=C sort -t$'\t' -k1,1n "$tlog" | awk -F'\t' -v mid="$midnight" '
-    $1+0>=mid && $2!="" {
+  tspans=$(LC_ALL=C sort -t$'\t' -k1,1n "$tlog" | awk -F'\t' -v mid="$midnight" -v dend="$dayend" '
+    $1+0>=mid && $1+0<dend && $2!="" {
       if ($3=="s") pend[$2]=$1+0
       else if (($3=="e" || $3=="f") && pend[$2]) {
         if ($1+0>=pend[$2]) printf "%s\t%s\t%s\n", $2, pend[$2], $1+0
@@ -367,15 +376,15 @@ if [ "${submode:-}" = time ]; then
     if [ -d "$panedir" ]; then
       pmap=$(for f in "$panedir"/*; do [ -e "$f" ] || continue; printf '%%%s\t%s\n' "${f##*/}" "$(cat "$f")"; done)
     fi
-    fspans=$(LC_ALL=C sort -t$'\t' -k1,1n "$flog" | awk -F'\t' -v mid="$midnight" -v now="$now" -v pm="$pmap" '
+    fspans=$(LC_ALL=C sort -t$'\t' -k1,1n "$flog" | awk -F'\t' -v mid="$midnight" -v dend="$dayend" -v pm="$pmap" '
       BEGIN { n=split(pm, L, "\n"); for (i=1;i<=n;i++) if (split(L[i], kv, "\t")==2) sid[kv[1]]=kv[2] }
-      NF>=6 && $1+0>=mid {
+      NF>=6 && $1+0>=mid && $1+0<dend {
         ts=$1+0; ev=$2; cl=$3; pn=$5; s=$6
         if (s=="" || s=="-") s=sid[pn]
         if (open[cl]) { if (osid[cl]!="") printf "%s\t%s\t%s\n", osid[cl], open[cl], ts; open[cl]=0 }
         if (ev=="in") { open[cl]=ts; osid[cl]=s }
       }
-      END { for (c in open) if (open[c] && osid[c]!="") printf "%s\t%s\t%s\n", osid[c], open[c], now }')
+      END { for (c in open) if (open[c] && osid[c]!="") printf "%s\t%s\t%s\n", osid[c], open[c], dend }')
   fi
   # attended total + last-focus ts per sid (from the focus spans)
   fatt=$(awk -F'\t' 'NF==3 { att[$1]+=$3-$2; if ($3+0>last[$1]) last[$1]=$3+0 }
@@ -407,11 +416,11 @@ if [ "${submode:-}" = time ]; then
     <(printf '%s\n' "$rows") <(printf '%s\n' "$fatt"))
   [ -n "$extra" ] && rows=$(printf '%s\n%s\n' "$rows" "$extra")
   if [ "$all" = 1 ]; then
-    printf '── session time · today since %s ──\n' "$(date -d "@$midnight" '+%H:%M %Z')"
+    printf '── session time · %s ──\n' "$daylabel"
     printf '  %-9s %6s %8s %8s %8s  %-19s %s\n' SESSION TURNS ACTIVE WATCHED ATTEND 'STATE' LAST
     while IFS=$'\t' read -r tsid tn tact tmx tuncl tpend tlast tnf tnp tna tasum tended; do
       [ -z "$tsid" ] && continue
-      if   [ "$tpend" != 0 ];  then st="open $(fmt_d $((now-tpend)))"
+      if   [ "$tpend" != 0 ];  then st="open $(fmt_d $((dayend-tpend)))"
       elif [ "$tended" != 0 ]; then st="ended $(date -d "@$tended" '+%H:%M')"
       else st="-"; fi
       [ "$tuncl" != 0 ] && st="$st +$tuncl uncl"
@@ -428,12 +437,12 @@ if [ "${submode:-}" = time ]; then
   fi
   sid=$(resolve_sid) || { echo "session: not inside a session — use \`session time --all\`" >&2; exit 1; }
   row=$(awk -F'\t' -v s="$sid" '$1==s' <<<"$rows")
-  [ -n "$row" ] || { printf 'session time · %.8s — no turns logged today\n' "$sid"; exit 0; }
+  [ -n "$row" ] || { printf 'session time · %.8s — nothing logged (%s)\n' "$sid" "$daylabel"; exit 0; }
   IFS=$'\t' read -r _ tn tact tmx tuncl tpend tlast tnf tnp tna tasum tended <<<"$row"
-  printf '── session time · %.8s · today ──\n' "$sid"
+  printf '── session time · %.8s · %s ──\n' "$sid" "$daylabel"
   printf '  turns    %d closed' "$tn"
   [ "$tnf" != 0 ] && printf ' (%d failed)' "$tnf"
-  [ "$tpend" != 0 ] && printf ' · 1 open (%s)' "$(fmt_d $((now-tpend)))"
+  [ "$tpend" != 0 ] && printf ' · 1 open (%s)' "$(fmt_d $((dayend-tpend)))"
   [ "$tuncl" != 0 ] && printf ' · %d unclosed' "$tuncl"
   [ "$tended" != 0 ] && printf ' · session ended %s' "$(date -d "@$tended" '+%H:%M')"
   printf '\n  active   %s' "$(fmt_d "$tact")"
@@ -451,8 +460,8 @@ if [ "${submode:-}" = time ]; then
     printf '  attended %s   (watched %s of the active time · %s reading/idle)\n' \
       "$(fmt_d "$ta")" "$(fmt_d "$tw")" "$(fmt_d "$ridle")"
   fi
-  LC_ALL=C sort -t$'\t' -k1,1n "$tlog" | awk -F'\t' -v mid="$midnight" -v s="$sid" '
-    $1+0>=mid && $2==s {
+  LC_ALL=C sort -t$'\t' -k1,1n "$tlog" | awk -F'\t' -v mid="$midnight" -v dend="$dayend" -v s="$sid" '
+    $1+0>=mid && $1+0<dend && $2==s {
       if ($3=="s") pend=$1+0
       else if (($3=="e" || $3=="f") && pend) { printf "%d\t%d\n", pend, $1-pend; pend=0 }
     }' | tail -8 | while IFS=$'\t' read -r t d; do

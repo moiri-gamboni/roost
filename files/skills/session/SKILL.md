@@ -28,7 +28,7 @@ $ session
 | `session whoami [--id\|--name\|--json]` | identity only: id + auto-title (pane-safe: `$CLAUDE_CODE_SESSION_ID` + ancestor walk — reports the session actually invoking it, correct across concurrent tmux panes). Resume pointer: `agent <dir> -r "$(session whoami --id)"` |
 | `session usage [ID] [--json]` | one session's tracked burn + estimated share (default: the invoking session) |
 | `session usage --all [--json]` | breakdown across all tracked sessions, sorted by 5h spend, `←this` marks the caller |
-| `session time [--all]` | per-turn time today: closed turns, active time (Σ start→end spans — idle gaps excluded), longest/avg, open + unclosed turns. `--all` = every session |
+| `session time [--all] [--yesterday]` | per-turn time for today (or yesterday's full day): closed turns, active, WATCHED (active ∩ attended), ATTEND (focused-tab time), open/unclosed. `--all` = every session, attended-only ones included |
 | `session --compact` | one frugal line: date/time + 5h & weekly %s; always exits 0 |
 | `session --hook` | the same line as UserPromptSubmit hook JSON (the per-turn hook; adds `· this session ≈X%/5h ≈Y%/wk`) |
 | `session --guard` | pacing gate: exit 0 = OK, 3 = PAUSE (prints which window tripped) |

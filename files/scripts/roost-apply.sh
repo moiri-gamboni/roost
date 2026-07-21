@@ -113,6 +113,7 @@ files/scheduled/ram-monitor.sh|$ROOST_DIR/claude/scheduled/ram-monitor.sh|plain+
 files/scheduled/agents-cleanup.sh|$ROOST_DIR/claude/scheduled/agents-cleanup.sh|plain+x|
 files/scheduled/track-ssh-activity.sh|$ROOST_DIR/claude/scheduled/track-ssh-activity.sh|plain+x|
 files/scheduled/vision-abuse-watch.sh|$ROOST_DIR/claude/scheduled/vision-abuse-watch.sh|plain+x|
+files/scheduled/session-daily-brief.sh|$ROOST_DIR/claude/scheduled/session-daily-brief.sh|plain+x|
 files/scripts/roost-apply.sh|$ROOST_DIR/claude/scripts/roost-apply.sh|plain+x|
 files/scripts/roost-net.sh|$ROOST_DIR/claude/scripts/roost-net.sh|plain+x|
 files/scripts/session.sh|$ROOST_DIR/claude/scripts/session.sh|plain+x|
