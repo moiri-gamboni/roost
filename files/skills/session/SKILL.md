@@ -28,6 +28,7 @@ $ session
 | `session whoami [--id\|--name\|--json]` | identity only: id + auto-title (pane-safe: `$CLAUDE_CODE_SESSION_ID` + ancestor walk — reports the session actually invoking it, correct across concurrent tmux panes). Resume pointer: `agent <dir> -r "$(session whoami --id)"` |
 | `session usage [ID] [--json]` | one session's tracked burn + estimated share (default: the invoking session) |
 | `session usage --all [--json]` | breakdown across all tracked sessions, sorted by 5h spend, `←this` marks the caller |
+| `session time [--all]` | per-turn time today: closed turns, active time (Σ start→end spans — idle gaps excluded), longest/avg, open + unclosed turns. `--all` = every session |
 | `session --compact` | one frugal line: date/time + 5h & weekly %s; always exits 0 |
 | `session --hook` | the same line as UserPromptSubmit hook JSON (the per-turn hook; adds `· this session ≈X%/5h ≈Y%/wk`) |
 | `session --guard` | pacing gate: exit 0 = OK, 3 = PAUSE (prints which window tripped) |
@@ -40,6 +41,9 @@ Counted where possible, estimated only at the last step:
 2. The **est %** splits the global %-movement observed **while sampling was live** ("covered", shown as *X% while tracked*) by tracked-$ share. Pre-coverage burn stays unattributed.
 
 Caveats (est %s are upper bounds when these apply; $ columns stay exact): headless `claude -p` runs render no statusline and **off-box usage** (claude.ai, other devices) is invisible — both inflate tracked shares. Cross-model splits assume limit weights ≈ API prices. Right after a reset or fresh deploy expect `≈0.0%` until the global % moves; `n/a` = no coverage basis yet. Subagent burn lands in the parent session (correct); tmux teammates are tracked individually.
+
+## Per-turn time — `session time`
+Turn boundaries come from hooks, not clocks-in-payloads: the per-turn UserPromptSubmit hook logs each turn's **start** and a Stop hook (`session --turn-end`) logs its **end** to `~/roost/claude/usage/turn-log.tsv`. Turn wall time (end − start) includes tool execution; idle gaps between turns are excluded by construction. (`cost.total_duration_ms` can't do this — it is session wall clock and ticks through idle; `total_api_duration_ms` excludes tool time.) Hook-fed means headless `claude -p` runs are covered too. Caveats: an interrupted turn may never get its end event — it shows as *unclosed* and adds no time (active is a floor); a trailing *open* turn shows its age (a running turn, or a dead one if the age is implausible).
 
 ## Pacing a fan-out — `session --guard`
 Run before each wave (and inside each agent). Configure each window independently via `FIVE_GUARD` / `WEEK_GUARD`: `linear` (default; pause if used% > 100·x, x = elapsed fraction), `sqrt` (permissive early, tightens late), `pow:P`, a flat `<int>` %, or `off`. Invalid specs error (exit 2). Window sizes: `FIVE_WINDOW`, `WEEK_WINDOW` (seconds).
