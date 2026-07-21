@@ -173,16 +173,19 @@ if [ "${1:-}" = --focus-mark ]; then
       fts="${3:--}"
       fcl=$(tmux list-clients -t "$fts" -F '#{?client_focused,#{client_name},}' 2>/dev/null | awk 'NF {print; exit}')
       [ -n "$fcl" ] && flog_row in "$fcl" "$fts" ;;
-    # "tick" (cron, 1/min): an "act" row for each focused client that had
-    # input within the last ~90s. Keystrokes update tmux's client_activity,
-    # and so does scrolling (mouse mode makes wheel events input). The reader
-    # caps attended spans at last-activity + grace, so a tab left focused on
-    # an abandoned PC stops accruing.
+    # "tick" (cron, 1/min): an "act" row for each client that had input within
+    # the last ~90s — focused or not. Keystrokes update tmux's client_activity,
+    # and so does scrolling (mouse mode makes wheel events input). Desktop
+    # terminals can only receive input while focused, so this is equivalent to
+    # focused-only there; Termux flaps 1004 focus around the soft keyboard and
+    # keeps typing while "blurred" (verified: input 21s after a focus-out), so
+    # activity is the truer attention signal on the phone. The reader caps
+    # attended spans at last-activity + grace and turns standalone acts into
+    # attended windows, so an abandoned focused tab still stops accruing.
     tick)
       nowi=$(date +%s)
       fmt=$'#{client_name}\t#{client_session}\t#{?client_focused,1,0}\t#{client_activity}'
       tmux list-clients -F "$fmt" 2>/dev/null | while IFS=$'\t' read -r c s f a; do
-        [ "$f" = 1 ] || continue
         [ -n "$a" ] && [ $(( nowi - a )) -lt 90 ] && flog_row act "$c" "$s"
       done ;;
   esac
@@ -403,19 +406,32 @@ if [ "${submode:-}" = time ]; then
         if (ev=="in") { open[cl]=ts; osid[cl]=s }
       }
       END { for (c in open) if (open[c] && osid[c]!="") printf "%s\t%s\t%.3f\t%.3f\n", c, osid[c], open[c], dend }' <<<"$sorted_flog")
-    facts=$(awk -F'\t' -v mid="$midnight" -v dend="$dayend" '
-      NF>=6 && $1+0>=mid && $1+0<dend && $2=="act" { printf "%s\t%.3f\n", $3, $1+0 }' <<<"$sorted_flog")
-    # Idle-cap each span: attention accrues in merged [p, p+GRACE] windows,
-    # where p = span start (switching in is itself an interaction) plus each
-    # act inside the span. A focused-but-abandoned tab (left the PC, no input,
-    # no scroll) stops accruing GRACE after the last interaction and resumes
-    # at the next one. Output: sid \t start \t end capped subintervals.
-    fspans=$(printf '%s\n' "${facts:-}" "@@SPANS@@" "${rspans:-}" | awk -F'\t' -v G="$ATTEND_GRACE" '
+    # tagged act/flank events: K = focus flank (client, ts) for clipping;
+    # A = activity mark (client, ts, sid — the act row's own log-time sid)
+    fevents=$(awk -F'\t' -v mid="$midnight" -v dend="$dayend" -v pm="$pmap" '
+      BEGIN { n=split(pm, L, "\n"); for (i=1;i<=n;i++) if (split(L[i], kv, "\t")==2) sid[kv[1]]=kv[2] }
+      NF>=6 && $1+0>=mid && $1+0<dend {
+        if ($2=="in" || $2=="out") printf "K\t%s\t%.3f\n", $3, $1+0
+        else if ($2=="act") { s=$6; if (s=="" || s=="-") s=sid[$5]; printf "A\t%s\t%.3f\t%s\n", $3, $1+0, s }
+      }' <<<"$sorted_flog")
+    # Idle-cap + standalone-act attention. In-span: attention accrues in merged
+    # [interaction, +GRACE] windows inside each focus span (span start counts as
+    # an interaction; acts extend), clipped to the span — a focused-but-
+    # abandoned tab stops accruing. Standalone: an act OUTSIDE any span of its
+    # client (input while 1004-blurred — Termux flaps focus around the soft
+    # keyboard and keeps typing) opens an attended window
+    # [act, min(act+GRACE, client's next flank, day end)] for the act's own
+    # sid; overlapping same-sid windows merge, and clipping at the next flank
+    # makes double-counting against spans impossible.
+    # Output: sid \t start \t end capped subintervals.
+    fspans=$(printf '%s\n' "${fevents:-}" "@@SPANS@@" "${rspans:-}" | awk -F'\t' -v G="$ATTEND_GRACE" -v dend="$dayend" '
       $0=="@@SPANS@@" { inspans=1; next }
-      !inspans && NF==2 { na[$1]++; at[$1, na[$1]]=$2+0; next }
+      !inspans && $1=="K" && NF==3 { nk[$2]++; kt[$2, nk[$2]]=$3+0; next }
+      !inspans && $1=="A" && NF==4 { na[$2]++; at[$2, na[$2]]=$3+0; asid[$2, na[$2]]=$4; next }
       inspans && NF==4 {
         cl=$1; s=$2; st=$3+0; en=$4+0
         if (s=="") next
+        ns[cl]++; ss[cl, ns[cl]]=st; se[cl, ns[cl]]=en
         cs=st; ce=st+G; if (ce>en) ce=en
         for (i=1; i<=na[cl]; i++) {
           p=at[cl, i]; if (p<st || p>en) continue
@@ -423,6 +439,28 @@ if [ "${submode:-}" = time ]; then
           else { printf "%s\t%.3f\t%.3f\n", s, cs, ce; cs=p; ce=p+G; if (ce>en) ce=en }
         }
         printf "%s\t%.3f\t%.3f\n", s, cs, ce
+        next
+      }
+      END {
+        for (cl in na) {
+          started=0
+          for (i=1; i<=na[cl]; i++) {
+            p=at[cl, i]; s2=asid[cl, i]
+            if (s2=="" || s2=="-") continue
+            inside=0
+            for (j=1; j<=ns[cl]; j++) if (p>=ss[cl, j] && p<se[cl, j]) { inside=1; break }
+            if (inside) continue
+            end=p+G; if (end>dend) end=dend
+            for (j=1; j<=nk[cl]; j++) if (kt[cl, j]>p) { if (kt[cl, j]<end) end=kt[cl, j]; break }
+            if (end<=p) continue
+            if (started && p<=ce2 && s2==csid) { if (end>ce2) ce2=end }
+            else {
+              if (started) printf "%s\t%.3f\t%.3f\n", csid, cs2, ce2
+              cs2=p; ce2=end; csid=s2; started=1
+            }
+          }
+          if (started) printf "%s\t%.3f\t%.3f\n", csid, cs2, ce2
+        }
       }')
   fi
   # attended total + last-focus ts per sid (from the focus spans)
