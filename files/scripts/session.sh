@@ -179,32 +179,68 @@ while [ $# -gt 0 ]; do
     --hook)  mode=hook ;;
     --json)  mode=json ;;
     --guard) mode=guard ;;
-    --wait)  mode=wait
+    --wait)  mode='wait'
              case "${2:-}" in 5h|five) waitwin=five; shift ;; week|weekly|7d) waitwin=week; shift ;; esac ;;
     usage)   submode=usage
              if [ $# -gt 1 ] && [ "${2#-}" = "${2:-}" ]; then target_sid="$2"; shift; fi ;;
-    time)    submode=time ;;
+    time)    submode='time' ;;
     --all)   all=1 ;;
     --file)  shift; cache="${1:?--file needs a path}" ;;
     -h|--help)
-      printf 'session [--compact|--hook|--json|--guard|--wait [5h|week]] [--file PATH]\n'
-      printf 'session whoami [--id|--name|--json] | session usage [ID|--all] [--json]\n'
-      printf '  default: session id · name, 5-hour + weekly rate-limit %%s, reset\n'
-      printf '          times, context %%, this session'"'"'s share.\n'
-      printf '  whoami: identity only — the invoking session'"'"'s id + auto-title.\n'
-      printf '  usage [ID]: one session'"'"'s tracked burn + estimated share of each\n'
-      printf '          window (ID defaults to the invoking session).\n'
-      printf '  usage --all: per-session breakdown of tracked burn, with totals.\n'
-      printf '  time [--all]: per-turn time today — turns, active (gap-free) time,\n'
-      printf '          open/unclosed turns (this session, or every session with --all).\n'
-      printf '  --compact: one line (date/time + 5h & weekly %%s); always exits 0.\n'
-      printf '  --hook: --compact wrapped as UserPromptSubmit JSON (context-injected,\n'
-      printf '          suppressed from transcript); the per-turn hook runs this.\n'
-      printf '  --guard: exit 0 (OK) / 3 (PAUSE).\n'
-      printf '  --wait [5h|week]: block until that window resets, print one line, exit 0\n'
-      printf '          (default 5h). Run in the background so the exit notifies you.\n'
-      printf '  Per-window guard, set independently (FIVE_GUARD / WEEK_GUARD):\n'
-      printf '    linear (default) | sqrt | pow:P | <int %%> | off\n'
+      cat <<'HELP'
+session - identity, plan-limit usage, and per-turn time for Claude Code sessions
+
+Overview:
+  session                          id · name, 5h/weekly limit bars + reset
+                                   countdowns, context fill, this session's share
+
+Identity (pane-safe: reports the session actually invoking it):
+  session whoami                   two lines: id + auto-title
+  session whoami --id              just the UUID
+                                   (resume: agent <dir> -r "$(session whoami --id)")
+  session whoami --name            just the auto-title
+  session whoami --json            {"id": "...", "name": "..."}
+
+Usage attribution (who is burning the shared 5h/weekly caps):
+  session usage [ID]               one session's counted $ burn + estimated share
+                                   of each window (default: the invoking session)
+  session usage --all              every tracked session, sorted by 5h spend
+  session usage [ID|--all] --json  raw fields
+
+Time tracking (hook-fed turn boundaries; gaps between turns never count):
+  session time                     today: closed turns, active time, longest/avg,
+                                   open/unclosed turns, waits (this session)
+  session time --all               the same, one row per session
+
+Limits & pacing:
+  session --compact                one frugal line: date/time + 5h & wk %s; exit 0
+  session --guard                  pacing gate for fan-outs: OK=exit 0, PAUSE=exit 3
+  session --wait [5h|week]         block until that window resets, then exit 0
+                                   (run in the background; the exit is the wake-up)
+  session --json                   raw overview fields
+  session --file PATH              read a specific status-cache file
+
+Guard config (environment, per window):
+  FIVE_GUARD / WEEK_GUARD          linear (default) | sqrt | pow:P | <int %> | off
+  FIVE_WINDOW / WEEK_WINDOW        window sizes in seconds (18000 / 604800)
+
+Plumbing (wired via settings.json hooks + tmux hooks; not for interactive use):
+  session --hook                   UserPromptSubmit: inject usage line + log turn start
+  session --turn-end|--turn-fail|--session-end|--subagent-start|--subagent-end|
+          --compact-mark|--perm-mark   append one lifecycle event row; always exit 0
+
+Data (under ~/roost/claude/usage/):
+  last-status.json  global limits cache (statusline-written, ~10s fresh)
+  session-log.tsv   per-session cost/token samples    turn-log.tsv  turn events
+  Estimated %s are tracked-share upper bounds — headless `claude -p` and off-box
+  usage are invisible to sampling; $ figures and turn times are exact counts.
+
+Exit codes:
+  0  success (plumbing modes: unconditionally)
+  1  no data yet, or not inside a Claude Code session
+  2  bad arguments / invalid guard spec
+  3  PAUSE (from --guard)
+HELP
       exit 0 ;;
     *) echo "session: unknown arg '$1'" >&2; exit 2 ;;
   esac
