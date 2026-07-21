@@ -141,14 +141,26 @@ whoami_main() {
 }
 [ "${1:-}" = whoami ] && { shift; whoami_main "$@"; }
 
-# tmux client-focus plumbing ("--focus-mark in|out CLIENT PANE" — tmux hook
-# args, not stdin JSON): one row per focus flank into the focus log, for
-# `session time` attended-time. The pane id joins to a session via the
-# statusline-maintained pane map (usage/panes/). Always exits 0.
+# tmux client-focus plumbing ("--focus-mark in|out CLIENT TMUX_SESSION" — tmux
+# hook args, not stdin JSON): one self-contained row per focus flank, for
+# `session time` attended-time. Row: ms-timestamp, in|out, client, tmux session
+# (the stable vsc-<window> tab identity), pane, Claude session id — pane is
+# resolved CLIENT-SCOPED here (tmux display -t <session>) because #{pane_id}
+# inside a client hook resolves globally and bleeds across clients on fast tab
+# switches; sid comes from the statusline's pane map at log time, so later pane
+# id recycling can't rewrite history. ms precision keeps rapid switches ordered
+# (the hooks run async via run-shell -b). Always exits 0.
 if [ "${1:-}" = --focus-mark ]; then
-  case "${2:-}" in
-    in|out) printf '%s\t%s\t%s\t%s\n' "$(date +%s)" "$2" "${3:--}" "${4:--}" >> "$flog" ;;
-  esac
+  ev="${2:-}"; fcl="${3:--}"; fts="${4:--}"
+  if [ "$ev" = in ] || [ "$ev" = out ]; then
+    fpn="-"; fsid="-"
+    if [ "$fts" != "-" ]; then
+      fpn=$(tmux display-message -p -t "$fts" '#{pane_id}' 2>/dev/null || printf '-')  # quiet: session may be gone (detach)
+      [ -n "$fpn" ] || fpn="-"
+    fi
+    [ "$fpn" != "-" ] && [ -s "$panedir/${fpn#%}" ] && fsid=$(cat "$panedir/${fpn#%}")
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(date +%s.%3N)" "$ev" "$fcl" "$fts" "$fpn" "${fsid:--}" >> "$flog"
+  fi
   exit 0
 fi
 
@@ -319,23 +331,27 @@ if [ "${submode:-}" = time ]; then
     END { for (s in seen) printf "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
             s, n[s], act[s], mx[s], uncl[s], pend[s], lastev[s], nf[s], np[s], na[s], asum[s], ended[s] }' \
     | LC_ALL=C sort -t$'\t' -k3,3nr)
-  # Attended time: tmux client-focus spans, attributed to the session whose pane
-  # was focused (pane→sid map maintained by the statusline). Per client: an "in"
-  # opens a span (a new "in" first closes any open one), "out"/detach closes it,
-  # and a still-open span closes at now. Caveats: two clients focused on the
-  # same pane double-count, and a recycled pane id can misattribute spans from
-  # before the reuse — both small in practice, noted here for honesty.
+  # Attended time: tmux client-focus spans, attributed to the Claude session id
+  # resolved at log time (row col 6; pane-map fallback for rows logged before
+  # the session's first statusline render). Per client: an "in" opens a span (a
+  # new "in" first closes any open one), "out"/detach closes it, and a still-
+  # open span closes at now. Caveat: two clients focused on the same pane
+  # double-count — small in practice, noted for honesty.
   fatt=""
-  if [ -s "$flog" ] && [ -d "$panedir" ]; then
-    pmap=$(for f in "$panedir"/*; do [ -e "$f" ] || continue; printf '%%%s\t%s\n' "${f##*/}" "$(cat "$f")"; done)
+  if [ -s "$flog" ]; then
+    pmap=""
+    if [ -d "$panedir" ]; then
+      pmap=$(for f in "$panedir"/*; do [ -e "$f" ] || continue; printf '%%%s\t%s\n' "${f##*/}" "$(cat "$f")"; done)
+    fi
     fatt=$(LC_ALL=C sort -t$'\t' -k1,1n "$flog" | awk -F'\t' -v mid="$midnight" -v now="$now" -v pm="$pmap" '
       BEGIN { n=split(pm, L, "\n"); for (i=1;i<=n;i++) if (split(L[i], kv, "\t")==2) sid[kv[1]]=kv[2] }
-      $1+0>=mid {
-        ts=$1+0; ev=$2; cl=$3; pn=$4
-        if (open[cl]) { s=sid[opane[cl]]; if (s!="") att[s]+=ts-open[cl]; open[cl]=0 }
-        if (ev=="in") { open[cl]=ts; opane[cl]=pn }
+      NF>=6 && $1+0>=mid {
+        ts=$1+0; ev=$2; cl=$3; pn=$5; s=$6
+        if (s=="" || s=="-") s=sid[pn]
+        if (open[cl]) { if (osid[cl]!="") att[osid[cl]]+=ts-open[cl]; open[cl]=0 }
+        if (ev=="in") { open[cl]=ts; osid[cl]=s }
       }
-      END { for (c in open) if (open[c]) { s=sid[opane[c]]; if (s!="") att[s]+=now-open[c] }
+      END { for (c in open) if (open[c]) { if (osid[c]!="") att[osid[c]]+=now-open[c] }
             for (s2 in att) printf "%s\t%d\n", s2, att[s2] }')
   fi
   att_of() {  # $1=sid -> attended seconds today (0 if none)
