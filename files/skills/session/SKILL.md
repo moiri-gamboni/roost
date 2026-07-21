@@ -37,7 +37,7 @@ $ session
 
 ## Per-session attribution — how the numbers are made
 Counted where possible, estimated only at the last step:
-1. The statusline logs each session's cumulative API-equivalent cost to `~/roost/claude/usage/session-log.tsv` whenever it moves (~10s while generating; 10-min idle heartbeat; 8-day retention). Per-session **$ figures are counted** from these in-window deltas (a `--resume` restarts the counter; the clamp absorbs it).
+1. The statusline logs each session's cumulative API-equivalent cost to `~/roost/claude/usage/session-log.tsv` whenever it moves (~10s while generating; 10-min idle heartbeat; 8-day retention). Each sample also records every dynamic payload field — cumulative in/out tokens, context %, cache read/creation composition, lines added/removed, wall + API durations, model id, prompt_id — so future views (per-turn cost, cache efficiency, context growth) have history; static fields live in the per-session snapshot (`usage/sessions/<sid>.json`). Per-session **$ figures are counted** from these in-window deltas (a `--resume` restarts the counter; the clamp absorbs it).
 2. The **est %** splits the global %-movement observed **while sampling was live** ("covered", shown as *X% while tracked*) by tracked-$ share. Pre-coverage burn stays unattributed.
 
 Caveats (est %s are upper bounds when these apply; $ columns stay exact): headless `claude -p` runs render no statusline and **off-box usage** (claude.ai, other devices) is invisible — both inflate tracked shares. Cross-model splits assume limit weights ≈ API prices. Right after a reset or fresh deploy expect `≈0.0%` until the global % moves; `n/a` = no coverage basis yet. Subagent burn lands in the parent session (correct); tmux teammates are tracked individually.

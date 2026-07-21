@@ -16,16 +16,29 @@ _u="$HOME/roost/claude/usage"
 [ -d "$_u" ] || mkdir -p "$_u"
 _cache="$_u/last-status.json"
 _intonly() { local v="${1%%.*}"; case "$v" in ''|*[!0-9]*) printf 0 ;; *) printf '%s' "$v" ;; esac; }
-# "-" sentinel for a missing session_id: an empty leading field would be eaten
-# by `read` under IFS=tab (leading IFS whitespace), shifting every field left
-IFS=$'\t' read -r _sid _cost _f5 _w7 _new_fr _new_wr _dur _apidur < <(
+# "-" sentinel for missing string fields (session_id, model, prompt_id): an
+# empty field would be eaten by `read` under IFS=tab (tab is IFS whitespace,
+# and consecutive tabs merge), shifting fields; numerics all have // defaults
+IFS=$'\t' read -r _sid _cost _f5 _w7 _new_fr _new_wr _dur _apidur \
+                 _otok _itok _ctx _crd _ccr _cin _cout _ladd _lrm _model _pid < <(
   jq -r '[(.session_id//"-"),(.cost.total_cost_usd//0),
           (.rate_limits.five_hour.used_percentage//-1),
           (.rate_limits.seven_day.used_percentage//-1),
           ((.rate_limits.five_hour.resets_at//0)|floor),
           ((.rate_limits.seven_day.resets_at//0)|floor),
           ((.cost.total_duration_ms//0)|floor),
-          ((.cost.total_api_duration_ms//0)|floor)]|@tsv' <<<"$input")
+          ((.cost.total_api_duration_ms//0)|floor),
+          (.context_window.total_output_tokens//0),
+          (.context_window.total_input_tokens//0),
+          (.context_window.used_percentage//-1),
+          (.context_window.current_usage.cache_read_input_tokens//0),
+          (.context_window.current_usage.cache_creation_input_tokens//0),
+          (.context_window.current_usage.input_tokens//0),
+          (.context_window.current_usage.output_tokens//0),
+          (.cost.total_lines_added//0),
+          (.cost.total_lines_removed//0),
+          (.model.id//"-"),
+          (.prompt_id//"-")]|@tsv' <<<"$input")
 _new_fr=$(_intonly "$_new_fr"); _new_wr=$(_intonly "$_new_wr")
 _write=1
 if [ -s "$_cache" ]; then
@@ -47,10 +60,22 @@ fi
 # counted from deltas. A per-session snapshot keeps name/model readable without
 # scanning transcripts; the .cost sidecar is the dedup state (content = last
 # logged cost, mtime = last sample time).
-# TSV columns: ts sid cost_usd five% week% five_reset week_reset duration_ms
-# api_duration_ms — the two cumulative duration columns are logged for a future
-# `session time` view; nothing reads them yet (readers must tolerate old 7-column
-# lines).
+# TSV columns (readers must tolerate shorter lines from older schema versions):
+#   1 ts  2 sid  3 cost_usd  4 five%  5 week%  6 five_reset  7 week_reset
+#   8 duration_ms  9 api_duration_ms          (cumulative; 8 is WALL clock —
+#     it ticks through idle, so deltas include gaps; turn time comes from the
+#     hook-fed turn-log instead)
+#   10 total_output_tokens  11 total_input_tokens        (cumulative)
+#   12 context%  13 cache_read  14 cache_creation  15 cur_input  16 cur_output
+#     (current-request context composition — gauges, not counters)
+#   17 lines_added  18 lines_removed             (cumulative)
+#   19 model_id  20 prompt_id                    (strings, "-" if absent;
+#     prompt_id joins samples to turn-log turns by time-bracket or id)
+# Only columns 1-7 are read by the attribution estimator; the rest are logged
+# so the history exists when a view wants them (`session time` v1, cache-
+# efficiency, context-growth, per-turn cost). Static payload fields (version,
+# cwd, workspace, effort, …) are NOT time-series'd — the per-session snapshot
+# below keeps the full latest payload.
 _slog="$_u/session-log.tsv"
 _snapdir="$_u/sessions"
 _now=$(date +%s)
@@ -63,8 +88,9 @@ if [ -n "$_sid" ] && [ "$_sid" != "-" ] && _costf=$(LC_ALL=C printf '%.4f' "$_co
     _side_age=$(( _now - $(stat -c %Y "$_side") ))
   fi
   if [ "$_costf" != "$_prevf" ] || [ "$_side_age" -ge 600 ]; then
-    LC_ALL=C printf '%s\t%s\t%s\t%.3f\t%.3f\t%s\t%s\t%s\t%s\n' \
-      "$_now" "$_sid" "$_costf" "$_f5" "$_w7" "$_new_fr" "$_new_wr" "$_dur" "$_apidur" >> "$_slog"
+    LC_ALL=C printf '%s\t%s\t%s\t%.3f\t%.3f\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$_now" "$_sid" "$_costf" "$_f5" "$_w7" "$_new_fr" "$_new_wr" "$_dur" "$_apidur" \
+      "$_otok" "$_itok" "$_ctx" "$_crd" "$_ccr" "$_cin" "$_cout" "$_ladd" "$_lrm" "$_model" "$_pid" >> "$_slog"
     printf '%s' "$_costf" > "$_side"
     printf '%s' "$input" > "$_snapdir/.$_sid.tmp" && mv -f "$_snapdir/.$_sid.tmp" "$_snapdir/$_sid.json"
   fi
