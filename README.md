@@ -18,7 +18,7 @@ After running the deploy script you will have:
 - Off-site btrfs backups to laptop (daily incremental snapshots)
 - Drop folder for quick laptop-to-server file transfer
 - PrivateBin: end-to-end encrypted pastebin; links are publicly readable via the tunnel (`paste.<domain>`), creation is server-side only (publish via the `pastebin` skill)
-- Scheduled Claude Code tasks via cron (morning summary)
+- Scheduled Claude Code tasks via cron
 - Shell helpers for managing Claude Code agents (`agent`, `agents`, `agent_stop`, `agent_kill`)
 
 ## Prerequisites
@@ -222,14 +222,10 @@ Sessions that aren't manually renamed get an auto-generated name on exit.
 
 #### Scheduled tasks
 
-One Claude Code task runs automatically via cron:
-
-| Schedule | Task |
-|---|---|
-| Daily 8:00 | **Morning summary**: checks ntfy history and summarizes overnight events |
-
-It runs as a headless `claude -p` session in a `cron` tmux session. If Claude
-Code OAuth has expired, scheduled task failures will alert via ntfy.
+`scheduled-task.sh` runs one-off Claude Code tasks as headless `claude -p`
+sessions in a `cron` tmux session; add entries to `files/cron-roost` to
+schedule one (none are currently active). If Claude Code OAuth has expired,
+scheduled task failures will alert via ntfy.
 
 #### Laptop setup:
 
