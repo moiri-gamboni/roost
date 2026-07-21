@@ -397,12 +397,14 @@ if [ "${submode:-}" = time ]; then
       NF>=6 && $1+0>=mid && $1+0<dend && ($2=="in" || $2=="out") {
         ts=$1+0; ev=$2; cl=$3; pn=$5; s=$6
         if (s=="" || s=="-") s=sid[pn]
-        if (open[cl]) { if (osid[cl]!="") printf "%s\t%s\t%s\t%s\n", cl, osid[cl], open[cl], ts; open[cl]=0 }
+        # explicit %.3f: printf %s of a non-integral number goes through
+        # CONVFMT (%.6g) — scientific notation, i.e. ±1000s of precision loss
+        if (open[cl]) { if (osid[cl]!="") printf "%s\t%s\t%.3f\t%.3f\n", cl, osid[cl], open[cl], ts; open[cl]=0 }
         if (ev=="in") { open[cl]=ts; osid[cl]=s }
       }
-      END { for (c in open) if (open[c] && osid[c]!="") printf "%s\t%s\t%s\t%s\n", c, osid[c], open[c], dend }' <<<"$sorted_flog")
+      END { for (c in open) if (open[c] && osid[c]!="") printf "%s\t%s\t%.3f\t%.3f\n", c, osid[c], open[c], dend }' <<<"$sorted_flog")
     facts=$(awk -F'\t' -v mid="$midnight" -v dend="$dayend" '
-      NF>=6 && $1+0>=mid && $1+0<dend && $2=="act" { printf "%s\t%s\n", $3, $1+0 }' <<<"$sorted_flog")
+      NF>=6 && $1+0>=mid && $1+0<dend && $2=="act" { printf "%s\t%.3f\n", $3, $1+0 }' <<<"$sorted_flog")
     # Idle-cap each span: attention accrues in merged [p, p+GRACE] windows,
     # where p = span start (switching in is itself an interaction) plus each
     # act inside the span. A focused-but-abandoned tab (left the PC, no input,
@@ -418,9 +420,9 @@ if [ "${submode:-}" = time ]; then
         for (i=1; i<=na[cl]; i++) {
           p=at[cl, i]; if (p<st || p>en) continue
           if (p<=ce) { q=p+G; if (q>ce) ce=q; if (ce>en) ce=en }
-          else { printf "%s\t%s\t%s\n", s, cs, ce; cs=p; ce=p+G; if (ce>en) ce=en }
+          else { printf "%s\t%.3f\t%.3f\n", s, cs, ce; cs=p; ce=p+G; if (ce>en) ce=en }
         }
-        printf "%s\t%s\t%s\n", s, cs, ce
+        printf "%s\t%.3f\t%.3f\n", s, cs, ce
       }')
   fi
   # attended total + last-focus ts per sid (from the focus spans)
