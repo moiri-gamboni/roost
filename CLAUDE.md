@@ -94,7 +94,7 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
   - `cloudflare-config.yml` -- Cloudflare Tunnel base template (envsubst-expanded). Deployed to `/etc/cloudflared/config.yml.base`; `cloudflare-assemble.sh` reads its tunnel header and merges per-app fragments into the live `/etc/cloudflared/config.yml`. Never write the repo template directly to the live path — you'd clobber the assembled ingress.
   - `ntfy-server.yml` -- ntfy server configuration
   - `tailscaled-iptables.conf` -- Systemd drop-in pinning `tailscaled` to the iptables firewall backend (so travel-vpn's masked fwmark has predictable Tailscale mark bits to work around)
-  - `tmux.conf` -- Tmux configuration deployed to server
+  - `tmux.conf` -- Tmux configuration deployed to server (incl. client-focus-in/out/detached hooks → `session --focus-mark`, feeding `session time` attended-time)
   - `btrfs-convert.sh` -- Rescue-mode script to convert ext4 to btrfs with @rootfs subvolume
   - `glances.service` -- Systemd unit for Glances monitoring
   - `ram-monitor.service` / `ram-monitor.timer` -- Systemd units for per-process RAM alerting (30s interval)
@@ -104,7 +104,7 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
   - `bashrc-append.sh` -- Stub appended to `~/.bashrc`; sources `~/.bashrc.d/$ROOST_DIR_NAME.sh`
   - `profile-append.sh` -- Stub appended to `~/.profile`; sources the same file for non-interactive shells
   - `shell/bashrc.sh` -- Shell configuration (PATH, tmux, agent helpers); deployed to `~/.bashrc.d/roost.sh`
-  - `hooks/` -- Claude Code **event hooks** (deployed to `$CLAUDE_CONFIG_DIR/hooks/`, wired in `settings.json`): `notify.sh` (Notification), `statusline.sh` (TUI status line; also persists the shared usage cache + a per-session 20-column sample log (cost, rate-limit %s, durations, cumulative tokens, context composition, lines added/removed, model, prompt_id) under `~/roost/claude/usage/` for the `session` CLI), `reflect.sh` + `reflect.md` (PreCompact, disabled)
+  - `hooks/` -- Claude Code **event hooks** (deployed to `$CLAUDE_CONFIG_DIR/hooks/`, wired in `settings.json`): `notify.sh` (Notification), `statusline.sh` (TUI status line; also persists the shared usage cache + a per-session 20-column sample log (cost, rate-limit %s, durations, cumulative tokens, context composition, lines added/removed, model, prompt_id) + the pane→session map for focus tracking under `~/roost/claude/usage/` for the `session` CLI), `reflect.sh` + `reflect.md` (PreCompact, disabled)
   - `scripts/` -- User **CLIs**, symlinked into `~/bin` (deployed to `claude/scripts/`)
     - `roost-apply.sh` -- Config deployment and service reload (manifest-based + flag mode)
     - `roost-net.sh` -- Travel VPN control CLI: `status`, `travel on/off`, `vpn on/off`, `test`, `client {android|laptop|ssh}`, `rotate-keys`; symlinked as `~/bin/roost-net`

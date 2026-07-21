@@ -87,6 +87,15 @@ if [ -n "$_sid" ] && [ "$_sid" != "-" ] && _costf=$(LC_ALL=C printf '%.4f' "$_co
     _prevf=$(cat "$_side")
     _side_age=$(( _now - $(stat -c %Y "$_side") ))
   fi
+  # pane → session map for attended-time (focus) tracking: TMUX_PANE is
+  # inherited from the pane shell through claude into this hook. touch keeps a
+  # live pane's mtime fresh so the daily prune only sweeps dead panes.
+  if [ -n "${TMUX_PANE:-}" ]; then
+    _pdir="$_u/panes"; [ -d "$_pdir" ] || mkdir -p "$_pdir"
+    _pf="$_pdir/${TMUX_PANE#%}"
+    if [ -e "$_pf" ] && [ "$(cat "$_pf")" = "$_sid" ]; then touch "$_pf"
+    else printf '%s' "$_sid" > "$_pf"; fi
+  fi
   if [ "$_costf" != "$_prevf" ] || [ "$_side_age" -ge 600 ]; then
     LC_ALL=C printf '%s\t%s\t%s\t%.3f\t%.3f\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
       "$_now" "$_sid" "$_costf" "$_f5" "$_w7" "$_new_fr" "$_new_wr" "$_dur" "$_apidur" \
@@ -110,7 +119,13 @@ if [ ! -e "$_pm" ] || [ $(( _now - $(stat -c %Y "$_pm") )) -ge 86400 ]; then
     { flock -n 9 && awk -F'\t' -v cut=$(( _now - 8*86400 )) '$1+0 >= cut' "$_tlog" > "$_tlog.tmp" \
         && mv -f "$_tlog.tmp" "$_tlog"; } 9>>"$_tlog.lock"
   fi
+  _flog="$_u/focus-log.tsv"  # tmux client-focus flanks (attended time)
+  if [ -s "$_flog" ]; then
+    { flock -n 9 && awk -F'\t' -v cut=$(( _now - 8*86400 )) '$1+0 >= cut' "$_flog" > "$_flog.tmp" \
+        && mv -f "$_flog.tmp" "$_flog"; } 9>>"$_flog.lock"
+  fi
   [ -d "$_snapdir" ] && find "$_snapdir" -type f -mtime +8 -delete
+  [ -d "$_u/panes" ] && find "$_u/panes" -type f -mtime +8 -delete
 fi
 
 jq -r '
