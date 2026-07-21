@@ -79,6 +79,11 @@ if [ ! -e "$_pm" ] || [ $(( _now - $(stat -c %Y "$_pm") )) -ge 86400 ]; then
     { flock -n 9 && awk -F'\t' -v cut=$(( _now - 8*86400 )) '$1+0 >= cut' "$_slog" > "$_slog.tmp" \
         && mv -f "$_slog.tmp" "$_slog"; } 9>>"$_slog.lock"
   fi
+  _tlog="$_u/turn-log.tsv"   # hook-fed turn start/end events (see `session time`)
+  if [ -s "$_tlog" ]; then
+    { flock -n 9 && awk -F'\t' -v cut=$(( _now - 8*86400 )) '$1+0 >= cut' "$_tlog" > "$_tlog.tmp" \
+        && mv -f "$_tlog.tmp" "$_tlog"; } 9>>"$_tlog.lock"
+  fi
   [ -d "$_snapdir" ] && find "$_snapdir" -type f -mtime +8 -delete
 fi
 

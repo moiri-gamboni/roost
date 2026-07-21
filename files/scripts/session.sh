@@ -20,6 +20,10 @@
 #                     the invoking session.
 #   session usage --all [--json]  per-session breakdown of all tracked burn in
 #                     the current windows, plus totals
+#   session time [--all]  per-turn time tracking for today: turns, active time
+#                     (sum of start→end wall spans, so idle gaps between turns
+#                     are excluded), open/unclosed turns. Data source: the turn
+#                     log below.
 #   session --compact one line: date/time + 5h & weekly %s (token-frugal, always
 #                     exits 0 so it can never block a prompt)
 #   session --hook    the same one line wrapped as UserPromptSubmit hook JSON
@@ -28,6 +32,16 @@
 #                     user's transcript). This is what the per-turn hook runs. Near a
 #                     hard cap (>= USAGE_WARN_PCT, default 90) it also appends a ⚠
 #                     advisory: for 5h, resume via a background `--wait 5h`.
+#                     Side effect: appends this turn's START event to the turn log.
+#   session --turn-end  Stop-hook plumbing: appends the turn's END event to the
+#                     turn log; always exits 0 silently (a Stop hook's exit 2
+#                     would force the agent to keep going).
+#
+# Turn log (~/roost/claude/usage/turn-log.tsv, "ts<TAB>sid<TAB>s|e"): turn wall
+# time = e minus s, which includes tool execution — cost.total_duration_ms can't
+# give this (it's session wall clock, ticking through idle gaps; verified
+# empirically), and total_api_duration_ms excludes tool time. Hook-fed, so
+# headless `claude -p` runs get turn records too, without a statusline.
 #   session --json    raw fields for scripting
 #   session --guard   pacing gate: prints OK/PAUSE, exits 0 (ok) or 3 (pause)
 #   session --wait [5h|week]  block until that window resets, then print one line
@@ -49,6 +63,7 @@
 set -uo pipefail
 
 cache="${ROOST_USAGE_CACHE:-$HOME/roost/claude/usage/last-status.json}"
+tlog="${ROOST_USAGE_TLOG:-$HOME/roost/claude/usage/turn-log.tsv}"
 FIVE_GUARD="${FIVE_GUARD:-linear}"
 WEEK_GUARD="${WEEK_GUARD:-linear}"
 FIVE_WINDOW="${FIVE_WINDOW:-18000}"
@@ -122,6 +137,16 @@ whoami_main() {
 }
 [ "${1:-}" = whoami ] && { shift; whoami_main "$@"; }
 
+# Stop-hook plumbing: log this turn's end. Unconditional exit 0 with no output —
+# for Stop hooks, exit 2 means "block stopping", which must never happen here.
+if [ "${1:-}" = --turn-end ]; then
+  if [ ! -t 0 ]; then
+    tsid=$(jq -r '.session_id // empty' 2>/dev/null || true)  # quiet: stdin may be empty/non-JSON
+    [ -n "$tsid" ] && printf '%s\t%s\te\n' "$(date +%s)" "$tsid" >> "$tlog"
+  fi
+  exit 0
+fi
+
 mode=text; waitwin=five; submode=""; target_sid=""; all=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -133,6 +158,7 @@ while [ $# -gt 0 ]; do
              case "${2:-}" in 5h|five) waitwin=five; shift ;; week|weekly|7d) waitwin=week; shift ;; esac ;;
     usage)   submode=usage
              if [ $# -gt 1 ] && [ "${2#-}" = "${2:-}" ]; then target_sid="$2"; shift; fi ;;
+    time)    submode=time ;;
     --all)   all=1 ;;
     --file)  shift; cache="${1:?--file needs a path}" ;;
     -h|--help)
@@ -144,6 +170,8 @@ while [ $# -gt 0 ]; do
       printf '  usage [ID]: one session'"'"'s tracked burn + estimated share of each\n'
       printf '          window (ID defaults to the invoking session).\n'
       printf '  usage --all: per-session breakdown of tracked burn, with totals.\n'
+      printf '  time [--all]: per-turn time today — turns, active (gap-free) time,\n'
+      printf '          open/unclosed turns (this session, or every session with --all).\n'
       printf '  --compact: one line (date/time + 5h & weekly %%s); always exits 0.\n'
       printf '  --hook: --compact wrapped as UserPromptSubmit JSON (context-injected,\n'
       printf '          suppressed from transcript); the per-turn hook runs this.\n'
@@ -184,6 +212,67 @@ emit() {  # $1 = the status line
     printf '%s\n' "$1"
   fi
 }
+
+# ── session time — per-turn tracking for today (since local midnight) ────────
+# Pairs s/e events per session; active = Σ closed start→end spans, so idle gaps
+# between turns are excluded by construction. A trailing unpaired start shows as
+# "open" with its age (a running turn — or a dead one whose Stop never fired;
+# the age makes the difference obvious). Earlier unpaired starts count as
+# "unclosed" (interrupt/crash) and add no time, so active is a floor.
+if [ "${submode:-}" = time ]; then
+  [ -s "$tlog" ] || { echo "session: no turn log yet at $tlog (the per-turn hooks append it)" >&2; exit 1; }
+  now=$(date +%s); midnight=$(date -d 00:00 +%s)
+  fmt_d() { local s=$1; (( s<0 )) && s=0
+            if (( s>=3600 )); then printf '%dh%02dm' $((s/3600)) $(((s%3600)/60))
+            elif (( s>=60 )); then printf '%dm%02ds' $((s/60)) $((s%60))
+            else printf '%ds' "$s"; fi; }
+  rows=$(LC_ALL=C sort -t$'\t' -k1,1n "$tlog" | awk -F'\t' -v mid="$midnight" '
+    $1+0>=mid && $2!="" {
+      ts=$1+0; sid=$2
+      if ($3=="s") { if (pend[sid]) uncl[sid]++; pend[sid]=ts }
+      else if ($3=="e" && pend[sid]) {
+        d=ts-pend[sid]; if (d>=0) { act[sid]+=d; n[sid]++; if (d>mx[sid]) mx[sid]=d }
+        pend[sid]=0
+      }
+      seen[sid]=1; if (ts>lastev[sid]) lastev[sid]=ts
+    }
+    END { for (s in seen) printf "%s\t%d\t%d\t%d\t%d\t%d\t%d\n",
+            s, n[s], act[s], mx[s], uncl[s], pend[s], lastev[s] }' \
+    | LC_ALL=C sort -t$'\t' -k3,3nr)
+  if [ "$all" = 1 ]; then
+    printf '── session time · today since %s ──\n' "$(date -d "@$midnight" '+%H:%M %Z')"
+    printf '  %-9s %6s %8s %8s  %-18s %s\n' SESSION TURNS ACTIVE LONGEST 'OPEN/UNCLOSED' LAST
+    while IFS=$'\t' read -r tsid tn tact tmx tuncl tpend tlast; do
+      [ -z "$tsid" ] && continue
+      st="-"; [ "$tpend" != 0 ] && st="open $(fmt_d $((now-tpend)))"
+      [ "$tuncl" != 0 ] && st="$st +$tuncl unclosed"
+      printf '  %-9.8s %6s %8s %8s  %-18s %s\n' "$tsid" "$tn" "$(fmt_d "$tact")" \
+        "$(fmt_d "$tmx")" "$st" "$(date -d "@$tlast" '+%H:%M')"
+    done <<<"$rows"
+    printf '  (active = closed turn spans only; gaps between turns never count and\n'
+    printf '   unclosed starts add no time, so active is a floor)\n'
+    exit 0
+  fi
+  sid=$(resolve_sid) || { echo "session: not inside a session — use \`session time --all\`" >&2; exit 1; }
+  row=$(awk -F'\t' -v s="$sid" '$1==s' <<<"$rows")
+  [ -n "$row" ] || { printf 'session time · %.8s — no turns logged today\n' "$sid"; exit 0; }
+  IFS=$'\t' read -r _ tn tact tmx tuncl tpend tlast <<<"$row"
+  printf '── session time · %.8s · today ──\n' "$sid"
+  printf '  turns    %d closed' "$tn"
+  [ "$tpend" != 0 ] && printf ' · 1 open (%s)' "$(fmt_d $((now-tpend)))"
+  [ "$tuncl" != 0 ] && printf ' · %d unclosed' "$tuncl"
+  printf '\n  active   %s' "$(fmt_d "$tact")"
+  [ "$tn" -gt 0 ] && printf '   (longest %s · avg %s)' "$(fmt_d "$tmx")" "$(fmt_d $((tact/tn)))"
+  printf '\n'
+  LC_ALL=C sort -t$'\t' -k1,1n "$tlog" | awk -F'\t' -v mid="$midnight" -v s="$sid" '
+    $1+0>=mid && $2==s {
+      if ($3=="s") pend=$1+0
+      else if ($3=="e" && pend) { printf "%d\t%d\n", pend, $1-pend; pend=0 }
+    }' | tail -8 | while IFS=$'\t' read -r t d; do
+      printf '    %s  %s\n' "$(date -d "@$t" '+%H:%M')" "$(fmt_d "$d")"
+    done
+  exit 0
+fi
 
 if [ ! -s "$cache" ]; then
   # compact/hook are display-only for a per-turn hook: still emit date/time, never block/error.
@@ -447,6 +536,8 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
   # this segment must never break the injected line.
   if [ "$mode" = hook ] && [ ! -t 0 ]; then
     hsid=$(jq -r '.session_id // empty' 2>/dev/null || true)  # quiet: stdin may be empty/non-JSON
+    # turn START event for `session time`; the Stop hook (--turn-end) logs the end
+    [ -n "$hsid" ] && printf '%s\t%s\ts\n' "$(date +%s)" "$hsid" >> "$tlog"
     if [ -n "$hsid" ] && sest=$(est_sessions); then
       IFS=$'\t' read -r hb5 hbw < <(base_pcts)
       hc5=$(covered "$five" "$hb5"); hcw=$(covered "$week" "$hbw")

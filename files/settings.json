@@ -33,7 +33,17 @@
   "hooks": {
     "SessionStart": [],
     "PreCompact": [],
-    "Stop": [],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/scripts/session.sh --turn-end",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [
