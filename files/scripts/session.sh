@@ -66,6 +66,8 @@ set -uo pipefail
 
 cache="${ROOST_USAGE_CACHE:-$HOME/roost/claude/usage/last-status.json}"
 tlog="${ROOST_USAGE_TLOG:-$HOME/roost/claude/usage/turn-log.tsv}"
+flog="${ROOST_USAGE_FLOG:-$HOME/roost/claude/usage/focus-log.tsv}"
+panedir="${ROOST_USAGE_PANEDIR:-$HOME/roost/claude/usage/panes}"
 FIVE_GUARD="${FIVE_GUARD:-linear}"
 WEEK_GUARD="${WEEK_GUARD:-linear}"
 FIVE_WINDOW="${FIVE_WINDOW:-18000}"
@@ -138,6 +140,17 @@ whoami_main() {
   exit 0
 }
 [ "${1:-}" = whoami ] && { shift; whoami_main "$@"; }
+
+# tmux client-focus plumbing ("--focus-mark in|out CLIENT PANE" — tmux hook
+# args, not stdin JSON): one row per focus flank into the focus log, for
+# `session time` attended-time. The pane id joins to a session via the
+# statusline-maintained pane map (usage/panes/). Always exits 0.
+if [ "${1:-}" = --focus-mark ]; then
+  case "${2:-}" in
+    in|out) printf '%s\t%s\t%s\t%s\n' "$(date +%s)" "$2" "${3:--}" "${4:--}" >> "$flog" ;;
+  esac
+  exit 0
+fi
 
 # Hook plumbing: append one lifecycle event row to the turn log and exit 0
 # unconditionally with no output — several of these events treat exit 2 as
@@ -228,6 +241,7 @@ Plumbing (wired via settings.json hooks + tmux hooks; not for interactive use):
   session --hook                   UserPromptSubmit: inject usage line + log turn start
   session --turn-end|--turn-fail|--session-end|--subagent-start|--subagent-end|
           --compact-mark|--perm-mark   append one lifecycle event row; always exit 0
+  session --focus-mark in|out C P  tmux client-focus logger (attended time)
 
 Data (under ~/roost/claude/usage/):
   last-status.json  global limits cache (statusline-written, ~10s fresh)
@@ -305,20 +319,45 @@ if [ "${submode:-}" = time ]; then
     END { for (s in seen) printf "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
             s, n[s], act[s], mx[s], uncl[s], pend[s], lastev[s], nf[s], np[s], na[s], asum[s], ended[s] }' \
     | LC_ALL=C sort -t$'\t' -k3,3nr)
+  # Attended time: tmux client-focus spans, attributed to the session whose pane
+  # was focused (pane→sid map maintained by the statusline). Per client: an "in"
+  # opens a span (a new "in" first closes any open one), "out"/detach closes it,
+  # and a still-open span closes at now. Caveats: two clients focused on the
+  # same pane double-count, and a recycled pane id can misattribute spans from
+  # before the reuse — both small in practice, noted here for honesty.
+  fatt=""
+  if [ -s "$flog" ] && [ -d "$panedir" ]; then
+    pmap=$(for f in "$panedir"/*; do [ -e "$f" ] || continue; printf '%%%s\t%s\n' "${f##*/}" "$(cat "$f")"; done)
+    fatt=$(LC_ALL=C sort -t$'\t' -k1,1n "$flog" | awk -F'\t' -v mid="$midnight" -v now="$now" -v pm="$pmap" '
+      BEGIN { n=split(pm, L, "\n"); for (i=1;i<=n;i++) if (split(L[i], kv, "\t")==2) sid[kv[1]]=kv[2] }
+      $1+0>=mid {
+        ts=$1+0; ev=$2; cl=$3; pn=$4
+        if (open[cl]) { s=sid[opane[cl]]; if (s!="") att[s]+=ts-open[cl]; open[cl]=0 }
+        if (ev=="in") { open[cl]=ts; opane[cl]=pn }
+      }
+      END { for (c in open) if (open[c]) { s=sid[opane[c]]; if (s!="") att[s]+=now-open[c] }
+            for (s2 in att) printf "%s\t%d\n", s2, att[s2] }')
+  fi
+  att_of() {  # $1=sid -> attended seconds today (0 if none)
+    if [ -n "$fatt" ]; then awk -F'\t' -v s="$1" '$1==s{print $2; f=1} END{if(!f) print 0}' <<<"$fatt"
+    else printf 0; fi
+  }
   if [ "$all" = 1 ]; then
     printf '── session time · today since %s ──\n' "$(date -d "@$midnight" '+%H:%M %Z')"
-    printf '  %-9s %6s %8s %8s  %-19s %s\n' SESSION TURNS ACTIVE LONGEST 'STATE' LAST
+    printf '  %-9s %6s %8s %8s %8s  %-19s %s\n' SESSION TURNS ACTIVE LONGEST ATTEND 'STATE' LAST
     while IFS=$'\t' read -r tsid tn tact tmx tuncl tpend tlast tnf tnp tna tasum tended; do
       [ -z "$tsid" ] && continue
       if   [ "$tpend" != 0 ];  then st="open $(fmt_d $((now-tpend)))"
       elif [ "$tended" != 0 ]; then st="ended $(date -d "@$tended" '+%H:%M')"
       else st="-"; fi
       [ "$tuncl" != 0 ] && st="$st +$tuncl uncl"
-      printf '  %-9.8s %6s %8s %8s  %-19s %s\n' "$tsid" "$tn" "$(fmt_d "$tact")" \
-        "$(fmt_d "$tmx")" "$st" "$(date -d "@$tlast" '+%H:%M')"
+      ta=$(att_of "$tsid"); tad="-"; [ "$ta" != 0 ] && tad=$(fmt_d "$ta")
+      printf '  %-9.8s %6s %8s %8s %8s  %-19s %s\n' "$tsid" "$tn" "$(fmt_d "$tact")" \
+        "$(fmt_d "$tmx")" "$tad" "$st" "$(date -d "@$tlast" '+%H:%M')"
     done <<<"$rows"
     printf '  (active = closed turn spans only; gaps between turns never count and\n'
-    printf '   unclosed starts add no time, so active is a floor)\n'
+    printf '   unclosed starts add no time, so active is a floor. attend = focused-\n'
+    printf '   tab spans on the session'"'"'s pane, from tmux client-focus events)\n'
     exit 0
   fi
   sid=$(resolve_sid) || { echo "session: not inside a session — use \`session time --all\`" >&2; exit 1; }
@@ -340,6 +379,8 @@ if [ "${submode:-}" = time ]; then
     [ "$tna" != 0 ] && { [ "$tnp" != 0 ] && printf ' · '; printf '%d subagent(s), Σ %s' "$tna" "$(fmt_d "$tasum")"; }
     printf '\n'
   fi
+  ta=$(att_of "$sid")
+  [ "$ta" != 0 ] && printf '  attended %s   (focused-tab spans on this session'"'"'s pane)\n' "$(fmt_d "$ta")"
   LC_ALL=C sort -t$'\t' -k1,1n "$tlog" | awk -F'\t' -v mid="$midnight" -v s="$sid" '
     $1+0>=mid && $2==s {
       if ($3=="s") pend=$1+0
