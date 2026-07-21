@@ -11,7 +11,12 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 # To re-enable, uncomment the line below and roost-apply push.
 #0 10 * * 0 $USERNAME flock -n $HOME_DIR/.locks/memory-cleanup $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/scheduled-task.sh "Review ~/$ROOST_DIR_NAME/memory/ for duplicate or mergeable notes. Deduplicate and merge where appropriate. Do not delete notes that passed the 6-month test at write time unless you can document a clear reason in the commit message." $HOME_DIR/$ROOST_DIR_NAME/code/life
 
-# Daily brief of yesterday's Claude Code work (sessions, time, spend, commits),
+# Attention ticker (1/min): an activity mark for the focused tmux client, so
+# `session time` can idle-cap attended spans (tab left focused on an empty desk
+# stops accruing after the grace period; typing and scrolling both count).
+* * * * * $USERNAME $HOME_DIR/$ROOST_DIR_NAME/claude/scripts/session.sh --focus-mark tick
+
+# Daily brief of yesterday's Claude Code work (sessions, time, commits),
 # summarized by sonnet at max effort from day-sliced session-CLI logs; ntfy'd
 # as plain text and archived to ~/$ROOST_DIR_NAME/claude/usage/briefs/.
 40 6 * * * $USERNAME flock -n $HOME_DIR/.locks/session-daily-brief $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/session-daily-brief.sh

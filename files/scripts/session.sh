@@ -68,6 +68,7 @@ cache="${ROOST_USAGE_CACHE:-$HOME/roost/claude/usage/last-status.json}"
 tlog="${ROOST_USAGE_TLOG:-$HOME/roost/claude/usage/turn-log.tsv}"
 flog="${ROOST_USAGE_FLOG:-$HOME/roost/claude/usage/focus-log.tsv}"
 panedir="${ROOST_USAGE_PANEDIR:-$HOME/roost/claude/usage/panes}"
+ATTEND_GRACE="${ROOST_ATTEND_GRACE:-600}"   # attended idle-cap: seconds of credit past the last interaction
 FIVE_GUARD="${FIVE_GUARD:-linear}"
 WEEK_GUARD="${WEEK_GUARD:-linear}"
 FIVE_WINDOW="${FIVE_WINDOW:-18000}"
@@ -152,26 +153,39 @@ whoami_main() {
 # (the hooks run async via run-shell -b). Always exits 0.
 if [ "${1:-}" = --focus-mark ]; then
   ev="${2:-}"; fcl="${3:--}"; fts="${4:--}"
-  # "switch SESSION": that session's current window changed (prefix-switch
-  # inside an attach-style client — VS Code attach-main, termux/et). Only
-  # meaningful when a FOCUSED client is viewing that session: resolve the
-  # client and log an "in", which supersedes its previous span in the reader.
-  # Unfocused switches (background activity, tab-pinning) log nothing.
-  if [ "$ev" = switch ]; then
-    fts="${3:--}"
-    fcl=$(tmux list-clients -t "$fts" -F '#{?client_focused,#{client_name},}' 2>/dev/null | awk 'NF {print; exit}')
-    [ -n "$fcl" ] || exit 0
-    ev=in
-  fi
-  if [ "$ev" = in ] || [ "$ev" = out ]; then
-    fpn="-"; fsid="-"
-    if [ "$fts" != "-" ]; then
-      fpn=$(tmux display-message -p -t "$fts" '#{pane_id}' 2>/dev/null || printf '-')  # quiet: session may be gone (detach)
-      [ -n "$fpn" ] || fpn="-"
+  flog_row() {  # $1=ev $2=client $3=tmux-session — resolve pane+sid, append
+    local pn="-" sid="-"
+    if [ "$3" != "-" ]; then
+      pn=$(tmux display-message -p -t "$3" '#{pane_id}' 2>/dev/null || printf '-')  # quiet: session may be gone (detach)
+      [ -n "$pn" ] || pn="-"
     fi
-    [ "$fpn" != "-" ] && [ -s "$panedir/${fpn#%}" ] && fsid=$(cat "$panedir/${fpn#%}")
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(date +%s.%3N)" "$ev" "$fcl" "$fts" "$fpn" "${fsid:--}" >> "$flog"
-  fi
+    [ "$pn" != "-" ] && [ -s "$panedir/${pn#%}" ] && sid=$(cat "$panedir/${pn#%}")
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(date +%s.%3N)" "$1" "$2" "$3" "$pn" "${sid:--}" >> "$flog"
+  }
+  case "$ev" in
+    in|out) flog_row "$ev" "$fcl" "$fts" ;;
+    # "switch SESSION": that session's current window changed (prefix-switch
+    # inside an attach-style client — VS Code attach-main, termux/et). Only
+    # meaningful when a FOCUSED client is viewing that session: log an "in",
+    # which supersedes the client's previous span in the reader. Unfocused/
+    # background switches log nothing.
+    switch)
+      fts="${3:--}"
+      fcl=$(tmux list-clients -t "$fts" -F '#{?client_focused,#{client_name},}' 2>/dev/null | awk 'NF {print; exit}')
+      [ -n "$fcl" ] && flog_row in "$fcl" "$fts" ;;
+    # "tick" (cron, 1/min): an "act" row for each focused client that had
+    # input within the last ~90s. Keystrokes update tmux's client_activity,
+    # and so does scrolling (mouse mode makes wheel events input). The reader
+    # caps attended spans at last-activity + grace, so a tab left focused on
+    # an abandoned PC stops accruing.
+    tick)
+      nowi=$(date +%s)
+      fmt=$'#{client_name}\t#{client_session}\t#{?client_focused,1,0}\t#{client_activity}'
+      tmux list-clients -F "$fmt" 2>/dev/null | while IFS=$'\t' read -r c s f a; do
+        [ "$f" = 1 ] || continue
+        [ -n "$a" ] && [ $(( nowi - a )) -lt 90 ] && flog_row act "$c" "$s"
+      done ;;
+  esac
   exit 0
 fi
 
@@ -376,15 +390,38 @@ if [ "${submode:-}" = time ]; then
     if [ -d "$panedir" ]; then
       pmap=$(for f in "$panedir"/*; do [ -e "$f" ] || continue; printf '%%%s\t%s\n' "${f##*/}" "$(cat "$f")"; done)
     fi
-    fspans=$(LC_ALL=C sort -t$'\t' -k1,1n "$flog" | awk -F'\t' -v mid="$midnight" -v dend="$dayend" -v pm="$pmap" '
+    sorted_flog=$(LC_ALL=C sort -t$'\t' -k1,1n "$flog")
+    # raw focus spans, per client: client \t sid \t start \t end
+    rspans=$(awk -F'\t' -v mid="$midnight" -v dend="$dayend" -v pm="$pmap" '
       BEGIN { n=split(pm, L, "\n"); for (i=1;i<=n;i++) if (split(L[i], kv, "\t")==2) sid[kv[1]]=kv[2] }
-      NF>=6 && $1+0>=mid && $1+0<dend {
+      NF>=6 && $1+0>=mid && $1+0<dend && ($2=="in" || $2=="out") {
         ts=$1+0; ev=$2; cl=$3; pn=$5; s=$6
         if (s=="" || s=="-") s=sid[pn]
-        if (open[cl]) { if (osid[cl]!="") printf "%s\t%s\t%s\n", osid[cl], open[cl], ts; open[cl]=0 }
+        if (open[cl]) { if (osid[cl]!="") printf "%s\t%s\t%s\t%s\n", cl, osid[cl], open[cl], ts; open[cl]=0 }
         if (ev=="in") { open[cl]=ts; osid[cl]=s }
       }
-      END { for (c in open) if (open[c] && osid[c]!="") printf "%s\t%s\t%s\n", osid[c], open[c], dend }')
+      END { for (c in open) if (open[c] && osid[c]!="") printf "%s\t%s\t%s\t%s\n", c, osid[c], open[c], dend }' <<<"$sorted_flog")
+    facts=$(awk -F'\t' -v mid="$midnight" -v dend="$dayend" '
+      NF>=6 && $1+0>=mid && $1+0<dend && $2=="act" { printf "%s\t%s\n", $3, $1+0 }' <<<"$sorted_flog")
+    # Idle-cap each span: attention accrues in merged [p, p+GRACE] windows,
+    # where p = span start (switching in is itself an interaction) plus each
+    # act inside the span. A focused-but-abandoned tab (left the PC, no input,
+    # no scroll) stops accruing GRACE after the last interaction and resumes
+    # at the next one. Output: sid \t start \t end capped subintervals.
+    fspans=$(printf '%s\n' "${facts:-}" "@@SPANS@@" "${rspans:-}" | awk -F'\t' -v G="$ATTEND_GRACE" '
+      $0=="@@SPANS@@" { inspans=1; next }
+      !inspans && NF==2 { na[$1]++; at[$1, na[$1]]=$2+0; next }
+      inspans && NF==4 {
+        cl=$1; s=$2; st=$3+0; en=$4+0
+        if (s=="") next
+        cs=st; ce=st+G; if (ce>en) ce=en
+        for (i=1; i<=na[cl]; i++) {
+          p=at[cl, i]; if (p<st || p>en) continue
+          if (p<=ce) { q=p+G; if (q>ce) ce=q; if (ce>en) ce=en }
+          else { printf "%s\t%s\t%s\n", s, cs, ce; cs=p; ce=p+G; if (ce>en) ce=en }
+        }
+        printf "%s\t%s\t%s\n", s, cs, ce
+      }')
   fi
   # attended total + last-focus ts per sid (from the focus spans)
   fatt=$(awk -F'\t' 'NF==3 { att[$1]+=$3-$2; if ($3+0>last[$1]) last[$1]=$3+0 }

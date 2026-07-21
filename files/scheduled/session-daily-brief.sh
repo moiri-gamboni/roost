@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # session-daily-brief.sh — morning brief of YESTERDAY's Claude Code work:
-# sessions + titles, time (active/watched/attended), spend, notable events,
-# git commits. Inputs are day-sliced — only yesterday's log rows are fed to
+# sessions + titles, time (active + attended), notable events, git commits.
+# No dollar figures anywhere: subscription plan, so the API-equivalent $ is
+# not real money (it stays available interactively via `session usage`).
+# Inputs are day-sliced — only yesterday's log rows are fed to
 # the model, never the full 8-day logs. Summarized by claude-sonnet-5 at max
 # effort (cheap against the caps), pushed as PLAIN TEXT via ntfy (phone apps
 # don't render markdown), archived to ~/roost/claude/usage/briefs/<date>.txt.
@@ -21,8 +23,8 @@ tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 # 1) the per-session time table, exactly as a human would see it
 "$CLI" time --all --yesterday > "$tmp/time.txt" 2>&1 || true
 
-# 2) per-session spend/model/line-changes from yesterday's sample-log slice
-#    (cost is cumulative per session; sum positive deltas inside the window)
+# 2) sessions that did API work yesterday — the cumulative-cost delta is used
+#    ONLY as a "worked" filter and never printed — with model, lines, title
 awk -F'\t' -v m="$mid" -v e="$dend" '
   $1+0>=m && $1+0<e && $2!="" && $2!="-" {
     c=$3+0
@@ -33,17 +35,17 @@ awk -F'\t' -v m="$mid" -v e="$dend" '
     if ($18!="") lr[$2]=$18
   }
   END { for (s in seen) if (d[s]>0.005)
-          printf "%s\t%.2f\t%s\t%s\t%s\n", s, d[s], (mdl[s]==""?"?":mdl[s]), la[s]+0, lr[s]+0 }' \
-  "$U/session-log.tsv" 2>/dev/null | LC_ALL=C sort -t$'\t' -k2,2nr > "$tmp/spend.tsv" || true
+          printf "%s\t%s\t%s\t%s\n", s, (mdl[s]==""?"?":mdl[s]), la[s]+0, lr[s]+0 }' \
+  "$U/session-log.tsv" 2>/dev/null > "$tmp/sessions.tsv" || true
 {
-  printf 'sid8 | $ | model | lines+/- | title\n'
-  while IFS=$'\t' read -r sid usd mdl la lr; do
+  printf 'sid8 | model | lines+/- | title\n'
+  while IFS=$'\t' read -r sid mdl la lr; do
     [ -n "$sid" ] || continue
     t=""
     [ -s "$U/sessions/$sid.json" ] && t=$(jq -r '.session_name // empty' "$U/sessions/$sid.json")
-    printf '%.8s | $%s | %s | +%s/-%s | %s\n' "$sid" "$usd" "${mdl##*claude-}" "$la" "$lr" "${t:-?}"
-  done < "$tmp/spend.tsv"
-} > "$tmp/spend.txt"
+    printf '%.8s | %s | +%s/-%s | %s\n' "$sid" "${mdl##*claude-}" "$la" "$lr" "${t:-?}"
+  done < "$tmp/sessions.tsv"
+} > "$tmp/sessions.txt"
 
 # 3) notable events from yesterday's turn-log slice
 awk -F'\t' -v m="$mid" -v e="$dend" '
@@ -70,22 +72,22 @@ done > "$tmp/commits.txt"
 
 # 5) summarize — the entire input is yesterday-only slices
 prompt="Summarize yesterday's ($day) Claude Code activity on this server as a morning brief.
-Data below: per-session time table (active = Claude working; attended = the user's
-focused-tab time on that session; watched = their overlap, i.e. supervised work — time
-columns may be sparse while that tracking is young), per-session spend with titles,
-notable events, and git commits made yesterday. Write PLAIN TEXT only (no markdown —
-this goes to a phone via ntfy), at most ~1800 characters:
-1) one headline line: totals (sessions worked, active time, spend, commit count)
-2) the sessions that mattered, one line each: title, time, spend, what the commits
-   suggest got done
+Data below: per-session time table (ACTIVE = Claude working; ATTEND = the user's
+focused-tab time on that session; ignore WATCHED and any dollar-like figures — never
+mention costs), the sessions worked with titles, notable events, and git commits made
+yesterday. Time columns may be sparse while attention tracking is young. Write PLAIN
+TEXT only (no markdown — this goes to a phone via ntfy), at most ~1800 characters:
+1) one headline line: totals (sessions worked, active time, attended time, commit count)
+2) the sessions that mattered, one line each: title, active/attended time, what the
+   commits suggest got done
 3) anything notable: failed turns/rate limits, heavy subagent use, many compactions
 Be concrete and terse. Skip empty categories. No preamble.
 
 == time table ==
 $(cat "$tmp/time.txt")
 
-== spend per session ==
-$(cat "$tmp/spend.txt")
+== sessions (model, line changes, title) ==
+$(cat "$tmp/sessions.txt")
 
 == events ==
 $(cat "$tmp/events.txt")
