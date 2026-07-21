@@ -44,6 +44,73 @@
         ]
       }
     ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/scripts/session.sh --turn-fail",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/scripts/session.sh --session-end",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/scripts/session.sh --subagent-start",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/scripts/session.sh --subagent-end",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/scripts/session.sh --compact-mark",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/shellcheck-edit.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [
@@ -62,6 +129,11 @@
           {
             "type": "command",
             "command": "~/roost/claude/hooks/notify.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/roost/claude/scripts/session.sh --perm-mark",
+            "timeout": 2
           }
         ]
       }

@@ -37,11 +37,13 @@
 #                     turn log; always exits 0 silently (a Stop hook's exit 2
 #                     would force the agent to keep going).
 #
-# Turn log (~/roost/claude/usage/turn-log.tsv, "ts<TAB>sid<TAB>s|e"): turn wall
-# time = e minus s, which includes tool execution — cost.total_duration_ms can't
-# give this (it's session wall clock, ticking through idle gaps; verified
-# empirically), and total_api_duration_ms excludes tool time. Hook-fed, so
-# headless `claude -p` runs get turn records too, without a statusline.
+# Turn log (~/roost/claude/usage/turn-log.tsv, "ts sid ev prompt_id detail
+# agent_id"; events s/e/f/x/a/z/c/p — see the hook-plumbing dispatcher below):
+# turn wall time = e minus s, which includes tool execution —
+# cost.total_duration_ms can't give this (it's session wall clock, ticking
+# through idle gaps; verified empirically), and total_api_duration_ms excludes
+# tool time. Hook-fed, so headless `claude -p` runs get turn records too,
+# without a statusline. Gaps between an e and the next s are unattended time.
 #   session --json    raw fields for scripting
 #   session --guard   pacing gate: prints OK/PAUSE, exits 0 (ok) or 3 (pause)
 #   session --wait [5h|week]  block until that window resets, then print one line
@@ -137,15 +139,38 @@ whoami_main() {
 }
 [ "${1:-}" = whoami ] && { shift; whoami_main "$@"; }
 
-# Stop-hook plumbing: log this turn's end. Unconditional exit 0 with no output —
-# for Stop hooks, exit 2 means "block stopping", which must never happen here.
-if [ "${1:-}" = --turn-end ]; then
-  if [ ! -t 0 ]; then
-    tsid=$(jq -r '.session_id // empty' 2>/dev/null || true)  # quiet: stdin may be empty/non-JSON
-    [ -n "$tsid" ] && printf '%s\t%s\te\n' "$(date +%s)" "$tsid" >> "$tlog"
-  fi
-  exit 0
-fi
+# Hook plumbing: append one lifecycle event row to the turn log and exit 0
+# unconditionally with no output — several of these events treat exit 2 as
+# "block" (Stop: keep going; SubagentStop: don't stop; PostCompact is safe but
+# uniformity is cheaper than remembering which is which).
+# Row: ts  sid  ev  prompt_id  detail  agent_id   ("-" = not applicable):
+#   s turn start (appended by --hook)      e turn end (Stop)
+#   f turn failed (StopFailure; detail=error type, e.g. rate_limit)
+#   x session end (SessionEnd; detail=reason)
+#   a/z subagent start/stop (detail=agent type; agent_id pairs them)
+#   c compaction (PostCompact; detail=manual|auto)
+#   p permission prompt shown (Notification; a within-turn wait-on-human marker)
+# The detail extractor is one //-chain across the per-event field names — for
+# any given event all but its own field are absent.
+case "${1:-}" in
+  --turn-end|--turn-fail|--session-end|--subagent-start|--subagent-end|--compact-mark|--perm-mark)
+    if [ ! -t 0 ]; then
+      IFS=$'\t' read -r esid epid edet eaid < <(jq -r \
+        '[(.session_id//"-"),(.prompt_id//"-"),
+          (.error_type//.error//.reason//.compaction_reason//.agent_type//"-"),
+          (.agent_id//"-")]|@tsv' 2>/dev/null || true)
+      if [ -n "${esid:-}" ] && [ "$esid" != "-" ]; then
+        case "$1" in
+          --turn-end) ev=e ;;      --turn-fail) ev=f ;;     --session-end) ev=x ;;
+          --subagent-start) ev=a ;; --subagent-end) ev=z ;; --compact-mark) ev=c ;;
+          --perm-mark) ev=p ;;
+        esac
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+          "$(date +%s)" "$esid" "$ev" "${epid:--}" "${edet:--}" "${eaid:--}" >> "$tlog"
+      fi
+    fi
+    exit 0 ;;
+esac
 
 mode=text; waitwin=five; submode=""; target_sid=""; all=0
 while [ $# -gt 0 ]; do
@@ -228,25 +253,32 @@ if [ "${submode:-}" = time ]; then
             else printf '%ds' "$s"; fi; }
   rows=$(LC_ALL=C sort -t$'\t' -k1,1n "$tlog" | awk -F'\t' -v mid="$midnight" '
     $1+0>=mid && $2!="" {
-      ts=$1+0; sid=$2
-      if ($3=="s") { if (pend[sid]) uncl[sid]++; pend[sid]=ts }
-      else if ($3=="e" && pend[sid]) {
-        d=ts-pend[sid]; if (d>=0) { act[sid]+=d; n[sid]++; if (d>mx[sid]) mx[sid]=d }
+      ts=$1+0; sid=$2; ev=$3
+      if (ev=="s") { if (pend[sid]) uncl[sid]++; pend[sid]=ts }
+      else if ((ev=="e" || ev=="f") && pend[sid]) {
+        d=ts-pend[sid]
+        if (d>=0) { act[sid]+=d; n[sid]++; if (d>mx[sid]) mx[sid]=d; if (ev=="f") nf[sid]++ }
         pend[sid]=0
       }
+      else if (ev=="x") { if (pend[sid]) { uncl[sid]++; pend[sid]=0 } ended[sid]=ts }
+      else if (ev=="p") np[sid]++
+      else if (ev=="a") { na[sid]++; if ($6!="" && $6!="-") ast[$6]=ts }
+      else if (ev=="z") { aid=$6; if (aid!="" && aid!="-" && ast[aid]) { asum[sid]+=ts-ast[aid]; ast[aid]=0 } }
       seen[sid]=1; if (ts>lastev[sid]) lastev[sid]=ts
     }
-    END { for (s in seen) printf "%s\t%d\t%d\t%d\t%d\t%d\t%d\n",
-            s, n[s], act[s], mx[s], uncl[s], pend[s], lastev[s] }' \
+    END { for (s in seen) printf "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+            s, n[s], act[s], mx[s], uncl[s], pend[s], lastev[s], nf[s], np[s], na[s], asum[s], ended[s] }' \
     | LC_ALL=C sort -t$'\t' -k3,3nr)
   if [ "$all" = 1 ]; then
     printf '── session time · today since %s ──\n' "$(date -d "@$midnight" '+%H:%M %Z')"
-    printf '  %-9s %6s %8s %8s  %-18s %s\n' SESSION TURNS ACTIVE LONGEST 'OPEN/UNCLOSED' LAST
-    while IFS=$'\t' read -r tsid tn tact tmx tuncl tpend tlast; do
+    printf '  %-9s %6s %8s %8s  %-19s %s\n' SESSION TURNS ACTIVE LONGEST 'STATE' LAST
+    while IFS=$'\t' read -r tsid tn tact tmx tuncl tpend tlast tnf tnp tna tasum tended; do
       [ -z "$tsid" ] && continue
-      st="-"; [ "$tpend" != 0 ] && st="open $(fmt_d $((now-tpend)))"
-      [ "$tuncl" != 0 ] && st="$st +$tuncl unclosed"
-      printf '  %-9.8s %6s %8s %8s  %-18s %s\n' "$tsid" "$tn" "$(fmt_d "$tact")" \
+      if   [ "$tpend" != 0 ];  then st="open $(fmt_d $((now-tpend)))"
+      elif [ "$tended" != 0 ]; then st="ended $(date -d "@$tended" '+%H:%M')"
+      else st="-"; fi
+      [ "$tuncl" != 0 ] && st="$st +$tuncl uncl"
+      printf '  %-9.8s %6s %8s %8s  %-19s %s\n' "$tsid" "$tn" "$(fmt_d "$tact")" \
         "$(fmt_d "$tmx")" "$st" "$(date -d "@$tlast" '+%H:%M')"
     done <<<"$rows"
     printf '  (active = closed turn spans only; gaps between turns never count and\n'
@@ -256,18 +288,26 @@ if [ "${submode:-}" = time ]; then
   sid=$(resolve_sid) || { echo "session: not inside a session — use \`session time --all\`" >&2; exit 1; }
   row=$(awk -F'\t' -v s="$sid" '$1==s' <<<"$rows")
   [ -n "$row" ] || { printf 'session time · %.8s — no turns logged today\n' "$sid"; exit 0; }
-  IFS=$'\t' read -r _ tn tact tmx tuncl tpend tlast <<<"$row"
+  IFS=$'\t' read -r _ tn tact tmx tuncl tpend tlast tnf tnp tna tasum tended <<<"$row"
   printf '── session time · %.8s · today ──\n' "$sid"
   printf '  turns    %d closed' "$tn"
+  [ "$tnf" != 0 ] && printf ' (%d failed)' "$tnf"
   [ "$tpend" != 0 ] && printf ' · 1 open (%s)' "$(fmt_d $((now-tpend)))"
   [ "$tuncl" != 0 ] && printf ' · %d unclosed' "$tuncl"
+  [ "$tended" != 0 ] && printf ' · session ended %s' "$(date -d "@$tended" '+%H:%M')"
   printf '\n  active   %s' "$(fmt_d "$tact")"
   [ "$tn" -gt 0 ] && printf '   (longest %s · avg %s)' "$(fmt_d "$tmx")" "$(fmt_d $((tact/tn)))"
   printf '\n'
+  if [ "$tnp" != 0 ] || [ "$tna" != 0 ]; then
+    printf '  waits    '
+    [ "$tnp" != 0 ] && printf '%d permission prompt(s) mid-turn' "$tnp"
+    [ "$tna" != 0 ] && { [ "$tnp" != 0 ] && printf ' · '; printf '%d subagent(s), Σ %s' "$tna" "$(fmt_d "$tasum")"; }
+    printf '\n'
+  fi
   LC_ALL=C sort -t$'\t' -k1,1n "$tlog" | awk -F'\t' -v mid="$midnight" -v s="$sid" '
     $1+0>=mid && $2==s {
       if ($3=="s") pend=$1+0
-      else if ($3=="e" && pend) { printf "%d\t%d\n", pend, $1-pend; pend=0 }
+      else if (($3=="e" || $3=="f") && pend) { printf "%d\t%d\n", pend, $1-pend; pend=0 }
     }' | tail -8 | while IFS=$'\t' read -r t d; do
       printf '    %s  %s\n' "$(date -d "@$t" '+%H:%M')" "$(fmt_d "$d")"
     done
@@ -535,9 +575,12 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
   # `session usage --all` for the method and its caveats. Silent on any failure —
   # this segment must never break the injected line.
   if [ "$mode" = hook ] && [ ! -t 0 ]; then
-    hsid=$(jq -r '.session_id // empty' 2>/dev/null || true)  # quiet: stdin may be empty/non-JSON
-    # turn START event for `session time`; the Stop hook (--turn-end) logs the end
-    [ -n "$hsid" ] && printf '%s\t%s\ts\n' "$(date +%s)" "$hsid" >> "$tlog"
+    # quiet jq: stdin may be empty/non-JSON on odd manual invocations
+    IFS=$'\t' read -r hsid hpid < <(jq -r '[(.session_id//"-"),(.prompt_id//"-")]|@tsv' 2>/dev/null || true)
+    hsid=${hsid:-}; [ "$hsid" = "-" ] && hsid=""
+    # turn START event for `session time`; the Stop hook (--turn-end) logs the
+    # matching end, sharing prompt_id so turns join to sample-log rows by id
+    [ -n "$hsid" ] && printf '%s\t%s\ts\t%s\t-\t-\n' "$(date +%s)" "$hsid" "${hpid:--}" >> "$tlog"
     if [ -n "$hsid" ] && sest=$(est_sessions); then
       IFS=$'\t' read -r hb5 hbw < <(base_pcts)
       hc5=$(covered "$five" "$hb5"); hcw=$(covered "$week" "$hbw")
