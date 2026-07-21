@@ -42,7 +42,7 @@ commit_mirror() {
     return 0
   fi
   updates="$(dirname "$DIR")/updates/granola"
-  auto="$(dirname "$DIR")/workflows/transcript-corrections-auto.md"
+  auto="$(dirname "$DIR")/workflows/meetings/transcript-corrections-auto.md"
   autorepo=""
   # same expected-fail probe as above, for the auto tier's own location
   [ -f "$auto" ] && autorepo=$(git -C "$(dirname "$auto")" rev-parse --show-toplevel 2>/dev/null)
