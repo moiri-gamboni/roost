@@ -153,14 +153,15 @@ whoami_main() {
 # (the hooks run async via run-shell -b). Always exits 0.
 if [ "${1:-}" = --focus-mark ]; then
   ev="${2:-}"; fcl="${3:--}"; fts="${4:--}"
-  flog_row() {  # $1=ev $2=client $3=tmux-session — resolve pane+sid, append
-    local pn="-" sid="-"
+  flog_row() {  # $1=ev $2=client $3=tmux-session [$4=ts] — resolve pane+sid, append
+    local pn="-" sid="-" ts="${4:-}"
+    [ -n "$ts" ] || ts=$(date +%s.%3N)
     if [ "$3" != "-" ]; then
       pn=$(tmux display-message -p -t "$3" '#{pane_id}' 2>/dev/null || printf '-')  # quiet: session may be gone (detach)
       [ -n "$pn" ] || pn="-"
     fi
     [ "$pn" != "-" ] && [ -s "$panedir/${pn#%}" ] && sid=$(cat "$panedir/${pn#%}")
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(date +%s.%3N)" "$1" "$2" "$3" "$pn" "${sid:--}" >> "$flog"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$ts" "$1" "$2" "$3" "$pn" "${sid:--}" >> "$flog"
   }
   case "$ev" in
     in|out) flog_row "$ev" "$fcl" "$fts" ;;
@@ -182,11 +183,18 @@ if [ "${1:-}" = --focus-mark ]; then
     # activity is the truer attention signal on the phone. The reader caps
     # attended spans at last-activity + grace and turns standalone acts into
     # attended windows, so an abandoned focused tab still stops accruing.
+    # Rows are stamped with client_activity — the ACTUAL input time — not tick
+    # time: a tab you left <90s ago still passes the recency test, and a
+    # tick-time stamp would land after its out flank, minting a phantom
+    # standalone window for a tab you already left (observed: 194 such acts in
+    # one day ≈ hours of phantom attended). With the true input time, stale
+    # desktop acts fall inside their span (absorbed by clipping) while Termux
+    # blur-typing still lands in the gap where it really happened.
     tick)
       nowi=$(date +%s)
       fmt=$'#{client_name}\t#{client_session}\t#{?client_focused,1,0}\t#{client_activity}'
       tmux list-clients -F "$fmt" 2>/dev/null | while IFS=$'\t' read -r c s f a; do
-        [ -n "$a" ] && [ $(( nowi - a )) -lt 90 ] && flog_row act "$c" "$s"
+        [ -n "$a" ] && [ $(( nowi - a )) -lt 90 ] && flog_row act "$c" "$s" "$a"
       done ;;
   esac
   exit 0
