@@ -64,12 +64,21 @@ sudo install -Dm0600 -o root -g root "$env_tmp" /etc/roost-backup.env
 rm -f "$env_tmp"
 ok "env file installed"
 
+# No ssh-agent under systemd, so pass the dedicated backup key explicitly rather
+# than via an ~/.ssh/config IdentityFile stanza (which interactive ssh inherits --
+# and that key is `restrict`ed server-side, so forwarding would break).
+ROOST_SSH_KEY=""
+if [ -f "$HOME/.ssh/roost-backup" ]; then
+    ROOST_SSH_KEY="$HOME/.ssh/roost-backup"
+fi
+export ROOST_SSH_KEY
+
 step "Rendering /etc/systemd/system/roost-backup.{service,timer}"
-envsubst '${USERNAME} ${SERVER_NAME}' < "$SCRIPT_DIR/roost-backup.service" \
+envsubst '${USERNAME} ${SERVER_NAME} ${ROOST_SSH_KEY}' < "$SCRIPT_DIR/roost-backup.service" \
     | sudo tee /etc/systemd/system/roost-backup.service >/dev/null
 sudo install -Dm644 "$SCRIPT_DIR/roost-backup.timer" /etc/systemd/system/roost-backup.timer
 sudo install -Dm644 "$SCRIPT_DIR/ntfy-roost-backup@.service" /etc/systemd/system/ntfy-roost-backup@.service
-ok "units installed (USER=$USERNAME SERVER=$SERVER_NAME)"
+ok "units installed (USER=$USERNAME SERVER=$SERVER_NAME KEY=${ROOST_SSH_KEY:-<agent/default>})"
 
 step "Enabling roost-backup.timer"
 sudo systemctl daemon-reload
