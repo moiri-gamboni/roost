@@ -140,6 +140,10 @@
       }
     ]
   },
+  "worktree": {
+    "baseRef": "fresh"
+  },
+  "workflowKeywordTriggerEnabled": false,
   "statusLine": {
     "type": "command",
     "command": "~/roost/claude/hooks/statusline.sh",
@@ -163,14 +167,17 @@
     }
   },
   "effortLevel": "high",
-  "model": "claude-fable-5[1m]",
+  "askUserQuestionTimeout": "never",
+  "model": "opus[1m]",
   "fallbackModel": ["claude-opus-4-8"],
   "tui": "fullscreen",
   "autoMemoryEnabled": true,
   "autoDreamEnabled": true,
   "skipWorkflowUsageWarning": true,
+  "verbose": false,
   "autoCompactEnabled": false,
-  "teammateMode": "tmux",
+  "switchModelsOnFlag": false,
+  "teammateMode": "in-process",
   "remoteControlAtStartup": false,
   "agentPushNotifEnabled": false,
   "skipAutoPermissionPrompt": true
