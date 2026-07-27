@@ -35,6 +35,10 @@ step "Installing /usr/local/bin/roost-backup"
 sudo install -Dm755 "$SCRIPT_DIR/btrfs-backup.sh" /usr/local/bin/roost-backup
 ok "script installed"
 
+step "Installing /usr/local/bin/roost-backup-helper"
+sudo install -Dm755 "$SCRIPT_DIR/btrfs-backup-helper.sh" /usr/local/bin/roost-backup-helper
+ok "helper installed"
+
 step "Rendering /etc/systemd/system/roost-backup.{service,timer}"
 envsubst '${USERNAME} ${SERVER_NAME}' < "$SCRIPT_DIR/roost-backup.service" \
     | sudo tee /etc/systemd/system/roost-backup.service >/dev/null
