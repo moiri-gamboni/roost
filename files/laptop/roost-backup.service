@@ -2,6 +2,7 @@
 Description=Pull btrfs snapshots from roost server
 After=network-online.target tailscaled.service
 Wants=network-online.target
+OnFailure=ntfy-roost-backup@%n.service
 
 [Service]
 Type=oneshot
