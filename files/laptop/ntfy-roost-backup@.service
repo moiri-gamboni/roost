@@ -1,0 +1,12 @@
+[Unit]
+Description=Notify ntfy on roost-backup failure for %i
+
+[Service]
+Type=oneshot
+# %i is the failed unit's name (passed via OnFailure=ntfy-roost-backup@%n in
+# roost-backup.service). NTFY_URL + NTFY_TOKEN come from /etc/roost-backup.env,
+# written by install-btrfs-backup.sh (server's Tailscale IP + the hooks admin
+# token from ~/services/.ntfy-token; ntfy's auth-default-access is deny-all, so
+# anonymous posts are rejected).
+EnvironmentFile=/etc/roost-backup.env
+ExecStart=/usr/bin/curl -fsS -X POST -H "Authorization: Bearer ${NTFY_TOKEN}" -H "Title: roost-backup FAILED" -H "Priority: high" -H "Tags: rotating_light,floppy_disk" --data "Unit %i failed; check 'journalctl -u %i' on the laptop for details." ${NTFY_URL}
