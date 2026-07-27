@@ -1,6 +1,12 @@
 #!/bin/bash
 # Pull btrfs snapshots from roost server to local backup.
 # Runs on the LAPTOP via systemd timer (roost-backup.timer).
+#
+# Backs up two snapper configs, each into its own set of subvolumes in $BACKUP_DIR:
+#   root        -> snapshot-<N>     (the server root filesystem)
+#   roost-data  -> roost-data-<N>   (the Hetzner volume: docker + the notion mirror)
+# Each config carries its own incremental-parent state file; the flat naming keeps
+# the privileged helper's no-subdir contract (btrfs-backup-helper.sh) intact.
 set -euo pipefail
 
 SERVER_HOST="${ROOST_SERVER:?set ROOST_SERVER or configure in service file}"
@@ -10,9 +16,9 @@ STATE_DIR="$HOME/.local/state/roost-backup"
 NTFY_URL="${ROOST_NTFY_URL:-}"
 KEEP_COUNT="${ROOST_BACKUP_KEEP:-7}"
 
-STATE_FILE="$STATE_DIR/last-snapshot"
 SSH_TARGET="$SERVER_USER@$SERVER_HOST"
 LOG_TAG="roost/backup"
+HELPER=/usr/local/bin/roost-backup-helper
 
 log()  { logger -t "$LOG_TAG" "$*"; echo "$*"; }
 warn() { logger -t "$LOG_TAG" -p user.warning "$*"; echo "WARNING: $*" >&2; }
@@ -32,6 +38,7 @@ usage() {
 Usage: roost-backup [OPTIONS]
 
 Pull btrfs snapshots from the roost server to a local backup directory.
+Backs up both the server root filesystem and the roost-data volume.
 
 Options:
   --help       Show this help message
@@ -43,7 +50,7 @@ Environment variables:
   ROOST_USER         SSH user (required, set via service file)
   ROOST_BACKUP_DIR   Local btrfs backup path (default: /backup/roost)
   ROOST_NTFY_URL     ntfy URL for failure alerts (optional)
-  ROOST_BACKUP_KEEP  Number of snapshots to keep (default: 7)
+  ROOST_BACKUP_KEEP  Number of snapshots to keep per config (default: 7)
 EOF
     exit 0
 }
@@ -65,70 +72,78 @@ if [ ! -d "$BACKUP_DIR" ]; then
     die "Backup directory $BACKUP_DIR does not exist (must be a btrfs filesystem)"
 fi
 
-# List snapper snapshots on server (timeline snapshots only)
-log "Listing snapshots on $SERVER_HOST..."
-raw_list=$(ssh "$SSH_TARGET" "sudo snapper -c root --csvout --no-headers list --columns number,type,description") \
-    || die "Failed to list snapshots on $SERVER_HOST"
+# Back up one snapper config via incremental (or full) btrfs send/receive.
+#   $1 config      snapper config name (root, roost-data)
+#   $2 snap_base   server dir holding <N>/snapshot (/.snapshots, /mnt/roost-data/.snapshots)
+#   $3 prefix      local subvol name prefix (snapshot, roost-data) -- no slashes (helper contract)
+#   $4 state_file  local file recording the last received snapshot number
+backup_config() {
+    local config="$1" snap_base="$2" prefix="$3" state_file="$4"
+    local raw_list newest parent dest_name stale existing count prune_count old i
 
-# Parse timeline snapshots, pick the newest
-newest=""
-while IFS=',' read -r num type desc; do
-    # Timeline snapshots are type=single with description=timeline
-    [ "$desc" = "timeline" ] || continue
-    newest="$num"
-done <<< "$raw_list"
+    log "[$config] Listing snapshots on $SERVER_HOST..."
+    raw_list=$(ssh "$SSH_TARGET" "sudo snapper -c $config --csvout --no-headers list --columns number,type,description") \
+        || die "[$config] Failed to list snapshots on $SERVER_HOST"
 
-[ -n "$newest" ] || die "No timeline snapshots found on server"
-log "Newest server snapshot: #$newest"
+    # Newest timeline snapshot (type=single, description=timeline)
+    newest=""
+    while IFS=',' read -r num _ desc; do
+        [ "$desc" = "timeline" ] || continue
+        newest="$num"
+    done <<< "$raw_list"
 
-# Determine parent for incremental send
-parent=""
-if [ "$FORCE_FULL" = false ] && [ -f "$STATE_FILE" ]; then
-    parent=$(cat "$STATE_FILE")
-    # Verify parent still exists on server
-    if ! echo "$raw_list" | grep -q "^${parent},"; then
-        warn "Parent snapshot #$parent no longer exists on server, falling back to full send"
-        parent=""
+    if [ -z "$newest" ]; then
+        warn "[$config] No timeline snapshots found on server; skipping"
+        return 0
     fi
-fi
+    log "[$config] Newest server snapshot: #$newest"
 
-if [ "$parent" = "$newest" ]; then
-    log "Already up to date (snapshot #$newest)"
-    exit 0
-fi
-
-# Perform the send/receive
-dest_name="snapshot-${newest}"
-if [ "$DRY_RUN" = true ]; then
-    if [ -n "$parent" ]; then
-        log "[dry-run] Would incremental send #$parent -> #$newest to $BACKUP_DIR/$dest_name"
-    else
-        log "[dry-run] Would full send #$newest to $BACKUP_DIR/$dest_name"
+    # Parent for incremental send: last received, if it still exists on the server
+    parent=""
+    if [ "$FORCE_FULL" = false ] && [ -f "$state_file" ]; then
+        parent=$(cat "$state_file")
+        if ! echo "$raw_list" | grep -q "^${parent},"; then
+            warn "[$config] Parent snapshot #$parent no longer on server; falling back to full send"
+            parent=""
+        fi
     fi
-else
-    HELPER=/usr/local/bin/roost-backup-helper
 
-    # Clean up stale subvolumes from failed previous runs
+    if [ "$parent" = "$newest" ]; then
+        log "[$config] Already up to date (snapshot #$newest)"
+        return 0
+    fi
+
+    dest_name="${prefix}-${newest}"
+    if [ "$DRY_RUN" = true ]; then
+        if [ -n "$parent" ]; then
+            log "[dry-run][$config] Would incremental send #$parent -> #$newest to $BACKUP_DIR/$dest_name"
+        else
+            log "[dry-run][$config] Would full send #$newest to $BACKUP_DIR/$dest_name"
+        fi
+        return 0
+    fi
+
+    # Clean up stale subvolumes from a failed previous run
     for stale in "snapshot" "$dest_name"; do
         if [ -d "$BACKUP_DIR/$stale" ]; then
-            log "Removing stale $BACKUP_DIR/$stale from previous attempt..."
-            sudo "$HELPER" delete "$stale" || die "Failed to remove stale $stale"
+            log "[$config] Removing stale $BACKUP_DIR/$stale from previous attempt..."
+            sudo "$HELPER" delete "$stale" || die "[$config] Failed to remove stale $stale"
         fi
     done
 
-    # Clean up partial receive on unexpected exit
+    # Clean up a partial receive on unexpected exit
     trap 'if [ -d "$BACKUP_DIR/snapshot" ]; then sudo "$HELPER" delete snapshot 2>/dev/null || true; fi' EXIT
 
     if [ -n "$parent" ]; then
-        log "Incremental send: #$parent -> #$newest"
-        ssh "$SSH_TARGET" "sudo btrfs send -p /.snapshots/${parent}/snapshot /.snapshots/${newest}/snapshot" \
+        log "[$config] Incremental send: #$parent -> #$newest"
+        ssh "$SSH_TARGET" "sudo btrfs send -p ${snap_base}/${parent}/snapshot ${snap_base}/${newest}/snapshot" \
             | sudo "$HELPER" receive \
-            || die "Incremental btrfs send/receive failed (#$parent -> #$newest)"
+            || die "[$config] Incremental btrfs send/receive failed (#$parent -> #$newest)"
     else
-        log "Full send: #$newest"
-        ssh "$SSH_TARGET" "sudo btrfs send /.snapshots/${newest}/snapshot" \
+        log "[$config] Full send: #$newest"
+        ssh "$SSH_TARGET" "sudo btrfs send ${snap_base}/${newest}/snapshot" \
             | sudo "$HELPER" receive \
-            || die "Full btrfs send/receive failed (#$newest)"
+            || die "[$config] Full btrfs send/receive failed (#$newest)"
     fi
 
     # btrfs receive creates a subvolume named "snapshot"; rename to include the number
@@ -137,28 +152,30 @@ else
     fi
 
     # Update state file and clear trap (receive succeeded)
-    echo "$newest" > "$STATE_FILE"
+    echo "$newest" > "$state_file"
     trap - EXIT
-    log "Backup complete: #$newest -> $BACKUP_DIR/$dest_name"
-fi
+    log "[$config] Backup complete: #$newest -> $BACKUP_DIR/$dest_name"
 
-# Prune old snapshots (keep KEEP_COUNT most recent)
-if [ "$DRY_RUN" = false ]; then
+    # Prune old snapshots for this config (keep KEEP_COUNT most recent)
     mapfile -t existing < <(
-        find "$BACKUP_DIR" -maxdepth 1 -name 'snapshot-*' -type d \
-            | sed 's|.*/snapshot-||' | sort -n
+        find "$BACKUP_DIR" -maxdepth 1 -name "${prefix}-*" -type d \
+            | sed "s|.*/${prefix}-||" | sort -n
     )
     count=${#existing[@]}
     if [ "$count" -gt "$KEEP_COUNT" ]; then
         prune_count=$((count - KEEP_COUNT))
-        log "Pruning $prune_count old snapshot(s) (keeping $KEEP_COUNT)..."
+        log "[$config] Pruning $prune_count old snapshot(s) (keeping $KEEP_COUNT)..."
         for ((i = 0; i < prune_count; i++)); do
             old="${existing[$i]}"
-            log "Deleting $BACKUP_DIR/snapshot-$old"
-            sudo "$HELPER" delete "snapshot-$old" \
-                || warn "Failed to delete snapshot-$old"
+            log "[$config] Deleting $BACKUP_DIR/${prefix}-$old"
+            sudo "$HELPER" delete "${prefix}-$old" \
+                || warn "[$config] Failed to delete ${prefix}-$old"
         done
     fi
-fi
+}
+
+# Root filesystem first (existing backups keep their snapshot-<N> names), then the volume.
+backup_config root       /.snapshots                "snapshot"   "$STATE_DIR/last-snapshot"
+backup_config roost-data /mnt/roost-data/.snapshots "roost-data" "$STATE_DIR/last-snapshot-roost-data"
 
 log "Done."
