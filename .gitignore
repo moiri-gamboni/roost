@@ -1,6 +1,7 @@
 .env
 logs/
 repomix-output.xml
+*.vsix
 files/private/
 plans/
 .claude/

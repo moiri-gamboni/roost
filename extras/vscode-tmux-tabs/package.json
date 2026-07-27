@@ -1,0 +1,87 @@
+{
+  "name": "roost-tmux-tabs",
+  "displayName": "Roost tmux tabs",
+  "description": "One VS Code terminal tab per window of the `main` tmux session, kept in sync.",
+  "version": "0.5.1",
+  "publisher": "roost",
+  "license": "AGPL-3.0-or-later",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "roostTmuxTabs.sync", "title": "Sync tmux tabs", "category": "Roost" },
+      { "command": "roostTmuxTabs.closeAll", "title": "Close all tmux tabs", "category": "Roost" },
+      { "command": "roostTmuxTabs.newAttach", "title": "New tmux terminal (attach main)", "category": "Roost" }
+    ],
+    "terminal": {
+      "profiles": [
+        {
+          "id": "roostTmuxTabs.attach",
+          "title": "Roost tmux (attach main)",
+          "icon": "terminal-tmux"
+        }
+      ]
+    },
+    "keybindings": [
+      { "command": "roostTmuxTabs.newAttach", "key": "ctrl+meta+t" }
+    ],
+    "configuration": {
+      "title": "Roost tmux tabs",
+      "properties": {
+        "roostTmuxTabs.baseSession": {
+          "type": "string",
+          "default": "main",
+          "description": "tmux base session whose windows become tabs."
+        },
+        "roostTmuxTabs.location": {
+          "type": "string",
+          "enum": ["panel", "editor"],
+          "enumDescriptions": [
+            "Open in the terminal panel (tabs listed on the panel side).",
+            "Open in the editor area (each tab is an editor tab)."
+          ],
+          "default": "editor",
+          "description": "Where to open the terminal tabs. 'editor' makes each tab an editor-area tab (top tab bar, alongside files); 'panel' docks them in the bottom terminal panel."
+        },
+        "roostTmuxTabs.autoSync": {
+          "type": "boolean",
+          "default": true,
+          "description": "Re-sync when the VS Code window regains focus, and poll while focused."
+        },
+        "roostTmuxTabs.pollSeconds": {
+          "type": "number",
+          "default": 4,
+          "description": "While focused, re-sync every N seconds so new/closed agents appear/disappear on their own. 0 disables polling (focus + manual only)."
+        },
+        "roostTmuxTabs.liveTitle": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the live pane title (Claude session name + working spinner) as the tab label, updated in place. Requires terminal.integrated.tabs.title to include \"${sequence}\". Turn off to pin a clean static session-title name instead (correct name, but no live working indicator)."
+        },
+        "roostTmuxTabs.hideStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Hide the tmux status bar inside each tab (the VS Code tab already labels it)."
+        },
+        "roostTmuxTabs.pinWindows": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep each tab locked to its window: when the window closes (or you switch inside the tab) the tab self-destructs instead of drifting to show a neighbouring window. Disable for free window-switching inside a tab (reintroduces the brief wrong-window flash on close)."
+        },
+        "roostTmuxTabs.excludeNames": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Window names to skip (exact match), e.g. [\"shell\"] to not surface the utility window."
+        },
+        "roostTmuxTabs.debug": {
+          "type": "boolean",
+          "default": true,
+          "description": "Log tab opens/drops (with reasons)/sweeps/window-set changes to ~/.roost-tmux-tabs.log for troubleshooting. `tail -f ~/.roost-tmux-tabs.log` while reproducing a glitch. Set false once things are stable."
+        }
+      }
+    }
+  }
+}
