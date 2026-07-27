@@ -84,7 +84,7 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
 - **`files/`** -- Config files and templates deployed to the server
   - `_setup-env.sh` -- Shared environment sourced by every setup script
   - `settings.json` -- Claude Code settings: default model `opus[1m]` with availability fallback to `claude-opus-4-8` (`fallbackModel`). **Runtime-rewritten**: the app writes `/model` and `/config` choices straight back into the live file, so the repo copy tracks live rather than dictating it — never blanket `roost-apply push` (it would revert whatever the repo has not learned yet), and compare with `jq -S` since the app's key reordering makes the textual diff meaningless. Also holds hook definitions (Notification + perm-mark; UserPromptSubmit usage line + turn start; Stop/StopFailure/SessionEnd/Subagent*/PostCompact lifecycle events; PostToolUse shellcheck), Notion permissions gate, cleanup policy
-  - `private/` -- Separate git repo (`claude-mds`); commit changes there, then deploy with `roost-apply push`
+  - `private/` -- Separate git repo (`roost-private`); commit changes there, then deploy with `roost-apply push`
     - `global-CLAUDE.md` -- Deployed to `$CLAUDE_CONFIG_DIR/CLAUDE.md` (`~/roost/claude/CLAUDE.md`); epistemic style, planning, search, agent, and writing conventions
     - `code-CLAUDE.md` -- Deployed to `~/roost/code/CLAUDE.md`; safety, implementation density, debugging, git-commit, and tooling conventions
     - `cron-mirrors` -- Private cron fragments (personal data-mirror refresh jobs: notion-mirror, granola-mirror); envsubst-rendered and deployed to `/etc/cron.d/$ROOST_DIR_NAME-mirrors` (job specifics stay in the private repo)
