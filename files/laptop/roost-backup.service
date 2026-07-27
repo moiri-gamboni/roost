@@ -10,3 +10,5 @@ User=${USERNAME}
 ExecStart=/usr/local/bin/roost-backup
 Environment=ROOST_SERVER=${SERVER_NAME}
 Environment=ROOST_USER=${USERNAME}
+# Empty unless the installer found a dedicated backup key; see btrfs-backup.sh --help.
+Environment=ROOST_SSH_KEY=${ROOST_SSH_KEY}

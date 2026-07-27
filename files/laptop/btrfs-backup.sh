@@ -15,6 +15,7 @@ BACKUP_DIR="${ROOST_BACKUP_DIR:-/backup/roost}"
 STATE_DIR="$HOME/.local/state/roost-backup"
 NTFY_URL="${ROOST_NTFY_URL:-}"
 KEEP_COUNT="${ROOST_BACKUP_KEEP:-7}"
+SSH_KEY="${ROOST_SSH_KEY:-}"
 
 SSH_TARGET="$SERVER_USER@$SERVER_HOST"
 LOG_TAG="roost/backup"
@@ -51,6 +52,7 @@ Environment variables:
   ROOST_BACKUP_DIR   Local btrfs backup path (default: /backup/roost)
   ROOST_NTFY_URL     ntfy URL for failure alerts (optional)
   ROOST_BACKUP_KEEP  Number of snapshots to keep per config (default: 7)
+  ROOST_SSH_KEY      Private key to use (optional; ssh -i + IdentitiesOnly=yes)
 EOF
     exit 0
 }
@@ -72,6 +74,14 @@ if [ ! -d "$BACKUP_DIR" ]; then
     die "Backup directory $BACKUP_DIR does not exist (must be a btrfs filesystem)"
 fi
 
+# ClearAllForwardings: a data pull needs none, and the backup key is `restrict`ed
+# server-side, so a RemoteForward inherited from ~/.ssh/config would only warn.
+SSH=(ssh -o ClearAllForwardings=yes)
+if [ -n "$SSH_KEY" ]; then
+    [ -f "$SSH_KEY" ] || die "ROOST_SSH_KEY=$SSH_KEY does not exist"
+    SSH+=(-i "$SSH_KEY" -o IdentitiesOnly=yes)
+fi
+
 # Back up one snapper config via incremental (or full) btrfs send/receive.
 #   $1 config      snapper config name (root, roost-data)
 #   $2 snap_base   server dir holding <N>/snapshot (/.snapshots, /mnt/roost-data/.snapshots)
@@ -82,7 +92,7 @@ backup_config() {
     local raw_list newest parent dest_name stale existing count prune_count old i
 
     log "[$config] Listing snapshots on $SERVER_HOST..."
-    raw_list=$(ssh "$SSH_TARGET" "sudo snapper -c $config --csvout --no-headers list --columns number,type,description") \
+    raw_list=$("${SSH[@]}" "$SSH_TARGET" "sudo snapper -c $config --csvout --no-headers list --columns number,type,description") \
         || die "[$config] Failed to list snapshots on $SERVER_HOST"
 
     # Newest timeline snapshot (type=single, description=timeline)
@@ -136,12 +146,12 @@ backup_config() {
 
     if [ -n "$parent" ]; then
         log "[$config] Incremental send: #$parent -> #$newest"
-        ssh "$SSH_TARGET" "sudo btrfs send -p ${snap_base}/${parent}/snapshot ${snap_base}/${newest}/snapshot" \
+        "${SSH[@]}" "$SSH_TARGET" "sudo btrfs send -p ${snap_base}/${parent}/snapshot ${snap_base}/${newest}/snapshot" \
             | sudo "$HELPER" receive \
             || die "[$config] Incremental btrfs send/receive failed (#$parent -> #$newest)"
     else
         log "[$config] Full send: #$newest"
-        ssh "$SSH_TARGET" "sudo btrfs send ${snap_base}/${newest}/snapshot" \
+        "${SSH[@]}" "$SSH_TARGET" "sudo btrfs send ${snap_base}/${newest}/snapshot" \
             | sudo "$HELPER" receive \
             || die "[$config] Full btrfs send/receive failed (#$newest)"
     fi
