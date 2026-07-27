@@ -12,8 +12,8 @@ $ session
 ── session overview ───────────────────────────────
   id       e0671919-3e1a-4e37-8fe3-884e27703240
   name     Link session ID to usage tracking tool
-  5-hour   █░░░░░░░░░  13%   resets in 1h33m  (pace cap 68%)
-  weekly   █████░░░░░  54%   resets in 5d17h  (pace cap 18%)
+  5-hour   █░░░░░░░░░  13%   resets in 1h33m          (pace cap 69%)
+  weekly   █████░░░░░  54%   resets in 5d17h          (pace cap 18%)
   context  ███░░░░░░░  31%   (this session)
   share    ≈3.1% of 5h · ≈1.0% of wk   ($13.30 this 5h window; `session usage --all`)
 ──────────────────────────────────────────────────
@@ -57,5 +57,6 @@ session --guard || sleep 120                        # simple pacing loop
 `session --wait 5h` in the background (e.g. Bash `run_in_background`) blocks until the reset; its exit is the wake-up. The per-turn hook appends a ⚠ advisory automatically when a window crosses `USAGE_WARN_PCT` (default 90): for 5h it points at `session --wait 5h`; for weekly (resets in days) it advises winding down instead.
 
 ## How it works / caveats
-- The 5h/weekly data exists only as statusline stdin fields — not passed to hooks. The statusline persists each render to `~/roost/claude/usage/last-status.json` (freshness-guarded against stale long-idle sessions) plus the per-session sample log; `session` reads those. The cache is usually ≤10s old; countdowns and caps are computed live even when the %s lag, and a past-reset snapshot renders as `(stale)` rather than a wrong countdown.
+- The 5h/weekly data exists only as statusline stdin fields — not passed to hooks. The statusline persists each render to `~/roost/claude/usage/last-status.json` (freshness-guarded per window against stale long-idle sessions) plus the per-session sample log; `session` reads those. The cache is usually ≤10s old and countdowns are computed live even when the %s lag.
+- **Stale snapshots.** `rate_limits` only refresh on an API *response*, so a session that is idle — or rate-limited, which is exactly when you check — keeps reporting the window it last heard about. Both readers take the freshest reading per window across sessions (limits are account-wide, so another session's newer pair is strictly better). Once a `resets_at` has passed, the % is marked `?` and no `0h00m` countdown is printed: the weekly is stepped forward on its fixed 7-day cadence (`resets in ~6d09h`), the 5h is reported `next reset unknown` because that window is usage-anchored — it opens on the first request after an idle gap, so its phase moves and cannot be projected. `--guard` treats a stale window as unknown and won't pause on it. Built-in `/usage` fetches live, so it is the tiebreaker when the two disagree.
 - "no cache yet" → interact once so the statusline renders; "no session log yet" → same, for the sample log.

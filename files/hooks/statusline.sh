@@ -5,16 +5,16 @@
 exec 2>/dev/null
 input=$(cat)
 
-# Persist the stdin payload for the on-demand `usage` reader (display unchanged).
+# Persist the stdin payload for the on-demand `usage` reader.
 # The cache is shared across ALL sessions. A long-idle session holds hours-old
 # rate_limits (its resets_at now in the past) and would otherwise clobber fresh data,
 # making every reader show a bogus "resets in 0h00m". Freshness guard: overwrite only
 # when this snapshot is at least as fresh as the cached one. resets_at only moves
-# forward as a window resets, so a smaller resets_at == an older snapshot. Escape
-# hatch: if the cache is itself very old (>15m), write regardless so it can't freeze.
+# forward as a window resets, so a smaller resets_at == an older snapshot.
 _u="$HOME/roost/claude/usage"
 [ -d "$_u" ] || mkdir -p "$_u"
 _cache="$_u/last-status.json"
+_now=$(date +%s)
 _intonly() { local v="${1%%.*}"; case "$v" in ''|*[!0-9]*) printf 0 ;; *) printf '%s' "$v" ;; esac; }
 # "-" sentinel for missing string fields (session_id, model, prompt_id): an
 # empty field would be eaten by `read` under IFS=tab (tab is IFS whitespace,
@@ -41,14 +41,26 @@ IFS=$'\t' read -r _sid _cost _f5 _w7 _new_fr _new_wr _dur _apidur \
           (.prompt_id//"-")]|@tsv' <<<"$input")
 _new_fr=$(_intonly "$_new_fr"); _new_wr=$(_intonly "$_new_wr")
 _write=1
+_old_f5=-1; _old_w7=-1; _old_fr=0; _old_wr=0
 if [ -s "$_cache" ]; then
-  IFS=$'\t' read -r _old_fr _old_wr < <(
-    jq -r '[(.rate_limits.five_hour.resets_at//0),(.rate_limits.seven_day.resets_at//0)]|map(floor)|@tsv' "$_cache")
+  IFS=$'\t' read -r _old_f5 _old_w7 _old_fr _old_wr < <(
+    jq -r '[(.rate_limits.five_hour.used_percentage//-1),
+            (.rate_limits.seven_day.used_percentage//-1),
+            ((.rate_limits.five_hour.resets_at//0)|floor),
+            ((.rate_limits.seven_day.resets_at//0)|floor)]|@tsv' "$_cache")
   _old_fr=$(_intonly "$_old_fr"); _old_wr=$(_intonly "$_old_wr")
-  _age=$(( $(date +%s) - $(stat -c %Y "$_cache") ))
-  # reject a snapshot that's stale on EITHER window, unless the cache itself is stale
-  if [ "$_age" -lt 900 ] && { [ "$_new_fr" -lt "$_old_fr" ] || [ "$_new_wr" -lt "$_old_wr" ]; }; then
+  # Reject a snapshot that's stale on EITHER window. The escape hatch used to key
+  # on the cache FILE's age (>15m), which let a days-old snapshot win a quarter
+  # hour after the last write — one session here was 4 days behind and still
+  # overwrote live data. Key it on the cached windows instead: only when BOTH have
+  # already elapsed does the cache hold nothing worth protecting, and even then
+  # only yield to a snapshot that actually has a live window.
+  if [ "$_new_fr" -lt "$_old_fr" ] || [ "$_new_wr" -lt "$_old_wr" ]; then
     _write=0
+    if [ "$_old_fr" -le "$_now" ] && [ "$_old_wr" -le "$_now" ] \
+       && { [ "$_new_fr" -gt "$_now" ] || [ "$_new_wr" -gt "$_now" ]; }; then
+      _write=1
+    fi
   fi
 fi
 [ "$_write" = 1 ] && printf '%s' "$input" > "$_u/.last-status.tmp" && mv -f "$_u/.last-status.tmp" "$_cache"
@@ -78,7 +90,6 @@ fi
 # below keeps the full latest payload.
 _slog="$_u/session-log.tsv"
 _snapdir="$_u/sessions"
-_now=$(date +%s)
 if [ -n "$_sid" ] && [ "$_sid" != "-" ] && _costf=$(LC_ALL=C printf '%.4f' "$_cost" 2>/dev/null); then
   [ -d "$_snapdir" ] || mkdir -p "$_snapdir"
   _side="$_snapdir/$_sid.cost"
@@ -128,15 +139,52 @@ if [ ! -e "$_pm" ] || [ $(( _now - $(stat -c %Y "$_pm") )) -ge 86400 ]; then
   [ -d "$_u/panes" ] && find "$_u/panes" -type f -mtime +8 -delete
 fi
 
-jq -r '
+# --- Rate-limit segments -----------------------------------------------------
+# rate_limits only refresh on an API RESPONSE, so a session that is idle — or
+# rate-limited, which is exactly when you check — keeps rendering the last window
+# it was told about. Once that resets_at passes, the countdown used to clamp to
+# "0h0m left", which reads as "the cap is up" when it is not. Two corrections:
+#   • per window take whichever snapshot is fresher, this session's or the shared
+#     cache's: rate limits are account-wide, so another session's newer reading is
+#     strictly better. pct and reset are carried as a PAIR so they stay coherent.
+#   • never print a bare zero for an expired window. The weekly can be recovered —
+#     fixed 7-day cadence off a wall-clock anchor (2026-07-19, -26 and 08-02 all
+#     15:00 UTC, exactly 604800s apart) — so step it forward and mark it ~. The 5h
+#     window CANNOT: it is usage-anchored, opening on the first request after an
+#     idle gap, so its phase moves (observed boundaries at :00/:10/:20/:40/:50 and
+#     inter-window gaps of 5.00h through 27h). Stepping a stale 07-26 14:00 forward
+#     gives 10:00 where the live value was 09:10 — so it is flagged, not guessed.
+_d_f5=$_f5; _d_fr=$_new_fr; _d_w7=$_w7; _d_wr=$_new_wr
+if [ "$_old_fr" -gt "$_d_fr" ]; then _d_f5=$_old_f5; _d_fr=$_old_fr; fi
+if [ "$_old_wr" -gt "$_d_wr" ]; then _d_w7=$_old_w7; _d_wr=$_old_wr; fi
+_hm() { local s=$1; [ "$s" -lt 0 ] && s=0; printf '%dh%dm' $(( s/3600 )) $(( (s%3600)/60 )); }
+# Rounded, and h+m below a day. Flooring the hour drops up to 59m, which is what
+# turned 58 minutes of weekly headroom into a flat "0d0h".
+_dh() { local s=$1 h; [ "$s" -lt 0 ] && s=0
+        if [ "$s" -lt 86400 ]; then _hm "$s"; return; fi
+        h=$(( (s + 1800) / 3600 )); printf '%dd%dh' $(( h/24 )) $(( h%24 )); }
+_seg() {  # $1=label  $2=pct  $3=resets_at  $4=cadence secs (0 = not projectable)
+  local p="${2%%.*}" r="$3" w="$4" left
+  if [ -z "$p" ] || [ "$p" = "-1" ]; then return; fi
+  if [ "$r" -le 0 ]; then printf ', %s: %s%%' "$1" "$p"; return; fi
+  if [ "$r" -gt "$_now" ]; then
+    left=$(( r - _now ))
+    if [ "$w" -gt 0 ]; then printf ', %s: %s%% (%s left)' "$1" "$p" "$(_dh "$left")"
+    else                    printf ', %s: %s%% (%s left)' "$1" "$p" "$(_hm "$left")"; fi
+  elif [ "$w" -gt 0 ]; then
+    left=$(( r + w * ( (_now - r + w - 1) / w ) - _now ))
+    printf ', %s: %s%%? (~%s left)' "$1" "$p" "$(_dh "$left")"
+  else
+    printf ', %s: %s%%? (stale)' "$1" "$p"
+  fi
+}
+_five_seg=$(_seg 5h "$_d_f5" "$_d_fr" 0)
+_week_seg=$(_seg wk "$_d_w7" "$_d_wr" 604800)
+
+jq -r --arg five_seg "$_five_seg" --arg week_seg "$_week_seg" '
   (.context_window.current_usage // {}) as $cu |
   ([$cu.input_tokens, $cu.cache_creation_input_tokens, $cu.cache_read_input_tokens]
     | map(. // 0) | add) as $used |
-  (.rate_limits.five_hour.used_percentage // null) as $five |
-  (.rate_limits.five_hour.resets_at // null) as $five_reset |
-  (.rate_limits.seven_day.used_percentage // null) as $week |
-  (.rate_limits.seven_day.resets_at // null) as $week_reset |
-  now as $t |
   def fmt:
     if . >= 1000000 then
       (. / 100000 | floor) as $d |
@@ -144,19 +192,5 @@ jq -r '
     elif . >= 1000 then
       "\(. / 1000 | floor)k"
     else "\(.)" end;
-  def hm($secs):
-    (if $secs < 0 then 0 else $secs end) as $s |
-    "\(($s / 3600) | floor)h\((($s % 3600) / 60) | floor)m";
-  def dh($secs):
-    (if $secs < 0 then 0 else $secs end) as $s |
-    "\(($s / 86400) | floor)d\((($s % 86400) / 3600) | floor)h";
-  (if $five != null then
-    (if $five_reset != null then ", 5h: \($five | floor)% (\(hm($five_reset - $t)) left)"
-     else ", 5h: \($five | floor)%" end)
-   else "" end) as $five_seg |
-  (if $week != null then
-    (if $week_reset != null then ", wk: \($week | floor)% (\(dh($week_reset - $t)) left)"
-     else ", wk: \($week | floor)%" end)
-   else "" end) as $week_seg |
   "\($used | fmt) tkns\($five_seg)\($week_seg)"
 ' <<< "$input"

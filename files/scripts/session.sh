@@ -584,7 +584,16 @@ bar() { local p; p=$(num "$1"); local f=$(( p/10 )); (( f<0 )) && f=0; (( f>10 )
         local i out=""; for ((i=0;i<f;i++)); do out+="█"; done; for ((i=f;i<10;i++)); do out+="░"; done; printf '%s' "$out"; }
 pct() { local v=${1%.*}; { [ -z "$v" ] || [ "$v" = "-1" ]; } && { echo "n/a"; return; }; echo "${v}%"; }
 hm()  { local s=$(( $1<0 ? 0 : $1 )); printf '%dh%02dm' $(( s/3600 ))  $(( (s%3600)/60 )); }
-dh()  { local s=$(( $1<0 ? 0 : $1 )); printf '%dd%02dh' $(( s/86400 )) $(( (s%86400)/3600 )); }
+# Days+hours, but ROUNDED, and h+m below a day. Flooring the hour drops up to 59
+# minutes, which reads as a whole hour short: 58m of weekly headroom printed
+# "0d00h" — indistinguishable from "already reset" — while the built-in /usage
+# correctly showed the hour, and 6d08h50m prints "6d08h", implying a reset an hour
+# early. Below a day it falls through to hm() so a sub-hour remainder can never
+# render as a zero.
+dh()  { local s=$(( $1<0 ? 0 : $1 )) h
+        (( s < 86400 )) && { hm "$s"; return; }
+        h=$(( (s + 1800) / 3600 ))
+        printf '%dd%02dh' $(( h/24 )) $(( h%24 )); }
 
 # cap for a power curve: round(100 * x^p), x=elapsed fraction, clamped [0,100]
 powcap() {  # $1=window $2=left $3=p
@@ -608,9 +617,34 @@ resolve() {  # $1=spec  $2=window_seconds  $3=left_seconds
 fp=$(num "$five"); wp=$(num "$week")
 left5=$(( fivereset - now )); (( left5<0 )) && left5=0; (( left5>FIVE_WINDOW )) && left5=FIVE_WINDOW
 leftw=$(( weekreset - now )); (( leftw<0 )) && leftw=0; (( leftw>WEEK_WINDOW )) && leftw=WEEK_WINDOW
-# a resets_at in the PAST means the snapshot predates a reset (stale cache)
+# A resets_at in the PAST means the snapshot predates a reset. Not a corner case:
+# rate_limits only refresh on an API RESPONSE, so a session that is idle — or
+# rate-limited, which is exactly when you check — keeps reporting the last window
+# it was told about, and this cache is only as fresh as the freshest session on the
+# box. Printing the clamped "0h00m" then reads as "the cap is up" when it is not.
 f_stale=0; (( fivereset > 0 && fivereset < now )) && f_stale=1
 w_stale=0; (( weekreset > 0 && weekreset < now )) && w_stale=1
+# The weekly boundary survives a stale snapshot: fixed 7-day cadence off a
+# wall-clock anchor (2026-07-19, -26 and 08-02 all 15:00 UTC, exactly 604800s
+# apart), so step it forward — marked ~ because a DST-shifted anchor would move it.
+# The 5h boundary does NOT survive: that window is usage-anchored, opening on the
+# first request after an idle gap, so its phase moves (observed boundaries at
+# :00/:10/:20/:40/:50, inter-window gaps from 5.00h to 27h, and a live session
+# watching its own reset roll 10:10 → 10:20 while sitting at 0%). Stepping the
+# stale 07-26 14:00 snapshot forward gives 10:00 where the live value was 09:10 —
+# so the 5h window is reported unknown rather than guessed.
+leftw_p=$leftw
+(( w_stale )) && leftw_p=$(( weekreset + WEEK_WINDOW * ( (now - weekreset + WEEK_WINDOW - 1) / WEEK_WINDOW ) - now ))
+(( leftw_p<0 )) && leftw_p=0; (( leftw_p>WEEK_WINDOW )) && leftw_p=WEEK_WINDOW
+
+# Display helpers shared by the overview and the compact/hook line. A stale
+# reading gets "?" on the % — it belongs to the window that already closed — and
+# a countdown phrase that says what is actually known.
+pctq() { local p; p=$(pct "$1"); [ "$2" = 1 ] && [ "$p" != "n/a" ] && p="$p?"; printf '%s' "$p"; }
+cd5()  { (( f_stale )) && { printf 'next reset unknown · stale snapshot'; return; }
+         printf 'resets in %s' "$(hm "$left5")"; }
+cdw()  { (( w_stale )) && { printf 'resets in ~%s · stale snapshot' "$(dh "$leftw_p")"; return; }
+         printf 'resets in %s' "$(dh "$leftw")"; }
 
 # ── Per-session attribution ──────────────────────────────────────────────────
 # The statusline appends (ts, session_id, cumulative cost_usd, 5h%, wk%, resets)
@@ -794,20 +828,19 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
   # The leading tag is what lets a cold reader (a fresh model) know this is the Claude
   # plan's rate limits, not some other 5h/weekly metric. %s are % consumed toward each
   # cap; the parenthetical is the live reset countdown.
-  # A resets_at in the PAST means this snapshot predates a reset (stale cache,
-  # f_stale/w_stale above): show "(stale)" rather than a confidently-wrong
-  # "resets in 0h00m".
-  seg() {  # $1=label  $2=pct  $3=reset-countdown  $4=stale(1) ; honest when data missing/stale
-    local p; p=$(pct "$2")
+  # A resets_at in the PAST means this snapshot predates a reset (f_stale/w_stale
+  # above): cd5/cdw say so rather than emitting a confidently-wrong "resets in
+  # 0h00m", and pctq marks the % as belonging to the closed window.
+  seg() {  # $1=label  $2=pct  $3=stale(1)  $4=countdown phrase (already stale-aware)
+    local p; p=$(pctq "$2" "$3")
     if [ "$p" = "n/a" ]; then printf '%s n/a' "$1"
-    elif [ "$4" = 1 ]; then printf '%s %s used (stale — reset already elapsed)' "$1" "$p"
-    else printf '%s %s used (resets in %s)' "$1" "$p" "$3"; fi
+    else printf '%s %s used (%s)' "$1" "$p" "$4"; fi
   }
   stale=""; (( age > 120 )) && stale=" · cache ${age}s stale"
   line=$(printf 'Claude usage limits · %s · %s · %s%s' \
     "$(date '+%Y-%m-%d %H:%M %Z')" \
-    "$(seg 5h "$five" "$(hm "$left5")" "$f_stale")" \
-    "$(seg wk "$week" "$(dh "$leftw")" "$w_stale")" \
+    "$(seg 5h "$five" "$f_stale" "$(cd5)")" \
+    "$(seg wk "$week" "$w_stale" "$(cdw)")" \
     "$stale")
   # Hook only: append this session's estimated share of each window, so every turn
   # carries "how much of the burn is mine" alongside the global %s. The session id
@@ -858,21 +891,33 @@ if [ "$mode" = wait ]; then
   # notification, so you get woken exactly at the reset — no ScheduleWakeup hops,
   # no transcript polling. resets_at is a fixed future timestamp, so even a stale
   # cache (the statusline won't re-render while we sleep) still has the right target.
-  target=$fivereset; label="5-hour"
-  [ "$waitwin" = week ] && { target=$weekreset; label="weekly"; }
+  # Deliberately the RAW resets_at, not the projected weekly boundary the display
+  # uses: a stale snapshot usually means the window reset while nothing was looking,
+  # so returning at once (and letting the caller retry) is the safe direction —
+  # projecting forward would block for up to 7 days on a cap that already lifted.
+  target=$fivereset; label="5-hour"; tstale=$f_stale
+  [ "$waitwin" = week ] && { target=$weekreset; label="weekly"; tstale=$w_stale; }
   if ! [ "$target" -gt 0 ] 2>/dev/null; then
     echo "session: no ${label} reset timestamp in cache ($cache); cannot wait" >&2; exit 1
   fi
   while now=$(date +%s); (( now < target )); do
     r=$(( target - now )); (( r > 300 )) && r=300; sleep "$r"
   done
-  printf 'Claude %s usage window reset (was due %s) — fresh window available.\n' \
-    "$label" "$(date -d "@$target" '+%Y-%m-%d %H:%M %Z' 2>/dev/null || echo "@$target")"
+  note=""; [ "$tstale" = 1 ] && note=' — the cached snapshot was already past it, so this returned at once; re-check `session` for the live window'
+  printf 'Claude %s usage window reset (was due %s) — fresh window available.%s\n' \
+    "$label" "$(date -d "@$target" '+%Y-%m-%d %H:%M %Z' 2>/dev/null || echo "@$target")" "$note"
   exit 0
 fi
 
 resolve "$FIVE_GUARD" "$FIVE_WINDOW" "$left5"; F_DIS=$GDIS; F_CAP=$GCAP; F_LBL=$GLABEL
 resolve "$WEEK_GUARD" "$WEEK_WINDOW" "$leftw"; W_DIS=$GDIS; W_CAP=$GCAP; W_LBL=$GLABEL
+# A stale snapshot's % belongs to the window that already closed, so pacing on it
+# would either hold work back for a limit that has since reset or — now that the
+# weekly boundary is projected forward — read a freshly-opened window as already
+# spent. Treat an unknown window as unknown and don't pause on it. (That was the
+# de facto behaviour before, via left=0 forcing a 100% cap; now it is deliberate.)
+(( f_stale )) && { F_DIS=1; F_CAP=101; F_LBL="off · stale"; }
+(( w_stale )) && { W_DIS=1; W_CAP=101; W_LBL="off · stale"; }
 
 if [ "$mode" = guard ]; then
   reason=""
@@ -897,9 +942,11 @@ if sid=$(resolve_sid) && [ -n "$sid" ]; then
   printf "  id       %s\n" "$sid"
   [ -n "$sname" ] && printf "  name     %s\n" "$sname"
 fi
-printf "  5-hour   %s  %-4s  resets in %s  (%s)\n" "$(bar "$five")" "$(pct "$five")" "$(hm "$left5")" "$F_LBL"
-printf "  weekly   %s  %-4s  resets in %s  (%s)\n" "$(bar "$week")" "$(pct "$week")" "$(dh "$leftw")" "$W_LBL"
-printf "  context  %s  %-4s  (this session)\n"     "$(bar "$ctx")"  "$(pct "$ctx")"
+# %-24s pads by BYTES, but every stale phrase (the only multibyte ones, via ·)
+# already exceeds the field, so the pad only ever lands on ASCII countdowns
+printf "  5-hour   %s  %-5s %-24s (%s)\n" "$(bar "$five")" "$(pctq "$five" "$f_stale")" "$(cd5)" "$F_LBL"
+printf "  weekly   %s  %-5s %-24s (%s)\n" "$(bar "$week")" "$(pctq "$week" "$w_stale")" "$(cdw)" "$W_LBL"
+printf "  context  %s  %-5s %s\n"         "$(bar "$ctx")"  "$(pct "$ctx")" "(this session)"
 if [ -n "${sid:-}" ] && sest=$(est_sessions); then
   IFS=$'\t' read -r st5 stw so5 sow < <(awk -F'\t' -v s="$sid" \
     '{t5+=$2; tw+=$3; if ($1==s) {o5=$2; ow=$3}} END{printf "%.4f\t%.4f\t%.4f\t%.4f\n", t5, tw, o5, ow}' <<<"$sest")
