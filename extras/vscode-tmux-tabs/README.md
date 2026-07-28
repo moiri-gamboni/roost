@@ -72,6 +72,14 @@ focuses the one already open — so `+` / `Ctrl+Shift+`` behaves as "switch to m
 tmux tab". Same sweep runs on the poll, which is what catches the several
 terminals VS Code revives at once on a window reload.
 
+The surviving tab is one the *extension* opens, at `location` (editor area by
+default) — not whichever clone happened to be oldest. A terminal VS Code builds
+from the default profile lands wherever the gesture pointed (the panel's `+`
+puts it at the bottom), and the API can't read a terminal's location after the
+fact, let alone move it, so re-opening our own is the only way to land in the
+editor area every time. Cost: the first gesture after a reload replaces the
+revived tab instead of reusing it.
+
 Note: an attach view and a pinned tab that happen to show the *same* window at
 the same time will trigger tmux's smallest-client sizing for that window (the
 usual multi-client caveat).
