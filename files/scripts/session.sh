@@ -491,6 +491,16 @@ if [ "${submode:-}" = time ]; then
   # attended total + last-focus ts per sid (from the focus spans)
   fatt=$(awk -F'\t' 'NF==3 { att[$1]+=$3-$2; if ($3+0>last[$1]) last[$1]=$3+0 }
     END { for (s in att) printf "%s\t%d\t%d\n", s, att[s], last[s] }' <<<"$fspans")
+  # Attended UNION across sessions: the wall-clock time you were attending ANY
+  # session — one human, so this is the only figure that can be read as "time
+  # spent". The per-session column sums to more whenever two tabs or two devices
+  # are attended at once, which on a parallel day is most of them.
+  funion=$(awk -F'\t' 'NF==3 { printf "%.3f\t%.3f\n", $2, $3 }' <<<"$fspans" \
+    | LC_ALL=C sort -k1,1n | awk -F'\t' '
+      { s=$1+0; e=$2+0
+        if (!n) { cs=s; ce=e; n=1; next }
+        if (s>ce) { tot+=ce-cs; cs=s; ce=e } else if (e>ce) ce=e }
+      END { if (n) tot+=ce-cs; printf "%d", tot+0 }')
   # watched = per-sid overlap of the two interval sets (sweep line over flanks)
   wov=$({ awk -F'\t' 'NF==3 {printf "%s\t%s\t+T\n%s\t%s\t-T\n", $1,$2,$1,$3}' <<<"$tspans"
           awk -F'\t' 'NF==3 {printf "%s\t%s\t+F\n%s\t%s\t-F\n", $1,$2,$1,$3}' <<<"$fspans"
@@ -531,10 +541,20 @@ if [ "${submode:-}" = time ]; then
       printf '  %-9.8s %6s %8s %8s %8s  %-19s %s\n' "$tsid" "$tn" "$(fmt_d "$tact")" \
         "$twd" "$tad" "$st" "$(date -d "@$tlast" '+%H:%M')"
     done <<<"$rows"
+    nsess=$(awk -F'\t' '$1!=""' <<<"$rows" | wc -l)
+    totact=$(awk -F'\t' '$1!="" { s+=$3 } END { printf "%d", s+0 }' <<<"$rows")
+    totatt=$(awk -F'\t' 'NF==3 { s+=$2 } END { printf "%d", s+0 }' <<<"$fatt")
+    totwov=$(awk -F'\t' 'NF==2 { s+=$2 } END { printf "%d", s+0 }' <<<"$wov")
+    printf '  %-9s %6s %8s %8s %8s  %s\n' 'Σ all' "$nsess" \
+      "$(fmt_d "$totact")" "$(fmt_d "$totwov")" "$(fmt_d "$totatt")" 'summed over sessions'
+    printf '  %-9s %6s %8s %8s %8s  %s\n' 'you' '' '' '' \
+      "$(fmt_d "$funion")" 'wall clock (union)'
     printf '  (active = Claude working (closed turn spans; gaps and unclosed starts\n'
     printf '   never count, so it is a floor) · attend = your focused-tab time on the\n'
     printf '   session · watched = their overlap, active ∩ attended: supervised work.\n'
-    printf '   active−watched ran autonomously; attend−watched is reading/typing time)\n'
+    printf '   active−watched ran autonomously; attend−watched is reading/typing time.\n'
+    printf '   Σ attend counts each parallel session separately and so exceeds a day;\n'
+    printf '   "you" is the union — the wall-clock time you spent attending anything)\n'
     exit 0
   fi
   sid=$(resolve_sid) || { echo "session: not inside a session — use \`session time --all\`" >&2; exit 1; }
