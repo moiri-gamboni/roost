@@ -169,8 +169,7 @@
   "askUserQuestionTimeout": "never",
   "model": "claude-fable-5[1m]",
   "fallbackModel": [
-    "claude-opus-5",
-    "claude-opus-4-8"
+    "claude-opus-5"
   ],
   "tui": "fullscreen",
   "autoMemoryEnabled": true,
