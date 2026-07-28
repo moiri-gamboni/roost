@@ -114,6 +114,7 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
     - `granola-refresh.sh` -- `granola sync` → `granola-transcripts sync` → optional `granola-digest`; ntfys (3-day cooldown) on exit-3 (MCP re-auth needed) while summaries keep working. `granola-refresh [--commit] <mirror-dir>` (or `$GRANOLA_MIRROR`). `--commit` commits just the mirror + that day's brief + the auto glossary tier via **pathspec commits**, so anything else staged is untouched (polyrepo-aware: the auto tier is committed in whichever repo `workflows/` actually lives — for apart-research that's the separate `apart-workflows` repo). Driven by the private `cron-mirrors` job, which passes `--commit`
   - `scheduled/` -- **Cron + systemd-timer jobs** (deployed to `claude/scheduled/`): `health-check.sh`, `auto-update.sh`, `scheduled-task.sh`/`run-scheduled-task.sh`, `agents-cleanup.sh`, `track-ssh-activity.sh`, `ram-monitor.sh`, `vision-abuse-watch.sh`, `session-daily-brief.sh` (daily 06:40: sonnet-summarized brief of yesterday's sessions, active/attended time, and commits from day-sliced session-CLI logs — no $ figures by design; ntfy plain text + archive under `usage/briefs/`)
   - `lib/` -- **Shared**, sourced by the above via `../lib/` (deployed to `claude/lib/`): `_hook-env.sh` (JSON input `hook_json`, ntfy helpers, rate limiting, logging), `cloudflare-assemble.sh` (assembles cloudflare config from base header + app fragments)
+  - `agents/` -- Subagent definitions deployed to `$CLAUDE_CONFIG_DIR/agents/`. `opus-high.md` / `sonnet-high.md` are **config shims**: `model` + `effort` frontmatter and a one-line body, no persona. They exist because the `Agent` tool passes `model` per invocation but not `effort`, so a bare spawn inherits the session level; `effort:` frontmatter is the only per-subagent lever. It is overridden by `CLAUDE_CODE_EFFORT_LEVEL`, which is therefore deliberately **absent** from `settings.json` — setting it collapses every tier to one effort level
   - `skills/` -- Claude Code skills deployed to `$CLAUDE_CONFIG_DIR/skills/`
     - `html2markdown/SKILL.md`, `havelock-api/SKILL.md`, `humanizer/SKILL.md`, `pastebin/SKILL.md` (publish encrypted pastes to PrivateBin via pbincli), `session/SKILL.md` (the session CLI: identity + usage limits + per-session attribution)
   - `sshd/` -- sshd drop-in configs (`50-clip-forward.conf`: `StreamLocalBindUnlink yes`)
@@ -159,6 +160,7 @@ The directory name `roost` is configurable via `ROOST_DIR_NAME` in `.env`.
 │   ├── scheduled/          Cron + timer jobs (health-check, auto-update, ram-monitor, …)
 │   ├── lib/                Shared: _hook-env.sh, cloudflare-assemble.sh
 │   ├── skills/             Skills
+│   ├── agents/             Subagent definitions (opus-high, sonnet-high — model + effort only)
 │   └── projects/           Session transcripts (auto-managed)
 ├── cloudflared/            Cloudflare Tunnel fragments
 │   └── apps/               Per-app ingress YAML fragments
