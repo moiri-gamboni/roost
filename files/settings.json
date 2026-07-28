@@ -169,6 +169,7 @@
   "askUserQuestionTimeout": "never",
   "model": "opus[1m]",
   "fallbackModel": [
+    "claude-opus-5",
     "claude-opus-4-8"
   ],
   "tui": "fullscreen",
