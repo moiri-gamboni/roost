@@ -24,13 +24,7 @@ fi
 
 CODE_DIR="$ROOST_DIR/code"
 mkdir -p "$CODE_DIR"
-if [ -f "$REMOTE_DIR/files/private/code-CLAUDE.md" ]; then
-    cp "$REMOTE_DIR/files/private/code-CLAUDE.md" "$CODE_DIR/CLAUDE.md"
-    chown -R "$USERNAME:$USERNAME" "$CODE_DIR"
-    ok "Code CLAUDE.md installed"
-else
-    info "Code CLAUDE.md not found (files/private/ missing). Skipping."
-fi
+chown "$USERNAME:$USERNAME" "$CODE_DIR"
 
 # --- Bootstrap hook / lib / scheduled / CLI scripts into place ---
 mkdir -p "$CLAUDE_DIR/hooks" "$CLAUDE_DIR/lib" "$CLAUDE_DIR/scheduled" "$CLAUDE_DIR/scripts"
