@@ -448,7 +448,6 @@ The directory name `roost` is configurable via `ROOST_DIR_NAME` in `.env`.
 │   └── apps/               Per-app ingress YAML fragments
 ├── memory/                 Structured notes (grepai-indexed)
 └── code/                   Project repositories
-    └── CLAUDE.md           Code conventions (auto-discovered by all projects)
 
 ~/.bashrc.d/
 └── roost.sh                Shell configuration (PATH, tmux, agent helpers)
