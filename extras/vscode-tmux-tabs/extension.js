@@ -113,6 +113,45 @@ const terminalLocation = () =>
     ? { viewColumn: vscode.ViewColumn.Active, preserveFocus: true } // editor-area tab
     : vscode.TerminalLocation.Panel;
 
+// Is this terminal an `attach` grouped-session view (main-<pid>)? Read from the
+// shell's own cmdline, the one signal that holds however the terminal was made:
+// the "Roost tmux (attach main)" default profile in settings.json, our profile
+// provider, the newAttach command, or a session VS Code revived on reload.
+async function isAttachTerminal(term) {
+  const pid = await term.processId;
+  if (!pid) return false;
+  try {
+    return fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').includes('attach');
+  } catch (e) {
+    return false; // process already gone
+  }
+}
+
+// Keep exactly one attach view. With `attach` as the default terminal profile,
+// every `+` / Ctrl+Shift+` and every persistent-session revival spawns another
+// grouped session sitting on main's *current* window — visually identical tabs
+// that never close themselves (we don't own them, so closeAll misses them, and
+// bashrc's _sweep_dead_groups only reaps groups whose shell already died).
+// Surplus views are disposed and the survivor focused, so the new-terminal
+// gesture reads as "go to my tmux tab" instead of stacking another clone.
+async function syncAttachTabs({ focus = false } = {}) {
+  if (!cfg().get('singleAttach', true)) return;
+  const mine = new Set(owned.values());
+  let keep = null;
+  let dropped = 0;
+  for (const term of vscode.window.terminals) { // creation order, so we keep the oldest
+    if (mine.has(term) || term.exitStatus !== undefined) continue;
+    if (!(await isAttachTerminal(term))) continue;
+    if (!keep) { keep = term; continue; }
+    term.dispose();
+    dropped++;
+  }
+  if (dropped) {
+    dbg(`attach: kept 1 view, dropped ${dropped} duplicate(s) focus=${focus}`);
+    if (focus) keep.show();
+  }
+}
+
 function openTab(win) {
   // liveTitle (default): don't set a name, so the tmux-forwarded pane title
   // (session name + live working spinner) drives the tab via ${sequence}. Off:
@@ -151,6 +190,9 @@ async function reconcile({ explicit = false } = {}) {
   if (syncing) return;
   syncing = true;
   try {
+    // Before the base-session lookup, so duplicate attach tabs still get swept
+    // when `main` is absent (they're the reason it can look absent-but-busy).
+    await syncAttachTabs();
     if (explicit) { paused = false; await sweepOrphans(); dismissed.clear(); }
     const wins = await listWindows();
     if (wins === null) {
@@ -271,6 +313,10 @@ function activate(context) {
       }),
     }),
     vscode.window.onDidCloseTerminal(onCloseTerminal),
+    // Instant path: collapse a just-opened duplicate attach tab and focus the
+    // one already there. The poll's sweep would catch it too, but seconds later
+    // — too slow for this to feel like the tab-switch it's standing in for.
+    vscode.window.onDidOpenTerminal(() => syncAttachTabs({ focus: true })),
     vscode.window.onDidChangeWindowState((s) => {
       if (!cfg().get('autoSync', true)) return;
       if (s.focused) { reconcile(); startPolling(); }

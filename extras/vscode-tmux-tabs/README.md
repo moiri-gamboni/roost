@@ -64,6 +64,14 @@ the **whole** `main` session (the bashrc `attach` helper: full window bar,
   Caveat: this affects *all* new terminals, so quick one-off shells also land in
   tmux. Leave it unset to keep "+" as a plain shell and attach only on demand.
 
+With that as the default profile, `singleAttach` (on by default) keeps the tab
+count sane: a grouped attach session always opens on `main`'s *current* window,
+so a second one is a pixel-identical clone of the first, and nothing closes it
+on its own. Instead of stacking clones, the extension closes the new tab and
+focuses the one already open — so `+` / `Ctrl+Shift+`` behaves as "switch to my
+tmux tab". Same sweep runs on the poll, which is what catches the several
+terminals VS Code revives at once on a window reload.
+
 Note: an attach view and a pinned tab that happen to show the *same* window at
 the same time will trigger tmux's smallest-client sizing for that window (the
 usual multi-client caveat).
@@ -79,6 +87,7 @@ usual multi-client caveat).
 | `pollSeconds` | `4` | poll interval while focused (`0` = focus + manual only) |
 | `hideStatusBar` | `true` | hide the tmux status bar inside each tab |
 | `pinWindows` | `true` | lock each tab to its window (see "Pinned" above); off = free switching + the old drift-on-close flash |
+| `singleAttach` | `true` | keep at most one "attach main" terminal; a duplicate closes and focuses the existing one (see above) |
 | `excludeNames` | `[]` | window names to skip, e.g. `["shell"]` |
 
 ## Requirements
