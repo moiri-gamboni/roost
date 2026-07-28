@@ -78,9 +78,9 @@ mention costs), the sessions worked with titles, notable events, and git commits
 yesterday. Time columns may be sparse while attention tracking is young. Write PLAIN
 TEXT only (no markdown — this goes to a phone via ntfy), at most ~1800 characters:
 1) one headline line: totals (sessions worked, active time, attended time, commit count).
-   For attended time use the \"you\" row (wall clock), NOT the \"Σ all\" row — Σ counts
-   each parallel session separately and can exceed 24h in a day. Per-session ATTEND
-   figures are fine to quote in the per-session lines.
+   For attended time use the \"you\" row (wall clock). Do NOT add up the per-session
+   ATTEND column — parallel sessions overlap, so a sum of it can exceed 24h in a day.
+   Quoting per-session ATTEND figures on the per-session lines is fine.
 2) the sessions that mattered, one line each: title, active/attended time, what the
    commits suggest got done
 3) anything notable: failed turns/rate limits, heavy subagent use, many compactions
