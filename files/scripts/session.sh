@@ -142,29 +142,46 @@ whoami_main() {
 }
 [ "${1:-}" = whoami ] && { shift; whoami_main "$@"; }
 
-# tmux client-focus plumbing ("--focus-mark in|out CLIENT TMUX_SESSION" — tmux
-# hook args, not stdin JSON): one self-contained row per focus flank, for
-# `session time` attended-time. Row: ms-timestamp, in|out, client, tmux session
-# (the stable vsc-<window> tab identity), pane, Claude session id — pane is
-# resolved CLIENT-SCOPED here (tmux display -t <session>) because #{pane_id}
-# inside a client hook resolves globally and bleeds across clients on fast tab
-# switches; sid comes from the statusline's pane map at log time, so later pane
-# id recycling can't rewrite history. ms precision keeps rapid switches ordered
-# (the hooks run async via run-shell -b). Always exits 0.
+# tmux client-focus plumbing ("--focus-mark in|out CLIENT" — tmux hook args, not
+# stdin JSON): one self-contained row per focus flank, for `session time`
+# attended-time. Row: ms-timestamp, in|out, client, tmux session (the stable
+# vsc-<window> tab identity), pane, Claude session id. sid comes from the
+# statusline's pane map at log time, so later pane id recycling can't rewrite
+# history. ms precision keeps rapid switches ordered (the hooks run async via
+# run-shell -b). Always exits 0.
+#
+# CLIENT must come from #{hook_client}, NOT #{client_name}: in a per-client hook
+# #{client_name} resolves to the command queue's *current* client, which is some
+# other arbitrary attached client (verified on tmux 3.4 — a focus-in on pts/8
+# logged pts/10, a focus-in on pts/10 logged pts/8). That scrambled every flank:
+# a client's "out" landed on a client that never opened a span while its own
+# span stayed open to day end, so 19 clients ended 2026-07-27 with a dangling
+# "in" worth 6.6-15.3 h each (246 h of raw spans in a 24 h day). #{hook_session}
+# and #{hook_pane} are EMPTY for client hooks, so session and pane are resolved
+# from the client below instead.
 if [ "${1:-}" = --focus-mark ]; then
-  ev="${2:-}"; fcl="${3:--}"; fts="${4:--}"
-  flog_row() {  # $1=ev $2=client $3=tmux-session [$4=ts] — resolve pane+sid, append
-    local pn="-" sid="-" ts="${4:-}"
+  ev="${2:-}"; fcl="${3:--}"
+  # $1=ev $2=client [$3=ts] [$4=session] [$5=pane] — session/pane are resolved
+  # from the client when not supplied. list-clients -f expands the format once
+  # per client, so what it reports is the session/pane THAT client is viewing;
+  # display-message -c does NOT scope format expansion (verified: every -c
+  # returns the globally-current client's pane), so it cannot be used here.
+  flog_row() {
+    local ev="$1" cl="${2:--}" ts="${3:-}" sess="${4:-}" pn="${5:-}" sid="-"
     [ -n "$ts" ] || ts=$(date +%s.%3N)
-    if [ "$3" != "-" ]; then
-      pn=$(tmux display-message -p -t "$3" '#{pane_id}' 2>/dev/null || printf '-')  # quiet: session may be gone (detach)
-      [ -n "$pn" ] || pn="-"
+    if { [ -z "$sess" ] || [ -z "$pn" ]; } && [ "$cl" != "-" ]; then
+      # quiet: the client is already gone on detach, and list-clients then
+      # prints nothing (empty sess/pn below) rather than a row
+      IFS=$'\t' read -r sess pn < <(tmux list-clients -f "#{==:#{client_name},$cl}" \
+        -F "#{client_session}"$'\t'"#{pane_id}" 2>/dev/null) || true
     fi
+    [ -n "$sess" ] || sess="-"
+    [ -n "$pn" ] || pn="-"
     [ "$pn" != "-" ] && [ -s "$panedir/${pn#%}" ] && sid=$(cat "$panedir/${pn#%}")
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$ts" "$1" "$2" "$3" "$pn" "${sid:--}" >> "$flog"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$ts" "$ev" "$cl" "$sess" "$pn" "${sid:--}" >> "$flog"
   }
   case "$ev" in
-    in|out) flog_row "$ev" "$fcl" "$fts" ;;
+    in|out) flog_row "$ev" "$fcl" ;;
     # "switch SESSION": that session's current window changed (prefix-switch
     # inside an attach-style client — VS Code attach-main, termux/et). Only
     # meaningful when a FOCUSED client is viewing that session: log an "in",
@@ -173,7 +190,7 @@ if [ "${1:-}" = --focus-mark ]; then
     switch)
       fts="${3:--}"
       fcl=$(tmux list-clients -t "$fts" -F '#{?client_focused,#{client_name},}' 2>/dev/null | awk 'NF {print; exit}')
-      [ -n "$fcl" ] && flog_row in "$fcl" "$fts" ;;
+      [ -n "$fcl" ] && flog_row in "$fcl" "" "$fts" ;;
     # "tick" (cron, 1/min): an "act" row for each client that had input within
     # the last ~90s — focused or not. Keystrokes update tmux's client_activity,
     # and so does scrolling (mouse mode makes wheel events input). Desktop
@@ -192,9 +209,9 @@ if [ "${1:-}" = --focus-mark ]; then
     # blur-typing still lands in the gap where it really happened.
     tick)
       nowi=$(date +%s)
-      fmt=$'#{client_name}\t#{client_session}\t#{?client_focused,1,0}\t#{client_activity}'
-      tmux list-clients -F "$fmt" 2>/dev/null | while IFS=$'\t' read -r c s f a; do
-        [ -n "$a" ] && [ $(( nowi - a )) -lt 90 ] && flog_row act "$c" "$s" "$a"
+      fmt=$'#{client_name}\t#{client_session}\t#{pane_id}\t#{client_activity}'
+      tmux list-clients -F "$fmt" 2>/dev/null | while IFS=$'\t' read -r c s p a; do
+        [ -n "$a" ] && [ $(( nowi - a )) -lt 90 ] && flog_row act "$c" "$a" "$s" "$p"
       done ;;
   esac
   exit 0
