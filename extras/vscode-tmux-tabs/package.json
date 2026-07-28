@@ -2,7 +2,7 @@
   "name": "roost-tmux-tabs",
   "displayName": "Roost tmux tabs",
   "description": "One VS Code terminal tab per window of the `main` tmux session, kept in sync.",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "publisher": "roost",
   "license": "AGPL-3.0-or-later",
   "engines": { "vscode": "^1.75.0" },
@@ -69,6 +69,11 @@
           "type": "boolean",
           "default": true,
           "description": "Keep each tab locked to its window: when the window closes (or you switch inside the tab) the tab self-destructs instead of drifting to show a neighbouring window. Disable for free window-switching inside a tab (reintroduces the brief wrong-window flash on close)."
+        },
+        "roostTmuxTabs.singleAttach": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep at most one \"attach main\" terminal. With that profile as terminal.integrated.defaultProfile.linux, every new-terminal gesture (and every reload) opens another identical view of main's current window; with this on, the surplus tab is closed and the existing one focused instead. Turn off if you want several attach views (e.g. on different windows side by side)."
         },
         "roostTmuxTabs.excludeNames": {
           "type": "array",
