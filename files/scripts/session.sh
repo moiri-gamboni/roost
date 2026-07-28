@@ -187,9 +187,13 @@ if [ "${1:-}" = --focus-mark ]; then
     # meaningful when a FOCUSED client is viewing that session: log an "in",
     # which supersedes the client's previous span in the reader. Unfocused/
     # background switches log nothing.
+    # NB the focused test is `#{m:*focused*,#{client_flags}}`. There is no
+    # client_focused format in tmux 3.4 — it expands to empty, so the
+    # `#{?client_focused,...}` this used to use was false for every client and
+    # the whole handler was a silent no-op. `focused` appears in client_flags.
     switch)
       fts="${3:--}"
-      fcl=$(tmux list-clients -t "$fts" -F '#{?client_focused,#{client_name},}' 2>/dev/null | awk 'NF {print; exit}')
+      fcl=$(tmux list-clients -t "$fts" -f '#{m:*focused*,#{client_flags}}' -F '#{client_name}' 2>/dev/null | awk 'NF {print; exit}')
       [ -n "$fcl" ] && flog_row in "$fcl" "" "$fts" ;;
     # "tick" (cron, 1/min): an "act" row for each client that had input within
     # the last ~90s — focused or not. Keystrokes update tmux's client_activity,
