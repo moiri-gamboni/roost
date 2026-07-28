@@ -2,7 +2,6 @@
   "cleanupPeriodDays": 99999,
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
-    "CLAUDE_CODE_EFFORT_LEVEL": "max",
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "2",
     "ENABLE_PROMPT_CACHING_1H": "1",
     "CLAUDE_CODE_SCROLL_SPEED": "1",
@@ -166,10 +165,12 @@
       }
     }
   },
-  "effortLevel": "high",
+  "effortLevel": "xhigh",
   "askUserQuestionTimeout": "never",
   "model": "opus[1m]",
-  "fallbackModel": ["claude-opus-4-8"],
+  "fallbackModel": [
+    "claude-opus-4-8"
+  ],
   "tui": "fullscreen",
   "autoMemoryEnabled": true,
   "autoDreamEnabled": true,
