@@ -20,6 +20,8 @@ const tabName = new Map();    // windowId -> name we last created the tab with
 const dismissed = new Set();  // windowIds the user manually closed (skip on autosync)
 let syncing = false;
 let paused = false;           // "Close all" pauses re-adding until an explicit Sync
+let attachTerm = null;        // the single "attach main" view, once it is ours
+let attachSyncing = false;
 let pollTimer = null;
 let lastSig = '';             // last window-set signature, for change-only logging
 
@@ -127,28 +129,56 @@ async function isAttachTerminal(term) {
   }
 }
 
-// Keep exactly one attach view. With `attach` as the default terminal profile,
-// every `+` / Ctrl+Shift+` and every persistent-session revival spawns another
-// grouped session sitting on main's *current* window — visually identical tabs
-// that never close themselves (we don't own them, so closeAll misses them, and
-// bashrc's _sweep_dead_groups only reaps groups whose shell already died).
-// Surplus views are disposed and the survivor focused, so the new-terminal
-// gesture reads as "go to my tmux tab" instead of stacking another clone.
+// Our own attach view: a terminal on the whole `main` session, opened at the
+// configured location (editor area by default, same as the pinned tabs).
+function openAttach({ focus = true } = {}) {
+  attachTerm = vscode.window.createTerminal({
+    name: 'tmux: main',
+    shellPath: '/bin/bash',
+    shellArgs: ['-lic', 'attach'],
+    location: terminalLocation(),
+    iconPath: new vscode.ThemeIcon('terminal-tmux'),
+  });
+  attachTerm.show(!focus); // reveal either way; take focus only if asked
+  dbg(`attach: opened our view focus=${focus}`);
+  return attachTerm;
+}
+
+// Keep exactly one attach view, and make it *ours*. With `attach` as the default
+// terminal profile, every `+` / Ctrl+Shift+` and every persistent-session
+// revival spawns another grouped session sitting on main's *current* window —
+// visually identical tabs that never close themselves (we don't own them, so
+// closeAll misses them, and bashrc's _sweep_dead_groups only reaps groups whose
+// shell already died).
+//
+// Surplus views are disposed and ours focused, so the new-terminal gesture reads
+// as "go to my tmux tab". Ours specifically, because a terminal VS Code builds
+// from the default profile lands wherever the gesture pointed — the panel's `+`
+// puts it at the bottom — and the API exposes no way to read a terminal's
+// location afterwards, let alone move it. Keeping an arbitrary survivor
+// therefore redirects to the bottom panel half the time; re-opening our own is
+// the only way to land in the editor area every time. When none of the views is
+// ours they're all replaced, which costs a flicker on the first gesture after a
+// reload and nothing after that.
 async function syncAttachTabs({ focus = false } = {}) {
-  if (!cfg().get('singleAttach', true)) return;
-  const mine = new Set(owned.values());
-  let keep = null;
-  let dropped = 0;
-  for (const term of vscode.window.terminals) { // creation order, so we keep the oldest
-    if (mine.has(term) || term.exitStatus !== undefined) continue;
-    if (!(await isAttachTerminal(term))) continue;
-    if (!keep) { keep = term; continue; }
-    term.dispose();
-    dropped++;
-  }
-  if (dropped) {
-    dbg(`attach: kept 1 view, dropped ${dropped} duplicate(s) focus=${focus}`);
-    if (focus) keep.show();
+  if (!cfg().get('singleAttach', true) || attachSyncing) return;
+  attachSyncing = true;
+  try {
+    const mine = new Set(owned.values());
+    const views = [];
+    for (const term of vscode.window.terminals) {
+      if (mine.has(term) || term.exitStatus !== undefined) continue;
+      if (await isAttachTerminal(term)) views.push(term);
+    }
+    if (!views.length) { attachTerm = null; return; }
+    const keep = views.includes(attachTerm) ? attachTerm : null;
+    for (const term of views) if (term !== keep) term.dispose();
+    const dropped = views.length - (keep ? 1 : 0);
+    if (!dropped) return;
+    dbg(`attach: dropped ${dropped} duplicate(s), ${keep ? 'kept ours' : 'reopening ours'} focus=${focus}`);
+    if (keep) { if (focus) keep.show(); } else openAttach({ focus });
+  } finally {
+    attachSyncing = false;
   }
 }
 
@@ -296,13 +326,13 @@ function activate(context) {
     // `attach` grouped-view helper: full window bar, prefix-switch), separate
     // from the per-window pinned tabs. Command + a "+"-dropdown profile.
     vscode.commands.registerCommand('roostTmuxTabs.newAttach', () => {
-      vscode.window.createTerminal({
-        name: 'tmux: main',
-        shellPath: '/bin/bash',
-        shellArgs: ['-lic', 'attach'],
-        location: terminalLocation(),
-        iconPath: new vscode.ThemeIcon('terminal-tmux'),
-      }).show();
+      // Reuse the existing view rather than stacking a clone of it (same reason
+      // as syncAttachTabs); with singleAttach off this always opens a new one.
+      if (cfg().get('singleAttach', true) && attachTerm && attachTerm.exitStatus === undefined) {
+        attachTerm.show();
+        return;
+      }
+      openAttach();
     }),
     vscode.window.registerTerminalProfileProvider('roostTmuxTabs.attach', {
       provideTerminalProfile: () => new vscode.TerminalProfile({
