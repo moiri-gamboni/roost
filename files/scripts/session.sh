@@ -917,19 +917,24 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
   # winding down is only ever right when usage is high AND the reset is far away;
   # a near reset or low usage is never a reason to stop. Near cutoffs: 30m for the
   # 5h window, 6h for the weekly (≈ the longest pause worth just riding out).
+  # The wait is phrased as launch-it-NOW, because both failure modes end the same
+  # way (observed): a model that narrates "I'll wait for the reset" and ends its
+  # turn has launched nothing and sleeps until a human returns, and once the pause
+  # actually lands mid-turn no tool can be launched at all. Only a background
+  # `--wait` started BEFORE either moment produces a wake-up.
   # Threshold configurable via USAGE_WARN_PCT (default 90; set >100 to disable).
   if [ "$mode" = hook ]; then
     thr=${USAGE_WARN_PCT:-90}
     if [ "$f_stale" = 0 ] && (( fp >= thr )); then
       if (( left5 <= 1800 )); then
-        line="$line"$'\n'"⚠ 5h rate limit at ${fp}%, but the window resets to 0% in $(hm "$left5") — an imminent reset is NOT a reason to stop or wind down: worst case is a brief pause until it. Keep working, fan-out included; as a safety net, launch \`session --wait 5h\` in the background (e.g. Bash run_in_background) — its exit wakes you at the reset."
+        line="$line"$'\n'"⚠ 5h rate limit at ${fp}%, but the window resets to 0% in $(hm "$left5") — an imminent reset is NOT a reason to stop or wind down: worst case is a brief pause until it. Launch \`session --wait 5h\` in the background NOW (Bash run_in_background: true; skip if one is already running) — once paused you cannot launch anything, and that process's exit is the only signal that auto-resumes you. Then keep working, fan-out included."
       else
-        line="$line"$'\n'"⚠ 5h rate limit at ${fp}% with $(hm "$left5") still to run before the reset — you may be paused before it. Keep current work going (a pause only delays you: a background \`session --wait 5h\` — e.g. Bash run_in_background — blocks until the reset and its exit wakes you to continue), but hold off on new parallel/fan-out work until the window turns."
+        line="$line"$'\n'"⚠ 5h rate limit at ${fp}% with $(hm "$left5") still to run before the reset — you may be paused before it. FIRST launch \`session --wait 5h\` in the background (Bash run_in_background: true; skip if one is already running): its exit is the only signal that auto-resumes you — ending a turn saying \"I'll wait for the reset\" launches nothing and sleeps until a human returns, and once paused you cannot launch anything. Then keep current work going, but hold off on new parallel/fan-out work until the window turns."
       fi
     fi
     if [ "$w_stale" = 0 ] && (( wp >= thr )); then
       if (( leftw <= 21600 )); then
-        line="$line"$'\n'"⚠ weekly (7-day) rate limit at ${wp}%, but it resets to 0% in $(dh "$leftw") — not a reason to stop or wind down; worst case is a pause until then (a background \`session --wait week\` auto-resumes you at the reset)."
+        line="$line"$'\n'"⚠ weekly (7-day) rate limit at ${wp}%, but it resets to 0% in $(dh "$leftw") — not a reason to stop or wind down; worst case is a pause until then. Launch \`session --wait week\` in the background now (Bash run_in_background: true; skip if already running) — its exit auto-resumes you; a stated intention to wait resumes nothing."
       else
         line="$line"$'\n'"⚠ weekly (7-day) rate limit at ${wp}% and the reset is $(dh "$leftw") away — high usage with a distant reset is the one case where winding down is right: a pause here would block for days. Checkpoint current work, avoid new fan-out, and pace what remains with \`session --guard\`."
       fi
