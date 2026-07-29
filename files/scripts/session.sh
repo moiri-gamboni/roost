@@ -31,7 +31,9 @@
 #                     so it injects into the model's context but stays out of the
 #                     user's transcript). This is what the per-turn hook runs. Near a
 #                     hard cap (>= USAGE_WARN_PCT, default 90) it also appends a ⚠
-#                     advisory: for 5h, resume via a background `--wait 5h`.
+#                     advisory, phrased by reset distance: near reset = keep going
+#                     (worst case a brief pause; background `--wait` auto-resumes),
+#                     far reset = hold off fan-out (5h) / wind down (weekly).
 #                     Side effect: appends this turn's START event to the turn log.
 #   session --turn-end  Stop-hook plumbing: appends the turn's END event to the
 #                     turn log; always exits 0 silently (a Stop hook's exit 2
@@ -678,9 +680,9 @@ leftw_p=$leftw
 # a countdown phrase that says what is actually known.
 pctq() { local p; p=$(pct "$1"); [ "$2" = 1 ] && [ "$p" != "n/a" ] && p="$p?"; printf '%s' "$p"; }
 cd5()  { (( f_stale )) && { printf 'next reset unknown · stale snapshot'; return; }
-         printf 'resets in %s' "$(hm "$left5")"; }
-cdw()  { (( w_stale )) && { printf 'resets in ~%s · stale snapshot' "$(dh "$leftw_p")"; return; }
-         printf 'resets in %s' "$(dh "$leftw")"; }
+         printf 'resets to 0%% in %s' "$(hm "$left5")"; }
+cdw()  { (( w_stale )) && { printf 'resets to 0%% in ~%s · stale snapshot' "$(dh "$leftw_p")"; return; }
+         printf 'resets to 0%% in %s' "$(dh "$leftw")"; }
 
 # ── Per-session attribution ──────────────────────────────────────────────────
 # The statusline appends (ts, session_id, cumulative cost_usd, 5h%, wk%, resets)
@@ -860,7 +862,10 @@ fi
 
 if [ "$mode" = compact ] || [ "$mode" = hook ]; then
   # One frugal, self-identifying line for a per-turn hook:
-  #   "Claude usage limits · <date> <time> TZ · 5h X% used (resets in ..) · wk Y% ..".
+  #   "Claude usage limits · <date> <time> TZ · 5h X% used (resets to 0% in ..) · wk Y% ..".
+  # "resets to 0%" (not just "resets in") because a bare countdown next to a limit
+  # reads like a work deadline to a cold model — agents were wrapping up as the
+  # countdown approached zero, when a reset is exactly when stopping costs nothing.
   # The leading tag is what lets a cold reader (a fresh model) know this is the Claude
   # plan's rate limits, not some other 5h/weekly metric. %s are % consumed toward each
   # cap; the parenthetical is the live reset countdown.
@@ -904,17 +909,30 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
         }' <<<"$sest")"
     fi
   fi
-  # Hook only: when a window nears its hard cap, tell Claude how to pause + auto-resume.
-  # The 5-hour window resets within hours, so a background `--wait` that wakes you at the
-  # reset is practical; the weekly cap resets in days, so advise winding down instead.
+  # Hook only: when a window nears its hard cap, tell Claude the right reaction.
+  # Phrased by RESET DISTANCE, not just usage: models otherwise pattern-match
+  # "high % + small countdown" to "stop now" — the exact wrong reading. Usage peaks
+  # right before a reset, so a distance-blind advisory fires loudest precisely when
+  # continuing is safest (worst case: a brief pause, then a fresh window). Policy:
+  # winding down is only ever right when usage is high AND the reset is far away;
+  # a near reset or low usage is never a reason to stop. Near cutoffs: 30m for the
+  # 5h window, 6h for the weekly (≈ the longest pause worth just riding out).
   # Threshold configurable via USAGE_WARN_PCT (default 90; set >100 to disable).
   if [ "$mode" = hook ]; then
     thr=${USAGE_WARN_PCT:-90}
     if [ "$f_stale" = 0 ] && (( fp >= thr )); then
-      line="$line"$'\n'"⚠ 5h rate limit at ${fp}% — you may be paused soon. To resume automatically after the window resets (in $(hm "$left5")), launch \`session --wait 5h\` in the background (e.g. Bash run_in_background): it blocks until the reset and its exit wakes you to continue. Hold off on new parallel/fan-out work until then."
+      if (( left5 <= 1800 )); then
+        line="$line"$'\n'"⚠ 5h rate limit at ${fp}%, but the window resets to 0% in $(hm "$left5") — an imminent reset is NOT a reason to stop or wind down: worst case is a brief pause until it. Keep working, fan-out included; as a safety net, launch \`session --wait 5h\` in the background (e.g. Bash run_in_background) — its exit wakes you at the reset."
+      else
+        line="$line"$'\n'"⚠ 5h rate limit at ${fp}% with $(hm "$left5") still to run before the reset — you may be paused before it. Keep current work going (a pause only delays you: a background \`session --wait 5h\` — e.g. Bash run_in_background — blocks until the reset and its exit wakes you to continue), but hold off on new parallel/fan-out work until the window turns."
+      fi
     fi
     if [ "$w_stale" = 0 ] && (( wp >= thr )); then
-      line="$line"$'\n'"⚠ weekly (7-day) rate limit at ${wp}% — near the hard cap, resets in $(dh "$leftw"). A wait would block for days, so wind down rather than waiting; pace new work with \`session --guard\`."
+      if (( leftw <= 21600 )); then
+        line="$line"$'\n'"⚠ weekly (7-day) rate limit at ${wp}%, but it resets to 0% in $(dh "$leftw") — not a reason to stop or wind down; worst case is a pause until then (a background \`session --wait week\` auto-resumes you at the reset)."
+      else
+        line="$line"$'\n'"⚠ weekly (7-day) rate limit at ${wp}% and the reset is $(dh "$leftw") away — high usage with a distant reset is the one case where winding down is right: a pause here would block for days. Checkpoint current work, avoid new fan-out, and pace what remains with \`session --guard\`."
+      fi
     fi
   fi
   emit "$line"

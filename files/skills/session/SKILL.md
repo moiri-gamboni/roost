@@ -12,8 +12,8 @@ $ session
 ── session overview ───────────────────────────────
   id       e0671919-3e1a-4e37-8fe3-884e27703240
   name     Link session ID to usage tracking tool
-  5-hour   █░░░░░░░░░  13%   resets in 1h33m          (pace cap 69%)
-  weekly   █████░░░░░  54%   resets in 5d17h          (pace cap 18%)
+  5-hour   █░░░░░░░░░  13%   resets to 0% in 1h33m    (pace cap 69%)
+  weekly   █████░░░░░  54%   resets to 0% in 5d17h    (pace cap 18%)
   context  ███░░░░░░░  31%   (this session)
   share    ≈3.1% of 5h · ≈1.0% of wk   ($13.30 this 5h window; `session usage --all`)
 ──────────────────────────────────────────────────
@@ -54,7 +54,7 @@ session --guard || sleep 120                        # simple pacing loop
 ```
 
 ## Auto-resume after a reset — `session --wait` + the ⚠ advisory
-`session --wait 5h` in the background (e.g. Bash `run_in_background`) blocks until the reset; its exit is the wake-up. The per-turn hook appends a ⚠ advisory automatically when a window crosses `USAGE_WARN_PCT` (default 90): for 5h it points at `session --wait 5h`; for weekly (resets in days) it advises winding down instead.
+`session --wait 5h` in the background (e.g. Bash `run_in_background`) blocks until the reset; its exit is the wake-up. The per-turn hook appends a ⚠ advisory automatically when a window crosses `USAGE_WARN_PCT` (default 90), phrased by reset distance: near the reset (≤30m for 5h, ≤6h for weekly) it says keep working — worst case is a brief pause, with a background `session --wait` as the auto-resume; far from the reset it advises holding off fan-out (5h) or winding down and pacing with `session --guard` (weekly). Winding down is only ever right when usage is high AND the reset is far away; a near reset or low usage is never a reason to stop.
 
 ## How it works / caveats
 - The 5h/weekly data exists only as statusline stdin fields — not passed to hooks. The statusline persists each render to `~/roost/claude/usage/last-status.json` (freshness-guarded per window against stale long-idle sessions) plus the per-session sample log; `session` reads those. The cache is usually ≤10s old and countdowns are computed live even when the %s lag.
