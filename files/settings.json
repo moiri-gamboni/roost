@@ -137,6 +137,18 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/no-truncation.sh",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   },
   "worktree": {
