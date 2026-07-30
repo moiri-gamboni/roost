@@ -26,15 +26,17 @@
 #                     log below.
 #   session --compact one line: date/time + 5h & weekly %s (token-frugal, always
 #                     exits 0 so it can never block a prompt)
-#   session --hook    the same one line wrapped as UserPromptSubmit hook JSON
-#                     (hookSpecificOutput.additionalContext + suppressOutput:true,
-#                     so it injects into the model's context but stays out of the
-#                     user's transcript). This is what the per-turn hook runs. Near a
-#                     hard cap (>= USAGE_WARN_PCT, default 90) it also appends a ⚠
-#                     advisory, phrased by reset distance: near reset = keep going
-#                     (worst case a brief pause; background `--wait` auto-resumes),
-#                     far reset = hold off fan-out (5h) / wind down (weekly).
-#                     Side effect: appends this turn's START event to the turn log.
+#   session --hook    UserPromptSubmit plumbing, warn-gated: silent (no output at
+#                     all) while both windows are below USAGE_WARN_PCT (default
+#                     90). At/above it, emits that line + a ⚠ advisory wrapped as
+#                     hook JSON (hookSpecificOutput.additionalContext +
+#                     suppressOutput:true — injected into the model's context,
+#                     kept out of the user's transcript). The advisory is phrased
+#                     by reset distance: near reset = keep going (worst case a
+#                     brief pause; background `--wait` auto-resumes), far reset =
+#                     hold off fan-out (5h) / wind down (weekly).
+#                     Side effect every turn, gated or not: appends this turn's
+#                     START event to the turn log.
 #   session --turn-end  Stop-hook plumbing: appends the turn's END event to the
 #                     turn log; always exits 0 silently (a Stop hook's exit 2
 #                     would force the agent to keep going).
@@ -311,7 +313,8 @@ Guard config (environment, per window):
   FIVE_WINDOW / WEEK_WINDOW        window sizes in seconds (18000 / 604800)
 
 Plumbing (wired via settings.json hooks + tmux hooks; not for interactive use):
-  session --hook                   UserPromptSubmit: inject usage line + log turn start
+  session --hook                   UserPromptSubmit: log turn start; inject usage
+                                   line + ⚠ only at >=USAGE_WARN_PCT (default 90)
   session --turn-end|--turn-fail|--session-end|--subagent-start|--subagent-end|
           --compact-mark|--perm-mark   append one lifecycle event row; always exit 0
   session --focus-mark in|out C P  tmux client-focus logger (attended time)
@@ -594,8 +597,10 @@ if [ "${submode:-}" = time ]; then
 fi
 
 if [ ! -s "$cache" ]; then
-  # compact/hook are display-only for a per-turn hook: still emit date/time, never block/error.
-  if [ "$mode" = compact ] || [ "$mode" = hook ]; then
+  # hook is warn-gated: no data = nothing to warn about — exit silently (never
+  # block a prompt). compact stays display-only: emit date/time, never error.
+  [ "$mode" = hook ] && exit 0
+  if [ "$mode" = compact ]; then
     emit "Claude usage limits · $(date '+%Y-%m-%d %H:%M %Z') · n/a (no statusline render yet)"
     exit 0
   fi
@@ -883,10 +888,21 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
     "$(seg 5h "$five" "$f_stale" "$(cd5)")" \
     "$(seg wk "$week" "$w_stale" "$(cdw)")" \
     "$stale")
-  # Hook only: append this session's estimated share of each window, so every turn
-  # carries "how much of the burn is mine" alongside the global %s. The session id
-  # comes from the hook's stdin JSON (the -t guard keeps a manual TTY run from
-  # hanging on a stdin read). ≈ marks it as a tracked-share estimate; see
+  # Hook output is gated behind the warning threshold (USAGE_WARN_PCT, default
+  # 90): below it the hook injects nothing — the every-turn line was context
+  # noise — and only the turn-start side effect below runs. A stale window's %
+  # belongs to a window that already closed, so it neither warns nor un-gates.
+  warn=0
+  if [ "$mode" = hook ]; then
+    thr=${USAGE_WARN_PCT:-90}
+    [ "$f_stale" = 0 ] && (( fp >= thr )) && warn=1
+    [ "$w_stale" = 0 ] && (( wp >= thr )) && warn=1
+  fi
+  # Hook only: append this session's estimated share of each window, so the
+  # emitted line carries "how much of the burn is mine" alongside the global %s
+  # (skipped when gated — est_sessions scans the whole sample log). The session
+  # id comes from the hook's stdin JSON (the -t guard keeps a manual TTY run
+  # from hanging on a stdin read). ≈ marks it as a tracked-share estimate; see
   # `session usage --all` for the method and its caveats. Silent on any failure —
   # this segment must never break the injected line.
   if [ "$mode" = hook ] && [ ! -t 0 ]; then
@@ -896,7 +912,7 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
     # turn START event for `session time`; the Stop hook (--turn-end) logs the
     # matching end, sharing prompt_id so turns join to sample-log rows by id
     [ -n "$hsid" ] && printf '%s\t%s\ts\t%s\t-\t-\n' "$(date +%s)" "$hsid" "${hpid:--}" >> "$tlog"
-    if [ -n "$hsid" ] && sest=$(est_sessions); then
+    if [ "$warn" = 1 ] && [ -n "$hsid" ] && sest=$(est_sessions); then
       IFS=$'\t' read -r hb5 hbw < <(base_pcts)
       hc5=$(covered "$five" "$hb5"); hcw=$(covered "$week" "$hbw")
       line="$line$(awk -F'\t' -v s="$hsid" -v c5="$hc5" -v cw="$hcw" -v fs="$f_stale" -v ws="$w_stale" '
@@ -922,9 +938,9 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
   # turn has launched nothing and sleeps until a human returns, and once the pause
   # actually lands mid-turn no tool can be launched at all. Only a background
   # `--wait` started BEFORE either moment produces a wake-up.
-  # Threshold configurable via USAGE_WARN_PCT (default 90; set >100 to disable).
-  if [ "$mode" = hook ]; then
-    thr=${USAGE_WARN_PCT:-90}
+  # Threshold configurable via USAGE_WARN_PCT (default 90; set >100 to disable
+  # the hook's output entirely).
+  if [ "$warn" = 1 ]; then
     if [ "$f_stale" = 0 ] && (( fp >= thr )); then
       if (( left5 <= 1800 )); then
         line="$line"$'\n'"⚠ 5h rate limit at ${fp}%, but the window resets to 0% in $(hm "$left5") — an imminent reset is NOT a reason to stop or wind down: worst case is a brief pause until it. Launch \`session --wait 5h\` in the background NOW (Bash run_in_background: true; skip if one is already running) — once paused you cannot launch anything, and that process's exit is the only signal that auto-resumes you. Then keep working, fan-out included."
@@ -940,6 +956,9 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
       fi
     fi
   fi
+  # Below the threshold the hook emits nothing at all (for UserPromptSubmit, no
+  # stdout = no context injected); compact always prints.
+  [ "$mode" = hook ] && [ "$warn" = 0 ] && exit 0
   emit "$line"
   exit 0
 fi
