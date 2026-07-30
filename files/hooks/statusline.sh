@@ -115,26 +115,23 @@ if [ -n "$_sid" ] && [ "$_sid" != "-" ] && _costf=$(LC_ALL=C printf '%.4f' "$_co
     printf '%s' "$input" > "$_snapdir/.$_sid.tmp" && mv -f "$_snapdir/.$_sid.tmp" "$_snapdir/$_sid.json"
   fi
 fi
-# Daily prune: keep 8 days (covers the 7d window), drop stale snapshots/sidecars.
-# Marker is touched first so a failed prune just retries tomorrow; flock guards
-# concurrent statuslines (a racing append can lose at most one sample at the mv).
+# Daily prune: the LIVE logs keep 8 days (covers the 7d window) so every reader
+# stays fast; older lines move to usage/archive/<same-name>.tsv, append-only and
+# never expired — the history is deliberately permanent. Logs: session-log
+# (cost/token samples), turn-log (turn start/end events), focus-log (tmux focus
+# flanks). Marker is touched first so a failed prune just retries tomorrow;
+# flock guards concurrent statuslines (a racing append can lose at most one
+# sample at the mv).
 _pm="$_u/.session-log-pruned"
 if [ ! -e "$_pm" ] || [ $(( _now - $(stat -c %Y "$_pm") )) -ge 86400 ]; then
   touch "$_pm"
-  if [ -s "$_slog" ]; then
-    { flock -n 9 && awk -F'\t' -v cut=$(( _now - 8*86400 )) '$1+0 >= cut' "$_slog" > "$_slog.tmp" \
-        && mv -f "$_slog.tmp" "$_slog"; } 9>>"$_slog.lock"
-  fi
-  _tlog="$_u/turn-log.tsv"   # hook-fed turn start/end events (see `session time`)
-  if [ -s "$_tlog" ]; then
-    { flock -n 9 && awk -F'\t' -v cut=$(( _now - 8*86400 )) '$1+0 >= cut' "$_tlog" > "$_tlog.tmp" \
-        && mv -f "$_tlog.tmp" "$_tlog"; } 9>>"$_tlog.lock"
-  fi
-  _flog="$_u/focus-log.tsv"  # tmux client-focus flanks (attended time)
-  if [ -s "$_flog" ]; then
-    { flock -n 9 && awk -F'\t' -v cut=$(( _now - 8*86400 )) '$1+0 >= cut' "$_flog" > "$_flog.tmp" \
-        && mv -f "$_flog.tmp" "$_flog"; } 9>>"$_flog.lock"
-  fi
+  _arch="$_u/archive"; [ -d "$_arch" ] || mkdir -p "$_arch"
+  for _lg in "$_slog" "$_u/turn-log.tsv" "$_u/focus-log.tsv"; do
+    [ -s "$_lg" ] || continue
+    { flock -n 9 && awk -F'\t' -v cut=$(( _now - 8*86400 )) -v a="$_arch/${_lg##*/}" \
+        '$1+0 >= cut { print; next } { print >> a }' "$_lg" > "$_lg.tmp" \
+        && mv -f "$_lg.tmp" "$_lg"; } 9>>"$_lg.lock"
+  done
   [ -d "$_snapdir" ] && find "$_snapdir" -type f -mtime +8 -delete
   [ -d "$_u/panes" ] && find "$_u/panes" -type f -mtime +8 -delete
 fi
