@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # session-daily-brief.sh — morning brief of YESTERDAY's Claude Code work:
-# sessions + titles, time (active + attended), notable events, git commits.
-# No dollar figures anywhere: subscription plan, so the API-equivalent $ is
-# not real money (it stays available interactively via `session usage`).
+# sessions + titles, time (active + attended), per-session usage, notable
+# events, git commits. Usage is shown as est % of the weekly rate-limit cap +
+# share of the day's tracked burn — never as dollars: subscription plan, so the
+# API-equivalent $ is not real money (it stays the internal attribution weight,
+# available interactively via `session usage`).
 # Inputs are day-sliced — only yesterday's log rows are fed to
 # the model, never the full 8-day logs. Summarized by claude-sonnet-5 at max
 # effort (cheap against the caps), pushed as PLAIN TEXT via ntfy (phone apps
@@ -23,8 +25,9 @@ tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 # 1) the per-session time table, exactly as a human would see it
 "$CLI" time --all --yesterday > "$tmp/time.txt" 2>&1 || true
 
-# 2) sessions that did API work yesterday — the cumulative-cost delta is used
-#    ONLY as a "worked" filter and never printed — with model, lines, title
+# 2) sessions that did API work yesterday — per-session tracked burn (the
+#    cumulative-cost delta; the $ is the attribution weight and is never
+#    printed) with model, lines, title. Sorted by burn, biggest first.
 awk -F'\t' -v m="$mid" -v e="$dend" '
   $1+0>=m && $1+0<e && $2!="" && $2!="-" {
     c=$3+0
@@ -35,15 +38,36 @@ awk -F'\t' -v m="$mid" -v e="$dend" '
     if ($18!="") lr[$2]=$18
   }
   END { for (s in seen) if (d[s]>0.005)
-          printf "%s\t%s\t%s\t%s\n", s, (mdl[s]==""?"?":mdl[s]), la[s]+0, lr[s]+0 }' \
-  "$U/session-log.tsv" 2>/dev/null > "$tmp/sessions.tsv" || true
+          printf "%s\t%s\t%s\t%s\t%.4f\n", s, (mdl[s]==""?"?":mdl[s]), la[s]+0, lr[s]+0, d[s] }' \
+  "$U/session-log.tsv" 2>/dev/null | LC_ALL=C sort -t$'\t' -k5,5nr > "$tmp/sessions.tsv" || true
+# Day-sliced usage estimate, same method as `session usage` but over yesterday:
+# the global weekly-% movement observed in the day's samples (per weekly-window
+# id, max−min of the logged wk%, summed — a mid-day reset starts a new id so
+# the movement can't go negative), split by each session's share of the day's
+# tracked burn. Headless `claude -p` and off-box usage are invisible to
+# sampling, so shares are upper bounds; hence est/~.
+tot=$(awk -F'\t' '{t+=$5} END{printf "%.4f", t+0}' "$tmp/sessions.tsv")
+wkmv=$(awk -F'\t' -v m="$mid" -v e="$dend" '
+  $1+0>=m && $1+0<e && $5+0>=0 && $7+0>0 {
+    id=$7; p=$5+0
+    if (!(id in mn) || p<mn[id]) mn[id]=p
+    if (!(id in mx) || p>mx[id]) mx[id]=p
+  }
+  END { mv=0; for (id in mn) mv+=mx[id]-mn[id]; printf "%.2f", mv }' \
+  "$U/session-log.tsv" 2>/dev/null || echo 0)
 {
-  printf 'sid8 | model | lines+/- | title\n'
-  while IFS=$'\t' read -r sid mdl la lr; do
+  awk -v mv="$wkmv" 'BEGIN { if (mv+0>0)
+    printf "day total: est ~%.0f%% of the weekly cap consumed (tracked sessions only)\n", mv }'
+  printf 'sid8 | usage | model | lines+/- | title\n'
+  while IFS=$'\t' read -r sid mdl la lr burn; do
     [ -n "$sid" ] || continue
     t=""
     [ -s "$U/sessions/$sid.json" ] && t=$(jq -r '.session_name // empty' "$U/sessions/$sid.json")
-    printf '%.8s | %s | +%s/-%s | %s\n' "$sid" "${mdl##*claude-}" "$la" "$lr" "${t:-?}"
+    use=$(LC_ALL=C awk -v o="$burn" -v tt="$tot" -v mv="$wkmv" 'BEGIN {
+      if (tt+0<=0) { printf "?"; exit }
+      if (mv+0>0) printf "~%.1f%% of wk cap (%.0f%% of day)", mv*o/tt, 100*o/tt
+      else printf "%.0f%% of day", 100*o/tt }')
+    printf '%.8s | %s | %s | +%s/-%s | %s\n' "$sid" "$use" "${mdl##*claude-}" "$la" "$lr" "${t:-?}"
   done < "$tmp/sessions.tsv"
 } > "$tmp/sessions.txt"
 
@@ -74,22 +98,27 @@ done > "$tmp/commits.txt"
 prompt="Summarize yesterday's ($day) Claude Code activity on this server as a morning brief.
 Data below: per-session time table (ACTIVE = Claude working; ATTEND = the user's
 focused-tab time on that session; ignore WATCHED and any dollar-like figures — never
-mention costs), the sessions worked with titles, notable events, and git commits made
-yesterday. Time columns may be sparse while attention tracking is young. Write PLAIN
-TEXT only (no markdown — this goes to a phone via ntfy), at most ~1800 characters:
-1) one headline line: totals (sessions worked, active time, attended time, commit count).
-   For attended time use the \"you\" row (wall clock). Do NOT add up the per-session
-   ATTEND column — parallel sessions overlap, so a sum of it can exceed 24h in a day.
-   Quoting per-session ATTEND figures on the per-session lines is fine.
-2) the sessions that mattered, one line each: title, active/attended time, what the
-   commits suggest got done
-3) anything notable: failed turns/rate limits, heavy subagent use, many compactions
+mention costs), the sessions worked with usage (each session's estimated share of the
+weekly rate-limit cap + its share of the day's tracked burn) and titles, notable
+events, and git commits made yesterday. Time columns may be sparse while attention
+tracking is young. Write PLAIN TEXT only (no markdown — this goes to a phone via
+ntfy), at most ~1800 characters. Never mention character counts or this length limit
+in the output.
+1) one headline line: totals (sessions worked, active time, attended time, est % of
+   the weekly cap consumed, commit count). For attended time use the \"you\" row
+   (wall clock). Do NOT add up the per-session ATTEND column — parallel sessions
+   overlap, so a sum of it can exceed 24h in a day. Quoting per-session ATTEND
+   figures on the per-session lines is fine.
+2) the sessions that mattered, one line each: title, active/attended time, usage,
+   what the commits suggest got done
+3) anything notable: failed turns/rate limits, heavy subagent use, many compactions,
+   any single session eating an outsized share of the weekly cap
 Be concrete and terse. Skip empty categories. No preamble.
 
 == time table ==
 $(cat "$tmp/time.txt")
 
-== sessions (model, line changes, title) ==
+== sessions (usage, model, line changes, title) ==
 $(cat "$tmp/sessions.txt")
 
 == events ==
