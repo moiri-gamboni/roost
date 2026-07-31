@@ -90,6 +90,10 @@ chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-net"
 # per-session attribution (`session` / `session usage [--all]`), guard/wait
 ln -sf "$ROOST_DIR/claude/scripts/session.sh" "$HOME_DIR/bin/session"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/session"
+# claude-account: switch between Claude subscription logins (one config dir per
+# account; usage tracking keyed by login email)
+ln -sf "$ROOST_DIR/claude/scripts/claude-account.sh" "$HOME_DIR/bin/claude-account"
+chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/claude-account"
 # granola: meeting-notes mirror tooling. granola-digest ships from files/private/,
 # so skip any that aren't deployed (public-repo-only checkouts won't have it).
 for g in granola granola-transcripts granola-refresh granola-digest; do
