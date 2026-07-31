@@ -95,6 +95,10 @@ fi
 # No major version guard: claude update is Anthropic-managed, we trust it.
 track "Claude Code" claude update
 
+# --- Codex CLI (official standalone installer; docs prescribe re-running it to update.
+# Same vendor-managed trust as claude update) ---
+track "Codex CLI" bash -c "curl -fsSL https://chatgpt.com/codex/install.sh | sh"
+
 # --- Python tools (PyPI, 7-day cooldown + major version guard) ---
 for pkg in claude-code-tools claude-code-transcripts; do
     if pypi_cooldown_ok "$pkg" 7; then
