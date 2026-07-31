@@ -4,8 +4,15 @@
 #
 # Shows the 5-hour and weekly (7-day) rate-limit %s + reset countdowns (the caps
 # that actually gate the session), plus context-window fill. Source: the cache the
-# statusline writes (~/roost/claude/usage/last-status.json) from its stdin
-# `rate_limits`. Reset countdowns and pace caps are computed live.
+# statusline writes (~/roost/claude/usage/last-status.<account>.json) from its
+# stdin `rate_limits`. Reset countdowns and pace caps are computed live.
+#
+# Multi-account (claude-account CLI): everything limit-related is keyed by the
+# LOGIN — the email in $CLAUDE_CONFIG_DIR/.claude.json — because rate-limit
+# windows are per-account. The cache is per-login, and per-session attribution
+# only counts sample rows tagged with the invoking login (column 21 of
+# session-log.tsv), so accounts never mix. Time tracking (`session time`) stays
+# account-agnostic: a session's wall time is real whichever login ran it.
 #
 # No dollar cost display: subscription plan, so the API-equivalent $ would be
 # misleading as money; it is used internally as the attribution weight.
@@ -68,7 +75,10 @@
 # Window sizes for the curves: FIVE_WINDOW (s, 18000), WEEK_WINDOW (s, 604800).
 set -uo pipefail
 
-cache="${ROOST_USAGE_CACHE:-$HOME/roost/claude/usage/last-status.json}"
+# cache resolution is deferred until after arg parsing: it depends on the login
+# (a jq read of .claude.json) which the hot plumbing paths (--focus-mark,
+# --turn-end, …) never need — they exit before it.
+cache=""
 tlog="${ROOST_USAGE_TLOG:-$HOME/roost/claude/usage/turn-log.tsv}"
 flog="${ROOST_USAGE_FLOG:-$HOME/roost/claude/usage/focus-log.tsv}"
 panedir="${ROOST_USAGE_PANEDIR:-$HOME/roost/claude/usage/panes}"
@@ -320,8 +330,10 @@ Plumbing (wired via settings.json hooks + tmux hooks; not for interactive use):
   session --focus-mark in|out C P  tmux client-focus logger (attended time)
 
 Data (under ~/roost/claude/usage/):
-  last-status.json  global limits cache (statusline-written, ~10s fresh)
+  last-status.<login>.json  per-account limits cache (statusline-written, ~10s)
   session-log.tsv   per-session cost/token samples    turn-log.tsv  turn events
+  Limits + attribution are keyed by LOGIN (the email in the invoking config
+  dir's .claude.json — see claude-account); `session time` is account-agnostic.
   Estimated %s are tracked-share upper bounds — headless `claude -p` and off-box
   usage are invisible to sampling; $ figures and turn times are exact counts.
 
@@ -336,6 +348,25 @@ HELP
   esac
   shift
 done
+
+# ── Account (login) resolution ───────────────────────────────────────────────
+# One config dir = one login (claude-account). The email is the tracking key:
+# per-login cache file, and the attribution filter over session-log column 21.
+udir="$HOME/roost/claude/usage"
+cfg="${CLAUDE_CONFIG_DIR:-$HOME/roost/claude}"
+acct=$(jq -r '.oauthAccount.emailAddress // empty' "$cfg/.claude.json" 2>/dev/null || true)
+[ -n "$acct" ] || acct=unknown
+acct=${acct//[!A-Za-z0-9@._-]/_}
+if [ -z "$cache" ]; then
+  if [ -n "${ROOST_USAGE_CACHE:-}" ]; then
+    cache="$ROOST_USAGE_CACHE"
+  else
+    cache="$udir/last-status.$acct.json"
+    # pre-migration fallback: the account-keyed file appears on the first
+    # statusline render after deploy; until then the legacy shared cache serves
+    [ -s "$cache" ] || cache="$udir/last-status.json"
+  fi
+fi
 
 # validate guard specs up front (a typo errors instead of silently disabling)
 valid_spec() {
@@ -707,10 +738,12 @@ snapdir="${ROOST_USAGE_SNAPDIR:-$HOME/roost/claude/usage/sessions}"
 ws5=$(( fivereset - FIVE_WINDOW )); wsw=$(( weekreset - WEEK_WINDOW ))
 
 # emit one "sid<TAB>in-window-5h$<TAB>in-window-wk$<TAB>last-sample-ts" per session, 5h$ desc
+# Only rows tagged with the invoking login count (col 21): another account's
+# sessions burn a different cap, so mixing them would corrupt both shares.
 est_sessions() {
   [ -s "$slog" ] || return 1
-  LC_ALL=C sort -t$'\t' -k1,1n "$slog" | awk -F'\t' -v ws5="$ws5" -v wsw="$wsw" '
-    $2 != "" {
+  LC_ALL=C sort -t$'\t' -k1,1n "$slog" | awk -F'\t' -v ws5="$ws5" -v wsw="$wsw" -v acct="$acct" '
+    $2 != "" && $21 == acct {
       ts=$1+0; sid=$2; c=$3+0; d=0
       if (sid in last) { d=c-last[sid]; if (d<0) d=0 }
       if (ts>=ws5) d5[sid]+=d
@@ -733,10 +766,10 @@ base_pcts() {
   # `0 > uninit` would never fire, leaking an empty field — which bash read
   # under IFS=tab would then swallow as leading whitespace, shifting b5/bw)
   LC_ALL=C sort -t$'\t' -k1,1n "$slog" | awk -F'\t' \
-    -v ws5="$ws5" -v wsw="$wsw" -v fr="$fivereset" -v wr="$weekreset" '
-    $1+0>=ws5 && $6==fr && $4+0>=0 {
+    -v ws5="$ws5" -v wsw="$wsw" -v fr="$fivereset" -v wr="$weekreset" -v acct="$acct" '
+    $21==acct && $1+0>=ws5 && $6==fr && $4+0>=0 {
       if (!g5) { g5=1; t5=$1+0; b5=$4+0 } else if ($1+0<=t5+300 && $4+0>b5) b5=$4+0 }
-    $1+0>=wsw && $7==wr && $5+0>=0 {
+    $21==acct && $1+0>=wsw && $7==wr && $5+0>=0 {
       if (!gw) { gw=1; tw=$1+0; bw=$5+0 } else if ($1+0<=tw+300 && $5+0>bw) bw=$5+0 }
     END { printf "%s\t%s\n", (g5?b5:-1), (gw?bw:-1) }'
 }
@@ -783,11 +816,11 @@ if [ -n "$submode" ]; then
     e5=$(estpct "$cov5" "$o5" "$t5" "$f_stale"); ew=$(estpct "$covw" "$ow" "$tw" "$w_stale")
     s5=$(shr "$o5" "$t5"); sw=$(shr "$ow" "$tw")
     if [ "$mode" = json ]; then
-      jq -n --arg id "$sid" --arg name "$name" \
+      jq -n --arg id "$sid" --arg name "$name" --arg acct "$acct" \
             --arg o5 "$o5" --arg ow "$ow" --arg t5 "$t5" --arg tw "$tw" \
             --arg e5 "$e5" --arg ew "$ew" --arg g5 "$five" --arg gw "$week" \
             --arg c5 "$cov5" --arg cw "$covw" --arg lts "$olts" \
-        '{id: $id, name: $name,
+        '{id: $id, name: $name, account: $acct,
           five_hour: {tracked_usd: ($o5|tonumber), tracked_total_usd: ($t5|tonumber),
                       est_pct_of_limit: (if $e5=="n/a" then null else ($e5|tonumber) end),
                       covered_pct: (if ($c5|tonumber)<0 then null else ($c5|tonumber) end),
@@ -802,7 +835,7 @@ if [ -n "$submode" ]; then
     fi
     fst=""; [ "$f_stale" = 1 ] && fst=" (stale)"
     wst=""; [ "$w_stale" = 1 ] && wst=" (stale)"
-    printf '── Session usage · %s ──\n' "$sid"
+    printf '── Session usage · %s · %s ──\n' "$sid" "$acct"
     [ -n "$name" ] && printf '  %s\n' "$name"
     printf '  5-hour   %-7s of limit   %s of %s tracked (%s)   global %s used %s%s\n' \
       "$(fmt_est "$e5")" "$(money "$o5")" "$(money "$t5")" "$s5" "$(pct "$five")" "$(covnote "$cov5")" "$fst"
@@ -826,8 +859,8 @@ if [ -n "$submode" ]; then
         if (ws==0 && cw+0>=0 && tw+0>0) ew=sprintf("%.1f", cw*$3/tw)
         print $1, $2, e5, $3, ew, $4, ($1==cur ? 1 : 0)
       }'
-    } | jq -Rn --arg t5 "$t5" --arg tw "$tw" --arg c5 "$cov5" --arg cw "$covw" \
-        '{sessions: [inputs | split("\t") |
+    } | jq -Rn --arg t5 "$t5" --arg tw "$tw" --arg c5 "$cov5" --arg cw "$covw" --arg acct "$acct" \
+        '{account: $acct, sessions: [inputs | split("\t") |
            {id: .[0], five_usd: (.[1]|tonumber),
             five_est_pct: (if .[2]=="null" then null else (.[2]|tonumber) end),
             week_usd: (.[3]|tonumber),
@@ -839,7 +872,7 @@ if [ -n "$submode" ]; then
           caveat: "est splits the global %-movement observed while sampling was live (covered_pct) by tracked-$ share; pre-coverage burn is unattributed; headless -p and off-box usage during coverage are not sampled"}'
     exit 0
   fi
-  printf '── Per-session usage · tracked burn in the current windows ──\n'
+  printf '── Per-session usage · %s · tracked burn in the current windows ──\n' "$acct"
   # ASCII ~ in the header, bare %s in cells: printf pads by bytes, so a multibyte
   # ≈ inside a %Ns field would wreck the column alignment
   printf '  %-9s %6s %8s  %6s %8s  %-11s %s\n' SESSION '~5H%' '5H$' '~WK%' 'WK$' LAST NAME
@@ -883,11 +916,15 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
     else printf '%s %s used (%s)' "$1" "$p" "$4"; fi
   }
   stale=""; (( age > 120 )) && stale=" · cache ${age}s stale"
-  line=$(printf 'Claude usage limits · %s · %s · %s%s' \
+  # Non-primary login: name the account so the line can't be read as the main
+  # plan's limits (the whole point of switching is that these differ).
+  aline=""
+  [ "$(readlink -f "$cfg" 2>/dev/null)" != "$HOME/roost/claude" ] && aline=" · account $acct"
+  line=$(printf 'Claude usage limits · %s · %s · %s%s%s' \
     "$(date '+%Y-%m-%d %H:%M %Z')" \
     "$(seg 5h "$five" "$f_stale" "$(cd5)")" \
     "$(seg wk "$week" "$w_stale" "$(cdw)")" \
-    "$stale")
+    "$aline" "$stale")
   # Hook output is gated behind the warning threshold (USAGE_WARN_PCT, default
   # 90): below it the hook injects nothing — the every-turn line was context
   # noise — and only the turn-start side effect below runs. A stale window's %
@@ -1007,8 +1044,8 @@ if [ "$mode" = guard ]; then
 fi
 
 if [ "$mode" = json ]; then
-  jq --argjson f5 "$F_CAP" --argjson fw "$W_CAP" --arg fd "$F_DIS" --arg wd "$W_DIS" \
-     '{rate_limits, context_pct: .context_window.used_percentage, model: .model.display_name,
+  jq --argjson f5 "$F_CAP" --argjson fw "$W_CAP" --arg fd "$F_DIS" --arg wd "$W_DIS" --arg acct "$acct" \
+     '{account: $acct, rate_limits, context_pct: .context_window.used_percentage, model: .model.display_name,
        five_hour_guard: {disabled: ($fd=="1"), cap: $f5}, weekly_guard: {disabled: ($wd=="1"), cap: $fw}}' "$cache"
   exit 0
 fi
@@ -1020,6 +1057,7 @@ if sid=$(resolve_sid) && [ -n "$sid" ]; then
   printf "  id       %s\n" "$sid"
   [ -n "$sname" ] && printf "  name     %s\n" "$sname"
 fi
+printf "  account  %s\n" "$acct"
 # %-24s pads by BYTES, but every stale phrase (the only multibyte ones, via ·)
 # already exceeds the field, so the pad only ever lands on ASCII countdowns
 printf "  5-hour   %s  %-5s %-24s (%s)\n" "$(bar "$five")" "$(pctq "$five" "$f_stale")" "$(cd5)" "$F_LBL"
