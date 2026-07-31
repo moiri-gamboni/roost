@@ -28,6 +28,8 @@ codex exec -C /path/to/repo -s workspace-write \
 
 Run the command with Bash `run_in_background: true`; the harness notifies on exit, then `Read` the `-o` answer file (the captured stdout log has the step-by-step if the answer needs auditing). Parallel fan-out is just several background `codex exec` calls — but two writers in the same repo need separate git worktrees.
 
+**Background runs need `< /dev/null`.** `codex exec` reads stdin even when the prompt is a positional argument, so a backgrounded invocation with an open stdin pipe hangs forever on `Reading additional input from stdin...` — looking, from the outside, exactly like a long run. Launch detached work as `setsid nohup … > log 2>&1 < /dev/null &`. Relatedly, never `pkill -f "codex exec"`: the pattern matches the wrapper shell issuing it, so the command kills itself.
+
 **Verify the artifact, never the exit status.** A wrapper like `codex exec … > log 2>&1; echo done` reports the *shell's* status, so a Codex usage error, a refusal, or a run that changed nothing all look identical to success — and the completion notification says "exit code 0" either way. Before reporting a delegated task as done, check the thing itself: `git status`/`git diff` for edits, or grep the file for a marker of the specific change requested. If it is missing, read the run's log **first** — a usage error prints the reason in full — rather than inferring a cause from timing.
 
 ## Follow-ups
