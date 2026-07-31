@@ -129,6 +129,7 @@ files/private/health-check-apps-private.sh|$ROOST_DIR/claude/scheduled/health-ch
 files/shell/bashrc.sh|$HOME_DIR/.bashrc.d/roost.sh|plain|
 files/private/global-CLAUDE.md|$ROOST_DIR/claude/CLAUDE.md|plain|
 files/skills/codex/SKILL.md|$ROOST_DIR/claude/skills/codex/SKILL.md|plain|
+files/agents/effort-high.md|$ROOST_DIR/claude/agents/effort-high.md|plain|
 files/skills/html2markdown/SKILL.md|$ROOST_DIR/claude/skills/html2markdown/SKILL.md|plain|
 files/skills/havelock-api/SKILL.md|$ROOST_DIR/claude/skills/havelock-api/SKILL.md|plain|
 files/skills/humanizer/SKILL.md|$ROOST_DIR/claude/skills/humanizer/SKILL.md|plain|
