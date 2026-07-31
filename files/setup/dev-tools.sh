@@ -141,3 +141,39 @@ else
     apt-get install -y -qq gh
     ok "gh CLI installed"
 fi
+
+# --- Codex CLI (OpenAI; official standalone installer → ~/.local/bin/codex) ---
+# Auth is manual: `codex login --device-auth` as $USERNAME (ChatGPT account).
+
+if as_user "command -v codex" &>/dev/null; then
+    skip "Codex CLI already installed"
+else
+    as_user "curl -fsSL https://chatgpt.com/codex/install.sh | sh"
+    ok "Codex CLI installed"
+fi
+
+# Codex's Linux sandbox runs commands under bubblewrap, which needs unprivileged
+# user namespaces; Ubuntu 24.04's apparmor_restrict_unprivileged_userns blocks
+# those unless the binary has an AppArmor profile granting `userns`.
+if ! dpkg -s bubblewrap &>/dev/null; then
+    apt-get install -y -qq bubblewrap
+    ok "bubblewrap installed"
+fi
+if [ ! -f /etc/apparmor.d/bwrap ]; then
+    cat > /etc/apparmor.d/bwrap <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+# Allow bubblewrap (used by Codex CLI's Linux sandbox) to create unprivileged
+# user namespaces despite kernel.apparmor_restrict_unprivileged_userns=1.
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+
+  include if exists <local/bwrap>
+}
+EOF
+    apparmor_parser -r /etc/apparmor.d/bwrap
+    ok "bwrap AppArmor userns profile installed"
+else
+    skip "bwrap AppArmor profile already present"
+fi
