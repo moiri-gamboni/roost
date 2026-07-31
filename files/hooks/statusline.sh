@@ -6,14 +6,22 @@ exec 2>/dev/null
 input=$(cat)
 
 # Persist the stdin payload for the on-demand `usage` reader.
-# The cache is shared across ALL sessions. A long-idle session holds hours-old
+# The cache is shared across ALL sessions OF THE SAME ACCOUNT — rate-limit
+# windows are per-login, so the store is keyed by the login email read from the
+# session's config dir (multi-account via claude-account: one dir = one login;
+# the payload itself carries no account field, but the hook inherits the
+# session's CLAUDE_CONFIG_DIR). A long-idle session holds hours-old
 # rate_limits (its resets_at now in the past) and would otherwise clobber fresh data,
 # making every reader show a bogus "resets in 0h00m". Freshness guard: overwrite only
 # when this snapshot is at least as fresh as the cached one. resets_at only moves
 # forward as a window resets, so a smaller resets_at == an older snapshot.
 _u="$HOME/roost/claude/usage"
 [ -d "$_u" ] || mkdir -p "$_u"
-_cache="$_u/last-status.json"
+_cfg="${CLAUDE_CONFIG_DIR:-$HOME/roost/claude}"
+_acct=$(jq -r '.oauthAccount.emailAddress // empty' "$_cfg/.claude.json")
+[ -n "$_acct" ] || _acct=unknown
+_acct=${_acct//[!A-Za-z0-9@._-]/_}
+_cache="$_u/last-status.$_acct.json"
 _now=$(date +%s)
 _intonly() { local v="${1%%.*}"; case "$v" in ''|*[!0-9]*) printf 0 ;; *) printf '%s' "$v" ;; esac; }
 # "-" sentinel for missing string fields (session_id, model, prompt_id): an
@@ -63,7 +71,7 @@ if [ -s "$_cache" ]; then
     fi
   fi
 fi
-[ "$_write" = 1 ] && printf '%s' "$input" > "$_u/.last-status.tmp" && mv -f "$_u/.last-status.tmp" "$_cache"
+[ "$_write" = 1 ] && printf '%s' "$input" > "$_u/.last-status.$_acct.tmp" && mv -f "$_u/.last-status.$_acct.tmp" "$_cache"
 
 # --- Per-session usage sampling (read by `session usage`) ---
 # cost.total_cost_usd is the session's CUMULATIVE API-equivalent spend, delivered
@@ -83,6 +91,8 @@ fi
 #   17 lines_added  18 lines_removed             (cumulative)
 #   19 model_id  20 prompt_id                    (strings, "-" if absent;
 #     prompt_id joins samples to turn-log turns by time-bracket or id)
+#   21 account                                   (login email; readers filter on
+#     it so attribution never mixes accounts — windows are per-login)
 # Only columns 1-7 are read by the attribution estimator; the rest are logged
 # so the history exists when a view wants them (`session time` v1, cache-
 # efficiency, context-growth, per-turn cost). Static payload fields (version,
@@ -108,9 +118,9 @@ if [ -n "$_sid" ] && [ "$_sid" != "-" ] && _costf=$(LC_ALL=C printf '%.4f' "$_co
     else printf '%s' "$_sid" > "$_pf"; fi
   fi
   if [ "$_costf" != "$_prevf" ] || [ "$_side_age" -ge 600 ]; then
-    LC_ALL=C printf '%s\t%s\t%s\t%.3f\t%.3f\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    LC_ALL=C printf '%s\t%s\t%s\t%.3f\t%.3f\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
       "$_now" "$_sid" "$_costf" "$_f5" "$_w7" "$_new_fr" "$_new_wr" "$_dur" "$_apidur" \
-      "$_otok" "$_itok" "$_ctx" "$_crd" "$_ccr" "$_cin" "$_cout" "$_ladd" "$_lrm" "$_model" "$_pid" >> "$_slog"
+      "$_otok" "$_itok" "$_ctx" "$_crd" "$_ccr" "$_cin" "$_cout" "$_ladd" "$_lrm" "$_model" "$_pid" "$_acct" >> "$_slog"
     printf '%s' "$_costf" > "$_side"
     printf '%s' "$input" > "$_snapdir/.$_sid.tmp" && mv -f "$_snapdir/.$_sid.tmp" "$_snapdir/$_sid.json"
   fi
@@ -177,8 +187,12 @@ _seg() {  # $1=label  $2=pct  $3=resets_at  $4=cadence secs (0 = not projectable
 }
 _five_seg=$(_seg 5h "$_d_f5" "$_d_fr" 0)
 _week_seg=$(_seg wk "$_d_w7" "$_d_wr" 604800)
+# Tag the line with the account-dir name when running under a non-primary
+# login, so mixed-account windows are tellable apart at a glance.
+_atag=""
+[ "$(readlink -f "$_cfg" 2>/dev/null)" != "$HOME/roost/claude" ] && _atag=" · ${_cfg##*/}"
 
-jq -r --arg five_seg "$_five_seg" --arg week_seg "$_week_seg" '
+jq -r --arg five_seg "$_five_seg" --arg week_seg "$_week_seg" --arg atag "$_atag" '
   (.context_window.current_usage // {}) as $cu |
   ([$cu.input_tokens, $cu.cache_creation_input_tokens, $cu.cache_read_input_tokens]
     | map(. // 0) | add) as $used |
@@ -189,5 +203,5 @@ jq -r --arg five_seg "$_five_seg" --arg week_seg "$_week_seg" '
     elif . >= 1000 then
       "\(. / 1000 | floor)k"
     else "\(.)" end;
-  "\($used | fmt) tkns\($five_seg)\($week_seg)"
+  "\($used | fmt) tkns\($five_seg)\($week_seg)\($atag)"
 ' <<< "$input"

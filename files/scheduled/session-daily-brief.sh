@@ -36,37 +36,49 @@ awk -F'\t' -v m="$mid" -v e="$dend" '
     if ($19!="" && $19!="-") mdl[$2]=$19
     if ($17!="") la[$2]=$17
     if ($18!="") lr[$2]=$18
+    if ($21!="") ac[$2]=$21
   }
   END { for (s in seen) if (d[s]>0.005)
-          printf "%s\t%s\t%s\t%s\t%.4f\n", s, (mdl[s]==""?"?":mdl[s]), la[s]+0, lr[s]+0, d[s] }' \
-  "$U/session-log.tsv" 2>/dev/null | LC_ALL=C sort -t$'\t' -k5,5nr > "$tmp/sessions.tsv" || true
-# Day-sliced usage estimate, same method as `session usage` but over yesterday:
-# the global weekly-% movement observed in the day's samples (per weekly-window
-# id, max−min of the logged wk%, summed — a mid-day reset starts a new id so
-# the movement can't go negative), split by each session's share of the day's
-# tracked burn. Headless `claude -p` and off-box usage are invisible to
-# sampling, so shares are upper bounds; hence est/~.
-tot=$(awk -F'\t' '{t+=$5} END{printf "%.4f", t+0}' "$tmp/sessions.tsv")
-wkmv=$(awk -F'\t' -v m="$mid" -v e="$dend" '
-  $1+0>=m && $1+0<e && $5+0>=0 && $7+0>0 {
-    id=$7; p=$5+0
-    if (!(id in mn) || p<mn[id]) mn[id]=p
-    if (!(id in mx) || p>mx[id]) mx[id]=p
-  }
-  END { mv=0; for (id in mn) mv+=mx[id]-mn[id]; printf "%.2f", mv }' \
-  "$U/session-log.tsv" 2>/dev/null || echo 0)
+          printf "%s\t%s\t%s\t%s\t%s\t%.4f\n", s, (ac[s]==""?"unknown":ac[s]), (mdl[s]==""?"?":mdl[s]), la[s]+0, lr[s]+0, d[s] }' \
+  "$U/session-log.tsv" 2>/dev/null | LC_ALL=C sort -t$'\t' -k6,6nr > "$tmp/sessions.tsv" || true
+# Day-sliced usage estimate, same method as `session usage` but over yesterday
+# and per ACCOUNT (col 21 — multi-login via claude-account; each login has its
+# own weekly cap, so movements must never be summed across accounts): the
+# weekly-% movement observed in the day's samples of that account (per
+# weekly-window id, max−min of the logged wk%, summed — a mid-day reset starts
+# a new id so the movement can't go negative), split by each session's share of
+# that account's tracked day burn. Headless `claude -p` and off-box usage are
+# invisible to sampling, so shares are upper bounds; hence est/~.
+declare -A TOT WKMV
+while IFS=$'\t' read -r a t; do [ -n "$a" ] && TOT[$a]=$t; done < <(
+  awk -F'\t' '{t[$2]+=$6} END{for (a in t) printf "%s\t%.4f\n", a, t[a]}' "$tmp/sessions.tsv")
+while IFS=$'\t' read -r a mv; do [ -n "$a" ] && WKMV[$a]=$mv; done < <(
+  awk -F'\t' -v m="$mid" -v e="$dend" '
+    $1+0>=m && $1+0<e && $5+0>=0 && $7+0>0 {
+      a=($21==""?"unknown":$21); id=a SUBSEP $7; p=$5+0
+      if (!(id in mn) || p<mn[id]) mn[id]=p
+      if (!(id in mx) || p>mx[id]) mx[id]=p
+      acct[id]=a
+    }
+    END { for (id in mn) mv[acct[id]]+=mx[id]-mn[id]
+          for (a in mv) printf "%s\t%.2f\n", a, mv[a] }' \
+    "$U/session-log.tsv" 2>/dev/null || true)
 {
-  awk -v mv="$wkmv" 'BEGIN { if (mv+0>0)
-    printf "day total: est ~%.0f%% of the weekly cap consumed (tracked sessions only)\n", mv }'
+  for a in "${!TOT[@]}"; do
+    lbl=""; [ "${#TOT[@]}" -gt 1 ] && lbl=" ($a)"
+    awk -v mv="${WKMV[$a]:-0}" -v l="$lbl" 'BEGIN { if (mv+0>0)
+      printf "day total%s: est ~%.0f%% of the weekly cap consumed (tracked sessions only)\n", l, mv }'
+  done
   printf 'sid8 | usage | model | lines+/- | title\n'
-  while IFS=$'\t' read -r sid mdl la lr burn; do
+  while IFS=$'\t' read -r sid a mdl la lr burn; do
     [ -n "$sid" ] || continue
     t=""
     [ -s "$U/sessions/$sid.json" ] && t=$(jq -r '.session_name // empty' "$U/sessions/$sid.json")
-    use=$(LC_ALL=C awk -v o="$burn" -v tt="$tot" -v mv="$wkmv" 'BEGIN {
+    use=$(LC_ALL=C awk -v o="$burn" -v tt="${TOT[$a]:-0}" -v mv="${WKMV[$a]:-0}" 'BEGIN {
       if (tt+0<=0) { printf "?"; exit }
       if (mv+0>0) printf "~%.1f%% of wk cap (%.0f%% of day)", mv*o/tt, 100*o/tt
       else printf "%.0f%% of day", 100*o/tt }')
+    [ "${#TOT[@]}" -gt 1 ] && use="$use [$a]"
     printf '%.8s | %s | %s | +%s/-%s | %s\n' "$sid" "$use" "${mdl##*claude-}" "$la" "$lr" "${t:-?}"
   done < "$tmp/sessions.tsv"
 } > "$tmp/sessions.txt"
@@ -100,7 +112,9 @@ Data below: per-session time table (ACTIVE = Claude working; ATTEND = the user's
 focused-tab time on that session; ignore WATCHED and any dollar-like figures — never
 mention costs), the sessions worked with usage (each session's estimated share of the
 weekly rate-limit cap + its share of the day's tracked burn) and titles, notable
-events, and git commits made yesterday. Time columns may be sparse while attention
+events, and git commits made yesterday. If usage lines carry account labels, more
+than one subscription login was in play: keep their weekly-cap estimates separate
+(caps are per-account, never sum them). Time columns may be sparse while attention
 tracking is young. Write PLAIN TEXT only (no markdown — this goes to a phone via
 ntfy), at most ~1800 characters. Never mention character counts or this length limit
 in the output.

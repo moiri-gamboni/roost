@@ -12,6 +12,7 @@ $ session
 ── session overview ───────────────────────────────
   id       e0671919-3e1a-4e37-8fe3-884e27703240
   name     Link session ID to usage tracking tool
+  account  you@example.com
   5-hour   █░░░░░░░░░  13%   resets to 0% in 1h33m    (pace cap 69%)
   weekly   █████░░░░░  54%   resets to 0% in 5d17h    (pace cap 18%)
   context  ███░░░░░░░  31%   (this session)
@@ -20,7 +21,7 @@ $ session
   Fable 5 · cache 2s old
 ```
 
-**5-hour** and **weekly** are the account-global caps that throttle the plan — shared across every session, agent, and model, so burning either fast in a fan-out blocks everything. **context** is this session's context-window fill. **share** is this session's estimated slice of each cap.
+**5-hour** and **weekly** are the account-global caps that throttle the plan — shared across every session, agent, and model, so burning either fast in a fan-out blocks everything. **account** is the subscription login this session runs under (multi-login via the `claude-account` CLI): limits and attribution are keyed by it, so every figure here belongs to that login only — sessions on another login neither gate nor get counted against this one. **context** is this session's context-window fill. **share** is this session's estimated slice of each cap.
 
 | Command | Purpose |
 |---|---|
