@@ -42,7 +42,7 @@ awk -F'\t' -v m="$mid" -v e="$dend" '
           printf "%s\t%s\t%s\t%s\t%s\t%.4f\n", s, (ac[s]==""?"unknown":ac[s]), (mdl[s]==""?"?":mdl[s]), la[s]+0, lr[s]+0, d[s] }' \
   "$U/session-log.tsv" 2>/dev/null | LC_ALL=C sort -t$'\t' -k6,6nr > "$tmp/sessions.tsv" || true
 # Day-sliced usage estimate, same method as `session usage` but over yesterday
-# and per ACCOUNT (col 21 — multi-login via claude-account; each login has its
+# and per ACCOUNT (col 21 — multi-login via `session account`; each login has its
 # own weekly cap, so movements must never be summed across accounts): the
 # weekly-% movement observed in the day's samples of that account (per
 # weekly-window id, max−min of the logged wk%, summed — a mid-day reset starts

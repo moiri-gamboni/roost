@@ -7,7 +7,7 @@
 # statusline writes (~/roost/claude/usage/last-status.<account>.json) from its
 # stdin `rate_limits`. Reset countdowns and pace caps are computed live.
 #
-# Multi-account (claude-account CLI): everything limit-related is keyed by the
+# Multi-account (`session account`): everything limit-related is keyed by the
 # LOGIN — the email in $CLAUDE_CONFIG_DIR/.claude.json — because rate-limit
 # windows are per-account. The cache is per-login, and per-session attribution
 # only counts sample rows tagged with the invoking login (column 21 of
@@ -155,6 +155,191 @@ whoami_main() {
   exit 0
 }
 [ "${1:-}" = whoami ] && { shift; whoami_main "$@"; }
+
+# ── Accounts (`session account …`) ───────────────────────────────
+# Several subscription logins, ONE config dir. The live login is
+# $CLAUDE_CONFIG_DIR/.credentials.json's `claudeAiOauth` (auth) plus
+# .claude.json's `oauthAccount` (identity); a vault at
+# $CLAUDE_CONFIG_DIR/accounts/<email>.json keeps a copy of every login seen.
+#
+# Switching in place (rather than one config dir per account) keeps everything
+# else shared: transcripts, memory, settings, MCP servers and history stay put,
+# so `--resume` and every hook keep working across a switch.
+#
+# What a switch does and does NOT reach (measured, 2026-07-31, not assumed):
+#   • a NEW `claude` process picks the swapped login up immediately — verified
+#     end to end by running `claude -p` against the swapped credentials;
+#   • a RUNNING session does NOT. It holds its access token in memory and kept
+#     reporting the OLD account's rate limits (27%/64%, unchanged) after a live
+#     swap. inotify does show running sessions re-OPENing .credentials.json, so
+#     they may adopt it whenever they next refresh, but that is not observable
+#     on demand and must not be relied on.
+# So the mid-session recipe — quota gone, work half done — is switch, then
+# RESUME, which costs the process but not the conversation:
+#     session account use <other>
+#     claude -r "$(session whoami --id)"      # or: agent <dir> -r <id>
+# Until a running session is resumed it keeps burning the OLD login while the
+# config dir already names the new one, so its samples are attributed to the
+# new account; `use` says how many sessions are in that state.
+#
+# Data-loss safety, since the whole point is that `/login` used to destroy the
+# login it replaced:
+#   • the statusline autosaves the live login into the vault every render whose
+#     .credentials.json mtime moved, so an accidental /login is captured within
+#     ~10s and the REPLACED login is already safe (it was saved while it was
+#     live);
+#   • a vault entry is never overwritten in place — the previous copy rotates
+#     into accounts/.history/<email>.<ts>.json first, so even a save that
+#     lands under the wrong identity (a concurrent session can rewrite
+#     .claude.json from memory) is recoverable rather than fatal;
+#   • `use` saves the outgoing login before installing the incoming one.
+acctdir="${ROOST_ACCOUNTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/roost/claude}/accounts}"
+acct_cfg() { printf '%s' "${CLAUDE_CONFIG_DIR:-$HOME/roost/claude}"; }
+acct_live_email() { jq -r '.oauthAccount.emailAddress // empty' "$(acct_cfg)/.claude.json" 2>/dev/null || true; }
+
+# Copy the live login into the vault. Idempotent: an unchanged entry is only
+# touched (the mtime is the autosave's "already captured" marker).
+acct_save() {
+  local cfg email vf now
+  cfg=$(acct_cfg); email=$(acct_live_email)
+  [ -n "$email" ] && [ -s "$cfg/.credentials.json" ] || return 1
+  mkdir -p "$acctdir" && chmod 700 "$acctdir"
+  vf="$acctdir/$email.json"; now=$(date +%s)
+  if [ -s "$vf" ]; then
+    if jq -e --slurpfile v "$vf" '.claudeAiOauth == $v[0].claudeAiOauth' "$cfg/.credentials.json" >/dev/null 2>&1; then
+      touch "$vf"; return 0
+    fi
+    mkdir -p "$acctdir/.history" && chmod 700 "$acctdir/.history"
+    cp -p "$vf" "$acctdir/.history/$email.$now.json"
+  fi
+  jq -n --slurpfile c "$cfg/.credentials.json" --slurpfile j "$cfg/.claude.json" \
+        --arg e "$email" --argjson t "$now" \
+    '{email: $e, oauthAccount: $j[0].oauthAccount, claudeAiOauth: $c[0].claudeAiOauth, saved_at: $t}' \
+    > "$acctdir/.save.$$" 2>/dev/null \
+    && chmod 600 "$acctdir/.save.$$" && mv -f "$acctdir/.save.$$" "$vf"
+}
+
+# Vault entries, newest-saved first. Name match is a case-insensitive substring
+# of the email, so `session account use apart` is enough.
+acct_paths() { ls -1t "$acctdir"/*.json 2>/dev/null || true; }
+acct_resolve() {  # $1=substring -> vault path on stdout
+  local m="${1:-}" hits n p b
+  hits=$(acct_paths | while IFS= read -r p; do
+           b=${p##*/}; b=${b%.json}
+           printf '%s\n' "$b" | grep -qiF -- "$m" && printf '%s\n' "$p"
+         done)
+  n=$(printf '%s' "$hits" | grep -c . || true)
+  if [ "$n" = 0 ]; then
+    echo "session account: no saved login matches '$m'" >&2
+    echo "  saved: $(acct_paths | sed 's|.*/||; s|\.json$||' | tr '\n' ' ')" >&2
+    return 1
+  fi
+  if [ "$n" -gt 1 ]; then
+    echo "session account: '$m' matches $n logins:" >&2
+    printf '%s\n' "$hits" | sed 's|.*/||; s|\.json$||; s|^|    |' >&2
+    return 1
+  fi
+  printf '%s\n' "$hits"
+}
+
+# Per-account limits, read from that login's statusline cache — the whole point
+# of switching is "which login still has headroom", so `list` answers it.
+acct_limits() {  # $1=email -> "5h N% · wk N% (age)" | "no data yet"
+  local c="$HOME/roost/claude/usage/last-status.${1//[!A-Za-z0-9@._-]/_}.json" f w a
+  [ -s "$c" ] || { printf 'no data yet'; return; }
+  IFS=$'\t' read -r f w < <(jq -r '[(.rate_limits.five_hour.used_percentage//-1),
+                                    (.rate_limits.seven_day.used_percentage//-1)]|@tsv' "$c")
+  a=$(( $(date +%s) - $(stat -c %Y "$c") ))
+  if   [ "$a" -lt 120 ];   then a="live"
+  elif [ "$a" -lt 3600 ];  then a="$(( a/60 ))m old"
+  elif [ "$a" -lt 86400 ]; then a="$(( a/3600 ))h old"
+  else                          a="$(( a/86400 ))d old"; fi
+  printf '5h %s%% · wk %s%% (%s)' "${f%%.*}" "${w%%.*}" "$a"
+}
+
+acct_main() {
+  local sub="${1:-list}"; shift 2>/dev/null || true
+  case "$sub" in
+    list|"")
+      acct_save 2>/dev/null || true
+      local live vf email
+      live=$(acct_live_email)
+      [ -n "$(acct_paths)" ] || { echo "session account: no saved logins yet at $acctdir" >&2; return 1; }
+      # marker goes LAST: printf pads by bytes, so a multibyte arrow inside a
+      # %-Ns field would knock the columns out of line
+      printf '  %-32s %-28s %s\n' LOGIN LIMITS ''
+      while IFS= read -r vf; do
+        [ -n "$vf" ] || continue
+        email=$(jq -r '.email // empty' "$vf")
+        printf '  %-32s %-28s %s\n' "$email" "$(acct_limits "$email")" \
+          "$([ "$email" = "$live" ] && printf '← live' || true)"
+      done < <(acct_paths)
+      printf '\n  switch: session account use <name>   (new sessions immediately;\n'
+      printf '          resume a running one to move it: claude -r "$(session whoami --id)")\n'
+      ;;
+    use)
+      local m="${1:?usage: session account use <name>}" vf email cfg tmp
+      vf=$(acct_resolve "$m") || return 1
+      email=$(jq -r '.email // empty' "$vf"); cfg=$(acct_cfg)
+      if [ "$email" = "$(acct_live_email)" ]; then
+        echo "session account: already on $email"; return 0
+      fi
+      acct_save 2>/dev/null || true   # never lose the login being replaced
+      # Swap ONLY claudeAiOauth: .credentials.json also holds mcpOAuth (Granola,
+      # DoneThat, …), which is not account-scoped and must survive the switch.
+      tmp="$cfg/.credentials.swap.$$"
+      jq --slurpfile v "$vf" '.claudeAiOauth = $v[0].claudeAiOauth' "$cfg/.credentials.json" > "$tmp" \
+        && chmod 600 "$tmp" && mv -f "$tmp" "$cfg/.credentials.json" \
+        || { rm -f "$tmp"; echo "session account: failed to write credentials" >&2; return 1; }
+      # Identity too, so usage tracking labels the very next statusline render
+      # correctly. The app re-fetches the profile on its own schedule, so this
+      # is a head start, not the source of truth — and a concurrent session can
+      # briefly clobber it back from memory.
+      tmp="$cfg/.claude.swap.$$"
+      jq --slurpfile v "$vf" '.oauthAccount = $v[0].oauthAccount' "$cfg/.claude.json" > "$tmp" \
+        && mv -f "$tmp" "$cfg/.claude.json" || rm -f "$tmp"
+      printf 'Switched to %s — %s\n' "$email" "$(acct_limits "$email")"
+      printf 'New sessions start on it.'
+      local n; n=$(pgrep -x -u "$(id -u)" claude 2>/dev/null | grep -c . || true)
+      if [ "${n:-0}" -gt 0 ]; then
+        printf ' %s session(s) already running keep the OLD login until resumed —\n' "$n"
+        printf 'resume one to move it over (the conversation survives, the process does not):\n'
+        printf '    claude -r "$(session whoami --id)"\n'
+      else
+        printf '\n'
+      fi
+      ;;
+    save)
+      acct_save && printf 'Saved %s to %s\n' "$(acct_live_email)" "$acctdir" \
+        || { echo "session account: nothing to save (no live login found)" >&2; return 1; }
+      ;;
+    rm)
+      local vf; vf=$(acct_resolve "${1:?usage: session account rm <name>}") || return 1
+      [ "$(jq -r '.email // empty' "$vf")" = "$(acct_live_email)" ] && {
+        echo "session account: refusing to remove the live login" >&2; return 1; }
+      mkdir -p "$acctdir/.history" && mv -f "$vf" "$acctdir/.history/$(basename "$vf" .json).$(date +%s).json"
+      echo "Removed (kept a copy under $acctdir/.history/)"
+      ;;
+    -h|--help)
+      cat <<'EOF'
+Usage: session account [list | use <name> | save | rm <name>]
+  list           saved logins + each one's rate-limit headroom (default)
+  use <name>     switch the live login in place; <name> is any unique
+                 substring of the email. New sessions get it immediately;
+                 a running session keeps its old token until you resume it:
+                 claude -r "$(session whoami --id)"
+  save           snapshot the live login into the vault (the statusline
+                 does this automatically every time credentials change)
+  rm <name>      drop a saved login (a copy stays in accounts/.history/)
+
+`/login` is safe: the login it replaces was already vaulted, so
+`session account use <old>` brings it back without re-authenticating.
+EOF
+      ;;
+    *) echo "session account: unknown subcommand '$sub' (list|use|save|rm)" >&2; return 2 ;;
+  esac
+}
+[ "${1:-}" = account ] && { shift; acct_main "$@"; exit $?; }
 
 # tmux client-focus plumbing ("--focus-mark in|out CLIENT" — tmux hook args, not
 # stdin JSON): one self-contained row per focus flank, for `session time`
@@ -333,7 +518,7 @@ Data (under ~/roost/claude/usage/):
   last-status.<login>.json  per-account limits cache (statusline-written, ~10s)
   session-log.tsv   per-session cost/token samples    turn-log.tsv  turn events
   Limits + attribution are keyed by LOGIN (the email in the invoking config
-  dir's .claude.json — see claude-account); `session time` is account-agnostic.
+  dir's .claude.json — see `session account`); `session time` is account-agnostic.
   Estimated %s are tracked-share upper bounds — headless `claude -p` and off-box
   usage are invisible to sampling; $ figures and turn times are exact counts.
 
@@ -350,7 +535,7 @@ HELP
 done
 
 # ── Account (login) resolution ───────────────────────────────────────────────
-# One config dir = one login (claude-account). The email is the tracking key:
+# One live login at a time (`session account`). The email is the tracking key:
 # per-login cache file, and the attribution filter over session-log column 21.
 udir="$HOME/roost/claude/usage"
 cfg="${CLAUDE_CONFIG_DIR:-$HOME/roost/claude}"

@@ -21,7 +21,7 @@ $ session
   Fable 5 · cache 2s old
 ```
 
-**5-hour** and **weekly** are the account-global caps that throttle the plan — shared across every session, agent, and model, so burning either fast in a fan-out blocks everything. **account** is the subscription login this session runs under (multi-login via the `claude-account` CLI): limits and attribution are keyed by it, so every figure here belongs to that login only — sessions on another login neither gate nor get counted against this one. **context** is this session's context-window fill. **share** is this session's estimated slice of each cap.
+**5-hour** and **weekly** are the account-global caps that throttle the plan — shared across every session, agent, and model, so burning either fast in a fan-out blocks everything. **account** is the subscription login this session runs under (multi-login via `session account`): limits and attribution are keyed by it, so every figure here belongs to that login only — sessions on another login neither gate nor get counted against this one. **context** is this session's context-window fill. **share** is this session's estimated slice of each cap.
 
 | Command | Purpose |
 |---|---|
@@ -35,6 +35,25 @@ $ session
 | `session --guard` | pacing gate: exit 0 = OK, 3 = PAUSE (prints which window tripped) |
 | `session --wait [5h\|week]` | block until that window resets, then exit 0 — run in the background so the exit wakes you at the reset |
 | `session --json` | raw overview fields |
+| `session account [list\|use <name>\|save\|rm <name>]` | switch subscription logins (see below) |
+
+## Switching subscription logins — `session account`
+When a cap is spent and another subscription is available, `session account` lists every saved login **with its rate-limit headroom**, and `use` switches in place:
+
+```
+$ session account
+  LOGIN                            LIMITS
+  you@example.com                  5h 34% · wk 97% (live)       ← live
+  you@work.example                 5h 0% · wk 12% (3h old)
+
+$ session account use work
+Switched to you@work.example — 5h 0% · wk 12% (3h old)
+New sessions start on it. 4 session(s) already running keep the OLD login until resumed — …
+```
+
+One config dir, swapped in place, so transcripts, memory, settings and MCP servers are unaffected and `--resume` still works. **A running session does not adopt the new login** — it holds its token in memory (measured: it kept reporting the old account's limits after a live swap). To move the session you are in, switch and then resume it, which keeps the conversation and only costs the process: `claude -r "$(session whoami --id)"`. Until then that session still burns the old login while the config dir names the new one, so its usage is misattributed.
+
+`/login` is non-destructive here: the statusline vaults the live login whenever the credentials change, so the one being replaced is already saved and `session account use <old>` restores it without re-authenticating. Vault: `~/roost/claude/accounts/<email>.json` (0600), superseded copies under `accounts/.history/`.
 
 ## Per-session attribution — how the numbers are made
 Counted where possible, estimated only at the last step:
