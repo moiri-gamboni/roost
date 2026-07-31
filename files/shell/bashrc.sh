@@ -12,6 +12,15 @@ _ROOST_DIR="$HOME/$ROOST_DIR_NAME"
 
 # Claude Code config lives under ~/roost/claude/
 export CLAUDE_CONFIG_DIR="$_ROOST_DIR/claude"
+# Multi-account (claude-account CLI): interactive shells follow the
+# default-account symlink; non-interactive shells (cron via BASH_ENV, scripts)
+# stay pinned to the primary dir so scheduled jobs never silently burn an
+# alternate account's budget.
+if [[ $- == *i* && -L "$_ROOST_DIR/claude-accounts/default" ]]; then
+    _acct_dir=$(readlink -f "$_ROOST_DIR/claude-accounts/default" 2>/dev/null)
+    [[ -d "$_acct_dir" ]] && export CLAUDE_CONFIG_DIR="$_acct_dir"
+    unset _acct_dir
+fi
 
 # Ensure true-color support is advertised over SSH (not forwarded by default)
 [[ -z "${COLORTERM:-}" ]] && export COLORTERM=truecolor
@@ -205,14 +214,30 @@ _ensure_tmux() {
 }
 
 # Launch an interactive Claude session in a tmux window.
-# Usage: agent [path] [claude-args...]
+# Usage: agent [-a account] [path] [claude-args...]
 #   agent                           # cwd, interactive
 #   agent ~/roost/code/myapp        # that dir
 #   agent ~/roost/code/myapp -c     # continue last session
 #   agent -c                        # continue in cwd
+#   agent -a acct2 ~/roost/code/x   # run under another subscription login
 agent() {
     local dir="$PWD"
     local -a claude_args=()
+
+    # Account resolution: -a flag > default-account symlink > primary dir.
+    # Always baked into the window command below — `tmux new-window CMD` runs
+    # through sh -c without sourcing bashrc, so env inheritance from the tmux
+    # server would be stale after a `claude-account use`.
+    local acct_dir="$_ROOST_DIR/claude"
+    if [[ "${1:-}" == "-a" ]]; then
+        local acct_name="${2:?agent: -a needs an account name}"
+        acct_dir=$(claude-account dir "$acct_name") || return 1
+        shift 2
+    elif [[ -L "$_ROOST_DIR/claude-accounts/default" ]]; then
+        local _d
+        _d=$(readlink -f "$_ROOST_DIR/claude-accounts/default" 2>/dev/null)
+        [[ -d "$_d" ]] && acct_dir="$_d"
+    fi
 
     # If first arg is a directory, use it as the working dir
     if [[ $# -gt 0 ]] && [[ -d "$1" ]]; then
@@ -221,9 +246,11 @@ agent() {
     fi
     claude_args=("$@")
 
-    # Window name defaults to basename of the directory
+    # Window name defaults to basename of the directory; a non-primary account
+    # is tagged so it's visible which windows burn which login.
     local base_name
     base_name=$(basename "$dir")
+    [[ "$acct_dir" != "$_ROOST_DIR/claude" ]] && base_name="${base_name}@${acct_dir##*/}"
     local name="$base_name"
 
     # Deduplicate: if window name exists, append -2, -3, etc.
@@ -243,7 +270,7 @@ agent() {
     fi
 
     local -a cmd_parts=()
-    cmd_parts+=(cd "$(printf '%q' "$dir")" '&&' claude)
+    cmd_parts+=(cd "$(printf '%q' "$dir")" '&&' CLAUDE_CONFIG_DIR="$(printf '%q' "$acct_dir")" claude)
     for arg in "${claude_args[@]}"; do
         cmd_parts+=("$(printf '%q' "$arg")")
     done
