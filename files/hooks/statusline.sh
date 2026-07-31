@@ -8,7 +8,7 @@ input=$(cat)
 # Persist the stdin payload for the on-demand `usage` reader.
 # The cache is shared across ALL sessions OF THE SAME ACCOUNT — rate-limit
 # windows are per-login, so the store is keyed by the login email read from the
-# session's config dir (multi-account via claude-account: one dir = one login;
+# session's config dir (multi-account via `session account`: one live login;
 # the payload itself carries no account field, but the hook inherits the
 # session's CLAUDE_CONFIG_DIR). A long-idle session holds hours-old
 # rate_limits (its resets_at now in the past) and would otherwise clobber fresh data,
@@ -22,6 +22,20 @@ _acct=$(jq -r '.oauthAccount.emailAddress // empty' "$_cfg/.claude.json")
 [ -n "$_acct" ] || _acct=unknown
 _acct=${_acct//[!A-Za-z0-9@._-]/_}
 _cache="$_u/last-status.$_acct.json"
+
+# Credential autosave (`session account`): copy the live login into the vault
+# whenever .credentials.json has moved since the vault entry was written. This
+# is what makes a bare `/login` non-destructive — the login being REPLACED was
+# already captured while it was live, so it stays switchable back to. Guarded
+# on mtime so the common render costs two stats and nothing else; the vault
+# write itself rotates the old copy into .history/ rather than overwriting.
+_vault="$_cfg/accounts"
+if [ "$_acct" != unknown ] && [ -s "$_cfg/.credentials.json" ]; then
+  _vf="$_vault/$_acct.json"
+  if [ ! -e "$_vf" ] || [ "$_cfg/.credentials.json" -nt "$_vf" ]; then
+    "$HOME/roost/claude/scripts/session.sh" account save >/dev/null 2>&1 || true
+  fi
+fi
 _now=$(date +%s)
 _intonly() { local v="${1%%.*}"; case "$v" in ''|*[!0-9]*) printf 0 ;; *) printf '%s' "$v" ;; esac; }
 # "-" sentinel for missing string fields (session_id, model, prompt_id): an

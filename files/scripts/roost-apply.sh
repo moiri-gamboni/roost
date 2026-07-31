@@ -117,7 +117,6 @@ files/scheduled/session-daily-brief.sh|$ROOST_DIR/claude/scheduled/session-daily
 files/scripts/roost-apply.sh|$ROOST_DIR/claude/scripts/roost-apply.sh|plain+x|
 files/scripts/roost-net.sh|$ROOST_DIR/claude/scripts/roost-net.sh|plain+x|
 files/scripts/session.sh|$ROOST_DIR/claude/scripts/session.sh|plain+x|
-files/scripts/claude-account.sh|$ROOST_DIR/claude/scripts/claude-account.sh|plain+x|
 files/hooks/shellcheck-edit.sh|$ROOST_DIR/claude/hooks/shellcheck-edit.sh|plain+x|
 files/scripts/granola.sh|$ROOST_DIR/claude/scripts/granola.sh|plain+x|
 files/scripts/granola-transcripts.sh|$ROOST_DIR/claude/scripts/granola-transcripts.sh|plain+x|
