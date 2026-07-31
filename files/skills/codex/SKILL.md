@@ -28,9 +28,15 @@ codex exec -C /path/to/repo -s workspace-write \
 
 Run the command with Bash `run_in_background: true`; the harness notifies on exit, then `Read` the `-o` answer file (the captured stdout log has the step-by-step if the answer needs auditing). Parallel fan-out is just several background `codex exec` calls — but two writers in the same repo need separate git worktrees.
 
+**Verify the artifact, never the exit status.** A wrapper like `codex exec … > log 2>&1; echo done` reports the *shell's* status, so a Codex usage error, a refusal, or a run that changed nothing all look identical to success — and the completion notification says "exit code 0" either way. Before reporting a delegated task as done, check the thing itself: `git status`/`git diff` for edits, or grep the file for a marker of the specific change requested. If it is missing, read the run's log **first** — a usage error prints the reason in full — rather than inferring a cause from timing.
+
 ## Follow-ups
 
 `codex exec resume --last "<follow-up>"` continues the most recent session with its context intact (cwd-filtered; `--all` disables that). With parallel runs `--last` is ambiguous — take the session id (UUID) from the run's output and `codex exec resume <id> "..."`.
+
+**`resume` takes almost none of `exec`'s flags.** Its whole option set is `SESSION_ID`, `PROMPT` (positional or stdin), `--last`, `--all`, `-i/--image`, `-c/--config`. Passing `-C`, `-s/--sandbox` or `-o/--output-last-message` is a hard usage error that exits before Codex runs — so `cd` into the directory instead of `-C`, and capture stdout for the answer since there is no `-o`. The resumed session keeps the original's model and sandbox. When in doubt, `codex exec resume --help`.
+
+A fresh `codex exec` is often the better follow-up anyway: it accepts the full flag set, and when the work is already on disk the brief can just say "modify the existing `<file>`", which costs little versus the session's in-memory context.
 
 ## Code review
 
