@@ -166,21 +166,23 @@ whoami_main() {
 # else shared: transcripts, memory, settings, MCP servers and history stay put,
 # so `--resume` and every hook keep working across a switch.
 #
-# What a switch does and does NOT reach (measured, 2026-07-31, not assumed):
-#   • a NEW `claude` process picks the swapped login up immediately — verified
-#     end to end by running `claude -p` against the swapped credentials;
-#   • a RUNNING session does NOT. It holds its access token in memory and kept
-#     reporting the OLD account's rate limits (27%/64%, unchanged) after a live
-#     swap. inotify does show running sessions re-OPENing .credentials.json, so
-#     they may adopt it whenever they next refresh, but that is not observable
-#     on demand and must not be relied on.
-# So the mid-session recipe — quota gone, work half done — is switch, then
-# RESUME, which costs the process but not the conversation:
-#     session account use <other>
-#     claude -r "$(session whoami --id)"      # or: agent <dir> -r <id>
-# Until a running session is resumed it keeps burning the OLD login while the
-# config dir already names the new one, so its samples are attributed to the
-# new account; `use` says how many sessions are in that state.
+# A swap reaches RUNNING sessions, on their next request — no restart, no
+# re-auth, which is the whole point when a cap dies mid-task. Mechanism, read
+# out of the 2.1.220 bundle: the token is memoized (`ms.cache`), but building
+# an API client awaits `Dy()` → `HHg()`, which stats .credentials.json and, if
+# the mtime moved, calls `EW()` to clear that memo — so the next request reads
+# the new file. On Linux the plaintext backend's `read()` is an uncached
+# readFileSync (the cache with a TTL belongs to the macOS keychain path).
+# Measured end to end 2026-07-31 on a controlled session: pre-swap it reported
+# 5h 36%/wk 66%, and the very first request after the swap reported the other
+# account's 5h 4%/wk 100%.
+#
+# Two consequences worth knowing:
+#   • the switch is BOX-WIDE, not per session — every `claude` here shares this
+#     config dir, so they all move to the new login on their next request;
+#   • between requests the statusline just repeats the last API response, so
+#     the displayed %s only catch up on the next turn. (Reading one of those
+#     stale repeats is what first made this look like it had not switched.)
 #
 # Data-loss safety, since the whole point is that `/login` used to destroy the
 # login it replaced:
@@ -274,8 +276,7 @@ acct_main() {
         printf '  %-32s %-28s %s\n' "$email" "$(acct_limits "$email")" \
           "$([ "$email" = "$live" ] && printf '← live' || true)"
       done < <(acct_paths)
-      printf '\n  switch: session account use <name>   (new sessions immediately;\n'
-      printf '          resume a running one to move it: claude -r "$(session whoami --id)")\n'
+      printf '\n  switch: session account use <name>   (next request, running sessions included)\n'
       ;;
     use)
       local m="${1:?usage: session account use <name>}" vf email cfg tmp
@@ -299,14 +300,12 @@ acct_main() {
       jq --slurpfile v "$vf" '.oauthAccount = $v[0].oauthAccount' "$cfg/.claude.json" > "$tmp" \
         && mv -f "$tmp" "$cfg/.claude.json" || rm -f "$tmp"
       printf 'Switched to %s — %s\n' "$email" "$(acct_limits "$email")"
-      printf 'New sessions start on it.'
       local n; n=$(pgrep -x -u "$(id -u)" claude 2>/dev/null | grep -c . || true)
       if [ "${n:-0}" -gt 0 ]; then
-        printf ' %s session(s) already running keep the OLD login until resumed —\n' "$n"
-        printf 'resume one to move it over (the conversation survives, the process does not):\n'
-        printf '    claude -r "$(session whoami --id)"\n'
+        printf 'Takes effect on the next request — including the %s session(s) already running,\n' "$n"
+        printf 'which share this config dir. Their displayed %%s catch up one turn later.\n'
       else
-        printf '\n'
+        printf 'Takes effect on the next request.\n'
       fi
       ;;
     save)
@@ -325,9 +324,9 @@ acct_main() {
 Usage: session account [list | use <name> | save | rm <name>]
   list           saved logins + each one's rate-limit headroom (default)
   use <name>     switch the live login in place; <name> is any unique
-                 substring of the email. New sessions get it immediately;
-                 a running session keeps its old token until you resume it:
-                 claude -r "$(session whoami --id)"
+                 substring of the email. Takes effect on the next request,
+                 for running sessions too — no restart, no re-auth. The
+                 switch is box-wide: every claude here shares the config dir
   save           snapshot the live login into the vault (the statusline
                  does this automatically every time credentials change)
   rm <name>      drop a saved login (a copy stays in accounts/.history/)

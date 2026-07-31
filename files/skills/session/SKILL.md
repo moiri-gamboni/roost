@@ -48,10 +48,11 @@ $ session account
 
 $ session account use work
 Switched to you@work.example — 5h 0% · wk 12% (3h old)
-New sessions start on it. 4 session(s) already running keep the OLD login until resumed — …
+Takes effect on the next request — including the 4 session(s) already running,
+which share this config dir. Their displayed %s catch up one turn later.
 ```
 
-One config dir, swapped in place, so transcripts, memory, settings and MCP servers are unaffected and `--resume` still works. **A running session does not adopt the new login** — it holds its token in memory (measured: it kept reporting the old account's limits after a live swap). To move the session you are in, switch and then resume it, which keeps the conversation and only costs the process: `claude -r "$(session whoami --id)"`. Until then that session still burns the old login while the config dir names the new one, so its usage is misattributed.
+One config dir, swapped in place, so transcripts, memory, settings and MCP servers are unaffected and `--resume` still works. **A running session adopts the new login on its very next request** — no restart and no re-auth, so this works mid-task when a cap runs out (measured: a session reporting 5h 36%/wk 66% reported the other account's 5h 4%/wk 100% on the next request). Two things follow: the switch is **box-wide**, since every `claude` here shares the config dir, so all of them move; and between requests the statusline only repeats the last API response, so the displayed %s lag by one turn even though the switch already happened.
 
 `/login` is non-destructive here: the statusline vaults the live login whenever the credentials change, so the one being replaced is already saved and `session account use <old>` restores it without re-authenticating. Vault: `~/roost/claude/accounts/<email>.json` (0600), superseded copies under `accounts/.history/`.
 
