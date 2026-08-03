@@ -21,6 +21,13 @@
 #   session           overview (default): invoking session's id · name, the 5h +
 #                     weekly limits, context fill, and this session's share
 #   session whoami [--id|--name|--json]  identity only: id + auto-title
+#   session account [list|use <name>|save|rm <name>]  several subscription
+#                     logins out of one config dir: list them with each one's
+#                     rate-limit headroom (the question you switch on), or swap
+#                     the live login in place — effective on the next request,
+#                     running sessions included. Add a login by running /login;
+#                     the statusline vaults it, and the one it replaces, so
+#                     switching back never re-authenticates.
 #   session usage [ID] [--json]  one session's tracked in-window burn ($, counted
 #                     from the statusline's per-session cost samples) and its
 #                     estimated share of the 5h/weekly limits. ID defaults to
@@ -331,8 +338,12 @@ Usage: session account [list | use <name> | save | rm <name>]
                  does this automatically every time credentials change)
   rm <name>      drop a saved login (a copy stays in accounts/.history/)
 
-`/login` is safe: the login it replaces was already vaulted, so
-`session account use <old>` brings it back without re-authenticating.
+To ADD a login, run `/login` in a session — there is no `add` subcommand and
+none is needed: the statusline vaults whatever you log into, within a render.
+`/login` is also non-destructive now, because the login it replaces was itself
+vaulted while live, so `session account use <old>` brings it back with no
+re-authentication. Note both `/login` and `use` are box-wide: every claude here
+shares this config dir, so all running sessions move to the new login too.
 EOF
       ;;
     *) echo "session account: unknown subcommand '$sub' (list|use|save|rm)" >&2; return 2 ;;
@@ -493,6 +504,17 @@ Time tracking (hook-fed turn boundaries; gaps between turns never count):
                                    attended (focus), waits (this session)
   session time --all               the same, one row per session
   session time ... --yesterday     the same over yesterday's full day
+
+Accounts (several subscription logins, one config dir; `session account -h`):
+  session account                  saved logins + each one's rate-limit headroom
+  session account use <name>       switch the live login in place; <name> is any
+                                   unique substring of the email. Effective on
+                                   the next request, running sessions included
+  session account save             vault the live login (the statusline does
+                                   this by itself whenever credentials change)
+  session account rm <name>        drop a saved login (copy kept in .history/)
+  Adding a login = run /login in a session; it is vaulted automatically, and the
+  login it replaces is kept, so switching back never needs re-authenticating.
 
 Limits & pacing:
   session --compact                one frugal line: date/time + 5h & wk %s; exit 0

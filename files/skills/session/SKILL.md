@@ -54,7 +54,7 @@ which share this config dir. Their displayed %s catch up one turn later.
 
 One config dir, swapped in place, so transcripts, memory, settings and MCP servers are unaffected and `--resume` still works. **A running session adopts the new login on its very next request** — no restart and no re-auth, so this works mid-task when a cap runs out (measured: a session reporting 5h 36%/wk 66% reported the other account's 5h 4%/wk 100% on the next request). Two things follow: the switch is **box-wide**, since every `claude` here shares the config dir, so all of them move; and between requests the statusline only repeats the last API response, so the displayed %s lag by one turn even though the switch already happened.
 
-`/login` is non-destructive here: the statusline vaults the live login whenever the credentials change, so the one being replaced is already saved and `session account use <old>` restores it without re-authenticating. Vault: `~/roost/claude/accounts/<email>.json` (0600), superseded copies under `accounts/.history/`.
+**Adding a login is just `/login`** — there is no `add` subcommand and none is needed: the statusline vaults whatever you log into, within a render. `/login` is also non-destructive here, because the login it replaces was vaulted while it was live, so `session account use <old>` restores it without re-authenticating. Vault: `~/roost/claude/accounts/<email>.json` (0600), superseded copies under `accounts/.history/`.
 
 ## Per-session attribution — how the numbers are made
 Counted where possible, estimated only at the last step:
