@@ -35,6 +35,7 @@ $ session
 | `session --hook` | the per-turn UserPromptSubmit plumbing: logs the turn start every turn, but injects the line (as hook JSON, with `· this session ≈X%/5h ≈Y%/wk` + the ⚠ advisory) only at ≥`USAGE_WARN_PCT` (default 90) |
 | `session --guard` | pacing gate: exit 0 = OK, 3 = PAUSE (prints which window tripped) |
 | `session --wait [5h\|week]` | block until that window resets, then exit 0 — run in the background so the exit wakes you at the reset |
+| `session --wait guard` | block until `--guard` would pass (same `FIVE_GUARD`/`WEEK_GUARD` config), then exit 0. Not a poll: it computes the earliest time the rising pace cap can reach the current used%, sleeps exactly to it, re-checks against a fresh cache, repeats. Run in the background; the exit is the wake-up |
 | `session --json` | raw overview fields |
 | `session account [list\|use <name>\|save\|rm <name>]` | switch subscription logins (see below) |
 
@@ -72,7 +73,8 @@ Run before each wave (and inside each agent). Configure each window independentl
 
 ```
 WEEK_GUARD=sqrt FIVE_GUARD=linear session --guard   # weekly eased, 5h linear
-session --guard || sleep 120                        # simple pacing loop
+session --guard || session --wait guard             # blocked? wait for the pace
+                                                    # line to clear (no polling)
 ```
 
 ## Auto-resume after a reset — `session --wait` + the ⚠ advisory
