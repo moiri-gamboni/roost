@@ -48,7 +48,11 @@
 #                     kept out of the user's transcript). The advisory is phrased
 #                     by reset distance: near reset = keep going (worst case a
 #                     brief pause; background `--wait` auto-resumes), far reset =
-#                     hold off fan-out (5h) / wind down (weekly).
+#                     hold off fan-out (5h) / wind down (weekly). Once a warned
+#                     window's resets_at passes, the next turn gets a one-line
+#                     refresh notice (no breakdown) telling the model the cap is
+#                     fresh and work can resume; per-session warn state lives in
+#                     sessions/<sid>.warn.
 #                     Side effect every turn, gated or not: appends this turn's
 #                     START event to the turn log.
 #   session --turn-end  Stop-hook plumbing: appends the turn's END event to the
@@ -1135,11 +1139,12 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
   # 90): below it the hook injects nothing — the every-turn line was context
   # noise — and only the turn-start side effect below runs. A stale window's %
   # belongs to a window that already closed, so it neither warns nor un-gates.
-  warn=0
+  f_warn=0; w_warn=0; warn=0; refresh=""
   if [ "$mode" = hook ]; then
     thr=${USAGE_WARN_PCT:-90}
-    [ "$f_stale" = 0 ] && (( fp >= thr )) && warn=1
-    [ "$w_stale" = 0 ] && (( wp >= thr )) && warn=1
+    [ "$f_stale" = 0 ] && (( fp >= thr )) && f_warn=1
+    [ "$w_stale" = 0 ] && (( wp >= thr )) && w_warn=1
+    warn=$(( f_warn || w_warn ))
   fi
   # Hook only: append this session's estimated share of each window, so the
   # emitted line carries "how much of the burn is mine" alongside the global %s
@@ -1155,6 +1160,26 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
     # turn START event for `session time`; the Stop hook (--turn-end) logs the
     # matching end, sharing prompt_id so turns join to sample-log rows by id
     [ -n "$hsid" ] && printf '%s\t%s\ts\t%s\t-\t-\n' "$(date +%s)" "$hsid" "${hpid:--}" >> "$tlog"
+    # Reset-refresh notice: a session that was warned about a window is told,
+    # once, when that window's resets_at has passed — otherwise a model that
+    # wound down on the ⚠ has no signal that the cap turned over (the gate
+    # keeps the hook silent below the threshold). Warn state is per session
+    # ("five_ts<TAB>week_ts", 0 = no outstanding warn) in sessions/<sid>.warn,
+    # which the statusline's existing mtime+8d sweep cleans up. A window that
+    # is warning again right now (new window already >= thr) skips its notice.
+    if [ -n "$hsid" ]; then
+      wfile="$snapdir/$hsid.warn"
+      rf=0; rw=0
+      [ -s "$wfile" ] && IFS=$'\t' read -r rf rw < "$wfile"
+      case "$rf" in ''|*[!0-9]*) rf=0 ;; esac
+      case "$rw" in ''|*[!0-9]*) rw=0 ;; esac
+      [ "$f_warn" = 0 ] && (( rf > 0 && now >= rf )) && { refresh="the 5h rate-limit window has reset to 0%"; rf=0; }
+      [ "$w_warn" = 0 ] && (( rw > 0 && now >= rw )) && { refresh="${refresh:+$refresh, and }the weekly (7-day) rate-limit window has reset to 0%"; rw=0; }
+      [ "$f_warn" = 1 ] && rf=$fivereset
+      [ "$w_warn" = 1 ] && rw=$weekreset
+      if (( rf > 0 || rw > 0 )); then [ -d "$snapdir" ] || mkdir -p "$snapdir"; printf '%s\t%s\n' "$rf" "$rw" > "$wfile"
+      else rm -f "$wfile"; fi
+    fi
     if [ "$warn" = 1 ] && [ -n "$hsid" ] && sest=$(est_sessions); then
       IFS=$'\t' read -r hb5 hbw < <(base_pcts)
       hc5=$(covered "$five" "$hb5"); hcw=$(covered "$week" "$hbw")
@@ -1184,14 +1209,14 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
   # Threshold configurable via USAGE_WARN_PCT (default 90; set >100 to disable
   # the hook's output entirely).
   if [ "$warn" = 1 ]; then
-    if [ "$f_stale" = 0 ] && (( fp >= thr )); then
+    if [ "$f_warn" = 1 ]; then
       if (( left5 <= 1800 )); then
         line="$line"$'\n'"⚠ 5h rate limit at ${fp}%, but the window resets to 0% in $(hm "$left5") — an imminent reset is NOT a reason to stop or wind down: worst case is a brief pause until it. Launch \`session --wait 5h\` in the background NOW (Bash run_in_background: true; skip if one is already running) — once paused you cannot launch anything, and that process's exit is the only signal that auto-resumes you. Then keep working, fan-out included."
       else
         line="$line"$'\n'"⚠ 5h rate limit at ${fp}% with $(hm "$left5") still to run before the reset — you may be paused before it. FIRST launch \`session --wait 5h\` in the background (Bash run_in_background: true; skip if one is already running): its exit is the only signal that auto-resumes you — ending a turn saying \"I'll wait for the reset\" launches nothing and sleeps until a human returns, and once paused you cannot launch anything. Then keep current work going, but hold off on new parallel/fan-out work until the window turns."
       fi
     fi
-    if [ "$w_stale" = 0 ] && (( wp >= thr )); then
+    if [ "$w_warn" = 1 ]; then
       if (( leftw <= 21600 )); then
         line="$line"$'\n'"⚠ weekly (7-day) rate limit at ${wp}%, but it resets to 0% in $(dh "$leftw") — not a reason to stop or wind down; worst case is a pause until then. Launch \`session --wait week\` in the background now (Bash run_in_background: true; skip if already running) — its exit auto-resumes you; a stated intention to wait resumes nothing."
       else
@@ -1200,8 +1225,19 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
     fi
   fi
   # Below the threshold the hook emits nothing at all (for UserPromptSubmit, no
-  # stdout = no context injected); compact always prints.
-  [ "$mode" = hook ] && [ "$warn" = 0 ] && exit 0
+  # stdout = no context injected) — unless a refresh notice is pending, which
+  # un-gates on its own and deliberately WITHOUT the usage breakdown: the one
+  # thing the model needs to hear is that the cap turned over. compact always
+  # prints the full line.
+  if [ "$mode" = hook ]; then
+    if [ "$warn" = 1 ]; then
+      [ -n "$refresh" ] && line="$line"$'\n'"Also: $refresh."
+      emit "$line"
+    elif [ -n "$refresh" ]; then
+      emit "Claude usage limits: $refresh — a fresh window is available. Work can continue normally, fan-out included; any earlier wind-down or pacing advice from the ⚠ warnings no longer applies."
+    fi
+    exit 0
+  fi
   emit "$line"
   exit 0
 fi
