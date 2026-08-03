@@ -21,6 +21,9 @@
 #   session           overview (default): invoking session's id · name, the 5h +
 #                     weekly limits, context fill, and this session's share
 #   session whoami [--id|--name|--json]  identity only: id + auto-title
+#   session name <id|prefix> · session id <title-substring>  cross-session
+#                     lookup, both directions (snapshots first, transcripts as
+#                     the slow fallback)
 #   session account [list|use <name>|save|rm <name>]  several subscription
 #                     logins out of one config dir: list them with each one's
 #                     rate-limit headroom (the question you switch on), or swap
@@ -93,6 +96,8 @@ cache=""
 tlog="${ROOST_USAGE_TLOG:-$HOME/roost/claude/usage/turn-log.tsv}"
 flog="${ROOST_USAGE_FLOG:-$HOME/roost/claude/usage/focus-log.tsv}"
 panedir="${ROOST_USAGE_PANEDIR:-$HOME/roost/claude/usage/panes}"
+slog="${ROOST_USAGE_SLOG:-$HOME/roost/claude/usage/session-log.tsv}"
+snapdir="${ROOST_USAGE_SNAPDIR:-$HOME/roost/claude/usage/sessions}"
 ATTEND_GRACE="${ROOST_ATTEND_GRACE:-600}"   # attended idle-cap: seconds of credit past the last interaction
 FIVE_GUARD="${FIVE_GUARD:-linear}"
 WEEK_GUARD="${WEEK_GUARD:-linear}"
@@ -166,6 +171,78 @@ whoami_main() {
   exit 0
 }
 [ "${1:-}" = whoami ] && { shift; whoami_main "$@"; }
+
+# ── Cross-session lookup (`session name <id>` ↔ `session id <query>`) ────────
+# whoami only reports the INVOKING session; these resolve any other one, both
+# directions. Fast path: the usage snapshots — every session that rendered a
+# statusline in the last 8 days, i.e. exactly the ids the usage/time tables and
+# the daily brief show. Fallback when nothing matches there: the transcript
+# store under $CLAUDE_CONFIG_DIR/projects — an id finds its file by NAME
+# (cheap); a title query has to grep every transcript (GBs, ~10s), so it says
+# so on stderr first.
+snap_pairs() {  # "sid<TAB>name" for every usage snapshot
+  set -- "$snapdir"/*.json
+  [ -e "$1" ] || return 0
+  jq -r '[input_filename, (.session_name // "")] | @tsv' "$@" 2>/dev/null \
+    | awk -F'\t' '{ sub(/.*\//,"",$1); sub(/\.json$/,"",$1); print $1 "\t" $2 }'
+}
+title_of_file() {  # $1=transcript path -> its newest ai-title (empty if none)
+  local line
+  line=$(grep '"type":"ai-title"' "$1" 2>/dev/null | tail -n1 || true)
+  [ -n "$line" ] && printf '%s' "$line" | jq -r '.aiTitle // empty'
+}
+lk_filter() {  # $1=name|id  $2=query : keep matching "sid<TAB>name" rows
+  if [ "$1" = name ]; then awk -F'\t' -v q="$2" 'index($1, q)==1'
+  else awk -F'\t' -v q="$2" 'index(tolower($2), tolower(q))>0'; fi
+}
+lookup_main() {  # $1=name|id  $2=query
+  local lmode=$1 q=${2:-} m n cfgp f s
+  if [ -z "$q" ] || [ "$q" = -h ] || [ "$q" = --help ]; then
+    cat >&2 <<'EOF'
+Usage: session name <session-id | id-prefix>   -> that session's title
+       session id   <title-substring>          -> that session's id (case-insensitive)
+One match prints the bare value, so both are scriptable, e.g.
+  agent <dir> -r "$(session id 'dead-link')"
+Several matches print "id<TAB>name" lines instead. Sessions active in the last
+8 days resolve instantly (usage snapshots); older ones fall back to the
+transcript store, which is slow for title queries.
+EOF
+    [ -z "$q" ] && exit 2; exit 0
+  fi
+  m=$(snap_pairs | lk_filter "$lmode" "$q")
+  if [ -z "$m" ]; then
+    cfgp="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
+    if [ -d "$cfgp" ] && [ "$lmode" = name ]; then
+      m=$(find "$cfgp" -name "$q*.jsonl" | while IFS= read -r f; do
+            s=$(basename "$f" .jsonl)
+            printf '%s\t%s\n' "$s" "$(title_of_file "$f")"
+          done | LC_ALL=C sort -u)
+    elif [ -d "$cfgp" ]; then
+      echo "session id: no match among recent sessions — grepping the transcript store ($(du -sh "$cfgp" 2>/dev/null | cut -f1))…" >&2
+      m=$(grep -rH --include='*.jsonl' '"type":"ai-title"' "$cfgp" 2>/dev/null \
+        | awk '{ i=index($0,":"); f=substr($0,1,i-1); L[f]=substr($0,i+1) }
+               END { for (f in L) printf "%s\t%s\n", f, L[f] }' \
+        | while IFS=$'\t' read -r f line; do
+            n=$(printf '%s' "$line" | jq -r '.aiTitle // empty' 2>/dev/null)
+            [ -n "$n" ] && printf '%s\t%s\n' "$(basename "$f" .jsonl)" "$n"
+          done | lk_filter id "$q")
+    fi
+  fi
+  [ -n "$m" ] || { echo "session $lmode: no session matching '$q'" >&2; exit 1; }
+  if [ "$(printf '%s\n' "$m" | wc -l)" -eq 1 ]; then
+    if [ "$lmode" = name ]; then
+      s=${m%%$'\t'*}; n=${m#*$'\t'}
+      [ -n "$n" ] || n=$(session_title "$s")   # snapshot exists but untitled yet
+      printf '%s\n' "${n:-<untitled>}"
+    else
+      printf '%s\n' "${m%%$'\t'*}"
+    fi
+  else
+    printf '%s\n' "$m"
+  fi
+  exit 0
+}
+case "${1:-}" in name|id) lookup_main "$@" ;; esac
 
 # ── Accounts (`session account …`) ───────────────────────────────
 # Several subscription logins, ONE config dir. The live login is
@@ -496,6 +573,11 @@ Identity (pane-safe: reports the session actually invoking it):
                                    (resume: agent <dir> -r "$(session whoami --id)")
   session whoami --name            just the auto-title
   session whoami --json            {"id": "...", "name": "..."}
+
+Lookup (any session, both directions; 8-char table ids work as prefixes):
+  session name <id|prefix>         that session's title
+  session id <title-substring>     that session's id (case-insensitive; several
+                                   matches print "id<TAB>name" lines instead)
 
 Usage attribution (who is burning the shared 5h/weekly caps):
   session usage [ID]               one session's counted $ burn + estimated share
@@ -943,8 +1025,8 @@ cdw()  { (( w_stale )) && { printf 'resets to 0%% in ~%s · stale snapshot' "$(d
 # whoever happens to be tracked. Residual bias: headless `claude -p` runs (no
 # statusline) and off-box usage (claude.ai, other devices) during coverage are
 # invisible and inflate every share, so treat the %s as upper bounds then.
-slog="${ROOST_USAGE_SLOG:-$HOME/roost/claude/usage/session-log.tsv}"
-snapdir="${ROOST_USAGE_SNAPDIR:-$HOME/roost/claude/usage/sessions}"
+# (slog/snapdir paths are defined in the top var block — `session name`/`id`
+# need them before the arg parse.)
 ws5=$(( fivereset - FIVE_WINDOW )); wsw=$(( weekreset - WEEK_WINDOW ))
 
 # emit one "sid<TAB>in-window-5h$<TAB>in-window-wk$<TAB>last-sample-ts" per session, 5h$ desc
@@ -1094,7 +1176,7 @@ if [ -n "$submode" ]; then
     e5=$(estpct "$cov5" "$d5" "$t5" "$f_stale"); ew=$(estpct "$covw" "$dw" "$tw" "$w_stale")
     [ "$e5" != n/a ] && e5="$e5%"; [ "$ew" != n/a ] && ew="$ew%"
     name=$(snap_name "$sid"); mark=""; [ -n "$cur" ] && [ "$sid" = "$cur" ] && mark=" ←this"
-    printf '  %-9.8s %6s %8s  %6s %8s  %-11s %.42s%s\n' \
+    printf '  %-9.8s %6s %8s  %6s %8s  %-11s %s%s\n' \
       "$sid" "$e5" "$(money "$d5")" "$ew" "$(money "$dw")" \
       "$(ago "$lts")" "${name:-—}" "$mark"
   done <<<"$est"
