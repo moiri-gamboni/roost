@@ -71,10 +71,13 @@
 # without a statusline. Gaps between an e and the next s are unattended time.
 #   session --json    raw fields for scripting
 #   session --guard   pacing gate: prints OK/PAUSE, exits 0 (ok) or 3 (pause)
-#   session --wait [5h|week]  block until that window resets, then print one line
-#                     and exit 0 (default 5h). Run in the background (e.g. Bash
+#   session --wait [5h|week|guard]  block, then print one line and exit 0.
+#                     5h/week (default 5h): until that window resets. guard:
+#                     until the pace guard (`--guard`, same FIVE_GUARD/WEEK_GUARD
+#                     config) would pass — sleeps to the computed earliest pass
+#                     time rather than polling. Run in the background (e.g. Bash
 #                     run_in_background) so the exit notifies you exactly at the
-#                     reset — cleaner than polling or ScheduleWakeup hops.
+#                     reset/pass — cleaner than polling or ScheduleWakeup hops.
 #   session --file PATH  read a specific cache file
 #
 # Guard config — set EACH window independently (FIVE_GUARD / WEEK_GUARD) to:
@@ -552,7 +555,8 @@ while [ $# -gt 0 ]; do
     --json)  mode=json ;;
     --guard) mode=guard ;;
     --wait)  mode='wait'
-             case "${2:-}" in 5h|five) waitwin=five; shift ;; week|weekly|7d) waitwin=week; shift ;; esac ;;
+             case "${2:-}" in 5h|five) waitwin=five; shift ;; week|weekly|7d) waitwin=week; shift ;;
+                              guard|pace) waitwin=guard; shift ;; esac ;;
     usage)   submode=usage
              if [ $# -gt 1 ] && [ "${2#-}" = "${2:-}" ]; then target_sid="$2"; shift; fi ;;
     time)    submode='time' ;;
@@ -607,6 +611,9 @@ Limits & pacing:
   session --guard                  pacing gate for fan-outs: OK=exit 0, PAUSE=exit 3
   session --wait [5h|week]         block until that window resets, then exit 0
                                    (run in the background; the exit is the wake-up)
+  session --wait guard             block until `--guard` would pass (same
+                                   FIVE_GUARD/WEEK_GUARD config): sleeps to the
+                                   computed earliest pass time, re-checks, exits 0
   session --json                   raw overview fields
   session --file PATH              read a specific status-cache file
 
@@ -1325,6 +1332,64 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
 fi
 
 if [ "$mode" = wait ]; then
+  # `--wait guard`: block until the pace guard (same FIVE_GUARD/WEEK_GUARD
+  # config as `--guard`) would pass, then emit one line and exit 0. Not a poll:
+  # within a window used% only rises while the cap rises with elapsed time, so
+  # from the current % the EARLIEST possible pass time is computable in closed
+  # form — sleep exactly to it, re-read the cache (burn during the sleep moves
+  # the target later), re-evaluate, repeat. The real guard evaluation is the
+  # only thing that declares PASS (the predicted time is just the sleep target,
+  # floored to now+5s so a rounding mismatch can never busy-loop). A flat <int>
+  # cap never moves, so its only pass time is the window reset; a window that
+  # goes stale mid-wait counts as unknown and stops gating, mirroring --guard.
+  if [ "$waitwin" = guard ]; then
+    pass_time() {  # $1=spec $2=window $3=resets_at $4=used% -> earliest epoch the cap reaches used%
+      awk -v spec="$(printf '%s' "$1" | tr 'A-Z' 'a-z')" -v win="$2" -v r="$3" -v p="$4" -v now="$now" 'BEGIN{
+        if (spec=="off" || spec=="none" || spec=="disabled" || spec=="no") { print now; exit }
+        if (spec ~ /^[0-9]+$/) { print (p > spec+0 ? r : now); exit }
+        P = (spec=="sqrt") ? 0.5 : (spec ~ /^pow:/) ? substr(spec,5)+0 : 1
+        x = (p/100)^(1/P); if (x>1) x=1
+        t = r - win + win*x + 1          # +1s: the guard pauses on strict >
+        if (t<now) t=now; if (t>r) t=r
+        printf "%d", t }'
+    }
+    while :; do
+      now=$(date +%s)
+      IFS=$'\t' read -r five fivereset week weekreset < <(
+        jq -r '[ (.rate_limits.five_hour.used_percentage // -1),
+                 (.rate_limits.five_hour.resets_at // 0),
+                 (.rate_limits.seven_day.used_percentage // -1),
+                 (.rate_limits.seven_day.resets_at // 0) ] | @tsv' "$cache" 2>/dev/null || true)
+      fivereset=${fivereset:-0}; weekreset=${weekreset:-0}   # a torn read must not kill the wake-up
+      fp=$(num "${five:-}"); wp=$(num "${week:-}")
+      left5=$(( fivereset - now )); (( left5<0 )) && left5=0; (( left5>FIVE_WINDOW )) && left5=FIVE_WINDOW
+      leftw=$(( weekreset - now )); (( leftw<0 )) && leftw=0; (( leftw>WEEK_WINDOW )) && leftw=WEEK_WINDOW
+      f_stale=0; (( fivereset > 0 && fivereset < now )) && f_stale=1
+      w_stale=0; (( weekreset > 0 && weekreset < now )) && w_stale=1
+      resolve "$FIVE_GUARD" "$FIVE_WINDOW" "$left5"; F_DIS=$GDIS; F_CAP=$GCAP; F_LBL=$GLABEL
+      resolve "$WEEK_GUARD" "$WEEK_WINDOW" "$leftw"; W_DIS=$GDIS; W_CAP=$GCAP; W_LBL=$GLABEL
+      (( f_stale )) && { F_DIS=1; F_LBL="off · stale"; }
+      (( w_stale )) && { W_DIS=1; W_LBL="off · stale"; }
+      f_fail=0; w_fail=0
+      [ "$F_DIS" = 0 ] && (( fp > F_CAP )) && f_fail=1
+      [ "$W_DIS" = 0 ] && (( wp > W_CAP )) && w_fail=1
+      if [ "$f_fail" = 0 ] && [ "$w_fail" = 0 ]; then
+        printf 'Pace guard passed: weekly %s%% [%s] · 5h %s%% [%s] — clear to proceed.\n' \
+          "$wp" "$W_LBL" "$fp" "$F_LBL"
+        exit 0
+      fi
+      target=$(( now + 5 ))
+      if [ "$f_fail" = 1 ]; then
+        t=$(pass_time "$FIVE_GUARD" "$FIVE_WINDOW" "$fivereset" "$fp"); (( t > target )) && target=$t
+      fi
+      if [ "$w_fail" = 1 ]; then
+        t=$(pass_time "$WEEK_GUARD" "$WEEK_WINDOW" "$weekreset" "$wp"); (( t > target )) && target=$t
+      fi
+      while now=$(date +%s); (( now < target )); do
+        r=$(( target - now )); (( r > 300 )) && r=300; sleep "$r"
+      done
+    done
+  fi
   # Block until the chosen rate-limit window resets, then emit one line and exit 0.
   # Intended for the background (e.g. Bash run_in_background): the *exit* is the
   # notification, so you get woken exactly at the reset — no ScheduleWakeup hops,
