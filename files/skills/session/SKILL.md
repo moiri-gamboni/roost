@@ -27,6 +27,7 @@ $ session
 |---|---|
 | `session` | overview above |
 | `session whoami [--id\|--name\|--json]` | identity only: id + auto-title (pane-safe: `$CLAUDE_CODE_SESSION_ID` + ancestor walk — reports the session actually invoking it, correct across concurrent tmux panes). Resume pointer: `agent <dir> -r "$(session whoami --id)"` |
+| `session name <id\|prefix>` · `session id <title-substring>` | cross-session lookup, both directions: any session's title from its id (the 8-char ids in tables/briefs work as prefixes), or its id from a case-insensitive title substring. One match prints the bare value (scriptable); several print `id<TAB>name` lines. Sessions active in the last 8 days resolve instantly; older ones fall back to the transcript store (id→name stays fast, title queries there grep GBs ~10s) |
 | `session usage [ID] [--json]` | one session's tracked burn + estimated share (default: the invoking session) |
 | `session usage --all [--json]` | breakdown across all tracked sessions, sorted by 5h spend, `←this` marks the caller |
 | `session time [--all] [--yesterday]` | per-turn time for today (or yesterday's full day): closed turns, active, WATCHED (active ∩ attended), ATTEND (focused-tab time), open/unclosed. `--all` = every session, attended-only ones included |
