@@ -10,11 +10,8 @@ input=$(cat)
 # windows are per-login, so the store is keyed by the login email read from the
 # session's config dir (multi-account via `session account`: one live login;
 # the payload itself carries no account field, but the hook inherits the
-# session's CLAUDE_CONFIG_DIR). A long-idle session holds hours-old
-# rate_limits (its resets_at now in the past) and would otherwise clobber fresh data,
-# making every reader show a bogus "resets in 0h00m". Freshness guard: overwrite only
-# when this snapshot is at least as fresh as the cached one. resets_at only moves
-# forward as a window resets, so a smaller resets_at == an older snapshot.
+# session's CLAUDE_CONFIG_DIR). Which account the payload's rate_limits belong
+# to is decided by the sidecar attribution below, not by that email alone.
 _u="$HOME/roost/claude/usage"
 [ -d "$_u" ] || mkdir -p "$_u"
 _cfg="${CLAUDE_CONFIG_DIR:-$HOME/roost/claude}"
@@ -62,7 +59,43 @@ IFS=$'\t' read -r _sid _cost _f5 _w7 _new_fr _new_wr _dur _apidur \
           (.model.id//"-"),
           (.prompt_id//"-")]|@tsv' <<<"$input")
 _new_fr=$(_intonly "$_new_fr"); _new_wr=$(_intonly "$_new_wr")
-_write=1
+# Attribution: the payload's rate_limits belong to whichever account served this
+# SESSION's last API response — not necessarily the login now in .claude.json.
+# `session account use` (or /login) flips the email instantly, but a session's
+# payload keeps replaying the outgoing account's windows until its next request
+# completes; keying the write on the email alone let a switch poison the
+# incoming login's cache with the outgoing one's data (2026-08-05: wk 91%
+# written under a 3% account, and the old resets_at-monotonic guard — built for
+# idle sessions replaying elapsed windows — then rejected every genuine write
+# for days because the foreign weekly reset later). A per-session sidecar holds
+# the last-seen window tuple + the login that owned it: a CHANGED tuple proves
+# a response just arrived under the current login (only responses move
+# rate_limits, and resets_at collisions across accounts don't happen — 5h
+# windows are usage-anchored), so only those renders write the cache. Unchanged
+# tuples never write, which retires the old guard: its stale-idle-clobber case
+# can no longer occur, and within one account a changed tuple is always the
+# newest data there is.
+_snapdir="$_u/sessions"
+[ -d "$_snapdir" ] || mkdir -p "$_snapdir"
+_owner=""; _fresh=0
+if [ -n "$_sid" ] && [ "$_sid" != "-" ]; then
+  _lim="$_snapdir/$_sid.limits"
+  _tuple="$_f5 $_w7 $_new_fr $_new_wr"
+  if [ -s "$_lim" ]; then
+    IFS=$'\t' read -r _p_tuple _p_owner < "$_lim"
+    if [ "$_tuple" = "$_p_tuple" ]; then
+      _owner="$_p_owner"
+    else
+      _owner="$_acct"; _fresh=1
+      printf '%s\t%s\n' "$_tuple" "$_acct" > "$_lim"
+    fi
+  else
+    # first sighting: the tuple's owner is unknowable (a fresh session's first
+    # render can already carry another account's windows) — record it unowned;
+    # the session's next response flips it to the live login.
+    printf '%s\t%s\n' "$_tuple" "-" > "$_lim"
+  fi
+fi
 _old_f5=-1; _old_w7=-1; _old_fr=0; _old_wr=0
 if [ -s "$_cache" ]; then
   IFS=$'\t' read -r _old_f5 _old_w7 _old_fr _old_wr < <(
@@ -71,21 +104,16 @@ if [ -s "$_cache" ]; then
             ((.rate_limits.five_hour.resets_at//0)|floor),
             ((.rate_limits.seven_day.resets_at//0)|floor)]|@tsv' "$_cache")
   _old_fr=$(_intonly "$_old_fr"); _old_wr=$(_intonly "$_old_wr")
-  # Reject a snapshot that's stale on EITHER window. The escape hatch used to key
-  # on the cache FILE's age (>15m), which let a days-old snapshot win a quarter
-  # hour after the last write — one session here was 4 days behind and still
-  # overwrote live data. Key it on the cached windows instead: only when BOTH have
-  # already elapsed does the cache hold nothing worth protecting, and even then
-  # only yield to a snapshot that actually has a live window.
-  if [ "$_new_fr" -lt "$_old_fr" ] || [ "$_new_wr" -lt "$_old_wr" ]; then
-    _write=0
-    if [ "$_old_fr" -le "$_now" ] && [ "$_old_wr" -le "$_now" ] \
-       && { [ "$_new_fr" -gt "$_now" ] || [ "$_new_wr" -gt "$_now" ]; }; then
-      _write=1
-    fi
-  fi
 fi
-[ "$_write" = 1 ] && printf '%s' "$input" > "$_u/.last-status.$_acct.tmp" && mv -f "$_u/.last-status.$_acct.tmp" "$_cache"
+if [ "$_fresh" = 1 ] && { [ "$_new_fr" -gt "$_now" ] || [ "$_new_wr" -gt "$_now" ]; }; then
+  printf '%s' "$input" > "$_u/.last-status.$_acct.tmp" && mv -f "$_u/.last-status.$_acct.tmp" "$_cache"
+elif [ "$_owner" = "$_acct" ] && [ -s "$_cache" ] \
+     && [ "$_f5" = "$_old_f5" ] && [ "$_w7" = "$_old_w7" ] \
+     && [ "$_new_fr" = "$_old_fr" ] && [ "$_new_wr" = "$_old_wr" ]; then
+  # same data, same owner: refresh the cache's age (mtime feeds the "Xm old"
+  # column and the hook's staleness note) without rewriting content
+  touch "$_cache"
+fi
 
 # --- Per-session usage sampling (read by `session usage`) ---
 # cost.total_cost_usd is the session's CUMULATIVE API-equivalent spend, delivered
@@ -113,9 +141,7 @@ fi
 # cwd, workspace, effort, …) are NOT time-series'd — the per-session snapshot
 # below keeps the full latest payload.
 _slog="$_u/session-log.tsv"
-_snapdir="$_u/sessions"
 if [ -n "$_sid" ] && [ "$_sid" != "-" ] && _costf=$(LC_ALL=C printf '%.4f' "$_cost" 2>/dev/null); then
-  [ -d "$_snapdir" ] || mkdir -p "$_snapdir"
   _side="$_snapdir/$_sid.cost"
   _prevf=""; _side_age=999999
   if [ -e "$_side" ]; then
@@ -164,10 +190,13 @@ fi
 # rate_limits only refresh on an API RESPONSE, so a session that is idle — or
 # rate-limited, which is exactly when you check — keeps rendering the last window
 # it was told about. Once that resets_at passes, the countdown used to clamp to
-# "0h0m left", which reads as "the cap is up" when it is not. Two corrections:
-#   • per window take whichever snapshot is fresher, this session's or the shared
-#     cache's: rate limits are account-wide, so another session's newer reading is
-#     strictly better. pct and reset are carried as a PAIR so they stay coherent.
+# "0h0m left", which reads as "the cap is up" when it is not. Corrections:
+#   • the payload is trusted as-is only when it is provably fresh (_fresh). A
+#     same-account payload (_owner matches) competes per window with the shared
+#     cache — whichever resets_at is later wins, valid within one account; pct
+#     and reset are carried as a PAIR so they stay coherent. A payload owned by
+#     another login or by nobody yet (pre-switch replay, first render) is
+#     foreign: show the account's own cache instead of someone else's windows.
 #   • never print a bare zero for an expired window. The weekly can be recovered —
 #     fixed 7-day cadence off a wall-clock anchor (2026-07-19, -26 and 08-02 all
 #     15:00 UTC, exactly 604800s apart) — so step it forward and mark it ~. The 5h
@@ -176,8 +205,14 @@ fi
 #     inter-window gaps of 5.00h through 27h). Stepping a stale 07-26 14:00 forward
 #     gives 10:00 where the live value was 09:10 — so it is flagged, not guessed.
 _d_f5=$_f5; _d_fr=$_new_fr; _d_w7=$_w7; _d_wr=$_new_wr
-if [ "$_old_fr" -gt "$_d_fr" ]; then _d_f5=$_old_f5; _d_fr=$_old_fr; fi
-if [ "$_old_wr" -gt "$_d_wr" ]; then _d_w7=$_old_w7; _d_wr=$_old_wr; fi
+if [ "$_fresh" != 1 ]; then
+  if [ "$_owner" = "$_acct" ]; then
+    if [ "$_old_fr" -gt "$_d_fr" ]; then _d_f5=$_old_f5; _d_fr=$_old_fr; fi
+    if [ "$_old_wr" -gt "$_d_wr" ]; then _d_w7=$_old_w7; _d_wr=$_old_wr; fi
+  elif [ "$_old_fr" -gt 0 ] || [ "$_old_wr" -gt 0 ]; then
+    _d_f5=$_old_f5; _d_fr=$_old_fr; _d_w7=$_old_w7; _d_wr=$_old_wr
+  fi
+fi
 _hm() { local s=$1; [ "$s" -lt 0 ] && s=0; printf '%dh%dm' $(( s/3600 )) $(( (s%3600)/60 )); }
 # Rounded, and h+m below a day. Flooring the hour drops up to 59m, which is what
 # turned 58 minutes of weekly headroom into a flat "0d0h".
