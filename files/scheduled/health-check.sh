@@ -57,6 +57,26 @@ if [ -f "$(dirname "$0")/health-check-apps-private.sh" ]; then
     source "$(dirname "$0")/health-check-apps-private.sh"
 fi
 
+# --- Notion mirror: hourly rows refresh + tasksync conflict ageing ----------
+# The hourly notion-rows job never ntfys — losing the race with the nightly is
+# its designed outcome, 2-4 times a night. It records every attempt in a marker
+# instead, and this is the only thing that reads it. Keyed on the age of the
+# last SUCCESS, not on exit status: a wedged nightly holds the lock
+# indefinitely and every tick behind it exits 1 from flock -n, so
+# alert-on-failure would never fire.
+ROWS_STATUS="$HOME/roost/apart-research/notion/_tools/rows_status.py"
+if [ -f "$ROWS_STATUS" ]; then
+    if ! ROWS_ALARMS="$(python3 "$ROWS_STATUS" --check 2>&1)"; then
+        # 6h cooldown matches the staleness threshold, so a real outage nags
+        # ~4x a day rather than 24, and a recovery is visible within one cycle.
+        if cooldown_ok "notion-rows-deadman" 21600; then
+            ntfy_send -t "Notion mirror dead-man" -p "high" "$ROWS_ALARMS"
+        fi
+    fi
+else
+    FAILURES="$FAILURES\n- notion mirror rows_status.py missing ($ROWS_STATUS)"
+fi
+
 if [ -n "$FAILURES" ]; then
     logger -t "$_HOOK_TAG" "Health check FAILED"
     # Key the cooldown by the failure set so escalations / partial recoveries
