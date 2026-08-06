@@ -23,6 +23,7 @@ SERVER_HOST="${ROOST_SERVER:?set ROOST_SERVER or configure in service file}"
 SERVER_USER="${ROOST_USER:?set ROOST_USER or configure in service file}"
 BACKUP_DIR="${ROOST_BACKUP_DIR:-/backup/roost}"
 STATE_DIR="$HOME/.local/state/roost-backup"
+RECEIVED_INDEX="$STATE_DIR/received.tsv"
 NTFY_URL="${ROOST_NTFY_URL:-}"
 SSH_KEY="${ROOST_SSH_KEY:-}"
 
@@ -85,6 +86,7 @@ done
 
 # Ensure state and backup directories exist
 mkdir -p "$STATE_DIR"
+touch "$RECEIVED_INDEX"
 if [ ! -d "$BACKUP_DIR" ]; then
     die "Backup directory $BACKUP_DIR does not exist (must be a btrfs filesystem)"
 fi
@@ -191,6 +193,14 @@ backup_config() {
     # Update state file and clear trap (receive succeeded)
     echo "$newest" > "$state_file"
     trap - EXIT
+
+    # Record the receive time ourselves. Neither btrfs otime nor the subvolume's
+    # mtime can be trusted for this: an incrementally received subvolume inherits
+    # its clone ancestor's otime (so every incremental off one full send reports
+    # the same instant), and mtime is the source directory's mtime carried in the
+    # send stream, which only coincidentally tracks when we received it.
+    printf '%s\t%s\n' "$dest_name" "$(date +%s)" >> "$RECEIVED_INDEX"
+
     log "[$config] Backup complete: #$newest -> $BACKUP_DIR/$dest_name"
 
     prune_config "$config" "$prefix"
@@ -199,7 +209,7 @@ backup_config() {
 # Retention (GFS): the newest snapshot of each of the 3 most recent distinct
 # days (the newest overall is the incremental parent), plus the newest from a
 # previous ISO week and from a previous month -- last completed week / month
-# end-states. Ages come from btrfs creation time (= local receive time).
+# end-states. Ages come from the script-maintained receive index.
 prune_config() {
     local config="$1" prefix="$2"
     local -A birth=() keep=() seen_days=()
@@ -212,14 +222,20 @@ prune_config() {
     [ "${#existing[@]}" -gt 0 ] || return 0
     keep[${existing[0]}]="latest"
 
+    # Ages come from RECEIVED_INDEX, which we write at receive time. Fall back to
+    # btrfs otime (via stat %W -- no privilege needed, unlike `btrfs subvolume
+    # show`, which sudoers does not permit) only for subvolumes predating the
+    # index; warn, because for anything received incrementally that otime is the
+    # ancestor full send's, not this snapshot's.
     for num in "${existing[@]}"; do
-        when=$(sudo btrfs subvolume show "$BACKUP_DIR/${prefix}-${num}" \
-                   | sed -n 's/^[[:space:]]*Creation time:[[:space:]]*//p') || when=""
-        if [ -n "$when" ]; then
-            birth[$num]=$(date -d "$when" +%s) || birth[$num]=""
-        else
-            birth[$num]=""
+        when=$(awk -F'\t' -v n="${prefix}-${num}" '$1==n{t=$2} END{print t}' \
+                   "$RECEIVED_INDEX") || when=""
+        if [ -z "$when" ]; then
+            when=$(stat -c %W "$BACKUP_DIR/${prefix}-${num}") || when=""
+            case "$when" in 0|-|'') when="" ;; esac
+            [ -n "$when" ] && warn "[$config] ${prefix}-$num predates the receive index; using btrfs otime (may be the ancestor full send's)"
         fi
+        birth[$num]="$when"
     done
 
     # Dailies: existing is sorted newest-first, so the first snapshot seen in
