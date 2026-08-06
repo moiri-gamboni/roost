@@ -7,14 +7,23 @@
 #   roost-data  -> roost-data-<N>   (the Hetzner volume: docker + the notion mirror)
 # Each config carries its own incremental-parent state file; the flat naming keeps
 # the privileged helper's no-subdir contract (btrfs-backup-helper.sh) intact.
+# Retention per config: newest of each of the 3 most recent days, plus the
+# newest of the previous ISO week and of the previous month.
 set -euo pipefail
+
+# Direct terminal runs lack the ROOST_* env the systemd unit carries; import it
+# from the installed unit so `roost-backup` just works interactively.
+if [ -z "${ROOST_SERVER:-}" ] && command -v systemctl >/dev/null; then
+    while IFS= read -r kv; do export "${kv?}"; done < <(
+        systemctl show roost-backup.service -p Environment --value | tr ' ' '\n' | grep '^ROOST_' || true
+    )
+fi
 
 SERVER_HOST="${ROOST_SERVER:?set ROOST_SERVER or configure in service file}"
 SERVER_USER="${ROOST_USER:?set ROOST_USER or configure in service file}"
 BACKUP_DIR="${ROOST_BACKUP_DIR:-/backup/roost}"
 STATE_DIR="$HOME/.local/state/roost-backup"
 NTFY_URL="${ROOST_NTFY_URL:-}"
-KEEP_COUNT="${ROOST_BACKUP_KEEP:-7}"
 SSH_KEY="${ROOST_SSH_KEY:-}"
 
 SSH_TARGET="$SERVER_USER@$SERVER_HOST"
@@ -40,6 +49,13 @@ Usage: roost-backup [OPTIONS]
 
 Pull btrfs snapshots from the roost server to a local backup directory.
 Backs up both the server root filesystem and the roost-data volume.
+Keeps 5 restore points per config: the newest snapshot of each of the 3
+most recent days, plus the newest from the previous ISO week and from the
+previous month (last completed week / month end-states).
+
+Run directly in a terminal for a progress meter (pv if installed, dd
+otherwise); the ROOST_* environment is imported from the installed
+roost-backup.service unit when not already set.
 
 Options:
   --help       Show this help message
@@ -51,7 +67,6 @@ Environment variables:
   ROOST_USER         SSH user (required, set via service file)
   ROOST_BACKUP_DIR   Local btrfs backup path (default: /backup/roost)
   ROOST_NTFY_URL     ntfy URL for failure alerts (optional)
-  ROOST_BACKUP_KEEP  Number of snapshots to keep per config (default: 7)
   ROOST_SSH_KEY      Private key to use (optional; ssh -i + IdentitiesOnly=yes)
 EOF
     exit 0
@@ -74,6 +89,18 @@ if [ ! -d "$BACKUP_DIR" ]; then
     die "Backup directory $BACKUP_DIR does not exist (must be a btrfs filesystem)"
 fi
 
+# Progress meter for the send stream on interactive runs (pv when installed,
+# dd otherwise); plain passthrough under the timer so the journal stays clean.
+meter() {
+    if [ ! -t 2 ]; then
+        cat
+    elif command -v pv >/dev/null; then
+        pv
+    else
+        dd bs=1M status=progress
+    fi
+}
+
 # ClearAllForwardings: a data pull needs none, and the backup key is `restrict`ed
 # server-side, so a RemoteForward inherited from ~/.ssh/config would only warn.
 SSH=(ssh -o ClearAllForwardings=yes)
@@ -89,7 +116,7 @@ fi
 #   $4 state_file  local file recording the last received snapshot number
 backup_config() {
     local config="$1" snap_base="$2" prefix="$3" state_file="$4"
-    local raw_list newest parent dest_name stale existing count prune_count old i
+    local raw_list newest parent dest_name stale
 
     log "[$config] Listing snapshots on $SERVER_HOST..."
     raw_list=$("${SSH[@]}" "$SSH_TARGET" "sudo snapper -c $config --csvout --no-headers list --columns number,type,description") \
@@ -147,12 +174,12 @@ backup_config() {
     if [ -n "$parent" ]; then
         log "[$config] Incremental send: #$parent -> #$newest"
         "${SSH[@]}" "$SSH_TARGET" "sudo btrfs send -p ${snap_base}/${parent}/snapshot ${snap_base}/${newest}/snapshot" \
-            | sudo "$HELPER" receive \
+            | meter | sudo "$HELPER" receive \
             || die "[$config] Incremental btrfs send/receive failed (#$parent -> #$newest)"
     else
         log "[$config] Full send: #$newest"
         "${SSH[@]}" "$SSH_TARGET" "sudo btrfs send ${snap_base}/${newest}/snapshot" \
-            | sudo "$HELPER" receive \
+            | meter | sudo "$HELPER" receive \
             || die "[$config] Full btrfs send/receive failed (#$newest)"
     fi
 
@@ -166,22 +193,75 @@ backup_config() {
     trap - EXIT
     log "[$config] Backup complete: #$newest -> $BACKUP_DIR/$dest_name"
 
-    # Prune old snapshots for this config (keep KEEP_COUNT most recent)
+    prune_config "$config" "$prefix"
+}
+
+# Retention (GFS): the newest snapshot of each of the 3 most recent distinct
+# days (the newest overall is the incremental parent), plus the newest from a
+# previous ISO week and from a previous month -- last completed week / month
+# end-states. Ages come from btrfs creation time (= local receive time).
+prune_config() {
+    local config="$1" prefix="$2"
+    local -A birth=() keep=() seen_days=()
+    local existing num when spec fmt cur slot b kept
+
     mapfile -t existing < <(
         find "$BACKUP_DIR" -maxdepth 1 -name "${prefix}-*" -type d \
-            | sed "s|.*/${prefix}-||" | sort -n
+            | sed "s|.*/${prefix}-||" | sort -rn
     )
-    count=${#existing[@]}
-    if [ "$count" -gt "$KEEP_COUNT" ]; then
-        prune_count=$((count - KEEP_COUNT))
-        log "[$config] Pruning $prune_count old snapshot(s) (keeping $KEEP_COUNT)..."
-        for ((i = 0; i < prune_count; i++)); do
-            old="${existing[$i]}"
-            log "[$config] Deleting $BACKUP_DIR/${prefix}-$old"
-            sudo "$HELPER" delete "${prefix}-$old" \
-                || warn "[$config] Failed to delete ${prefix}-$old"
+    [ "${#existing[@]}" -gt 0 ] || return 0
+    keep[${existing[0]}]="latest"
+
+    for num in "${existing[@]}"; do
+        when=$(sudo btrfs subvolume show "$BACKUP_DIR/${prefix}-${num}" \
+                   | sed -n 's/^[[:space:]]*Creation time:[[:space:]]*//p') || when=""
+        if [ -n "$when" ]; then
+            birth[$num]=$(date -d "$when" +%s) || birth[$num]=""
+        else
+            birth[$num]=""
+        fi
+    done
+
+    # Dailies: existing is sorted newest-first, so the first snapshot seen in
+    # each of the first 3 distinct day buckets is that day's newest.
+    for num in "${existing[@]}"; do
+        [ -n "${birth[$num]}" ] || continue
+        b=$(date -d "@${birth[$num]}" +%F)
+        [ -n "${seen_days[$b]:-}" ] && continue
+        [ "${#seen_days[@]}" -ge 3 ] && break
+        seen_days[$b]=1
+        keep[$num]="${keep[$num]:-}${keep[$num]:+,}daily"
+    done
+
+    # %G-%V and %Y-%m compare lexicographically; "< current bucket" means
+    # "from a previous week/month". Newest match wins each slot.
+    for spec in "%G-%V:$(date +%G-%V):weekly" "%Y-%m:$(date +%Y-%m):monthly"; do
+        IFS=: read -r fmt cur slot <<< "$spec"
+        for num in "${existing[@]}"; do
+            [ -n "${birth[$num]}" ] || continue
+            b=$(date -d "@${birth[$num]}" "+$fmt")
+            if [[ "$b" < "$cur" ]]; then
+                keep[$num]="${keep[$num]:-}${keep[$num]:+,}$slot"
+                break
+            fi
         done
-    fi
+    done
+
+    kept=""
+    for num in "${existing[@]}"; do
+        if [ -n "${keep[$num]:-}" ]; then
+            kept="$kept ${prefix}-$num(${keep[$num]})"
+            continue
+        fi
+        if [ -z "${birth[$num]}" ]; then
+            warn "[$config] Cannot read creation time of ${prefix}-$num; keeping it"
+            continue
+        fi
+        log "[$config] Pruning $BACKUP_DIR/${prefix}-$num"
+        sudo "$HELPER" delete "${prefix}-$num" \
+            || warn "[$config] Failed to delete ${prefix}-$num"
+    done
+    log "[$config] Kept:$kept"
 }
 
 # Root filesystem first (existing backups keep their snapshot-<N> names), then the volume.
