@@ -118,7 +118,7 @@ fi
 #   $4 state_file  local file recording the last received snapshot number
 backup_config() {
     local config="$1" snap_base="$2" prefix="$3" state_file="$4"
-    local raw_list newest parent dest_name stale
+    local raw_list newest parent prev_parent dest_name stale
 
     log "[$config] Listing snapshots on $SERVER_HOST..."
     raw_list=$("${SSH[@]}" "$SSH_TARGET" "sudo snapper -c $config --csvout --no-headers list --columns number,type,description") \
@@ -139,8 +139,10 @@ backup_config() {
 
     # Parent for incremental send: last received, if it still exists on the server
     parent=""
-    if [ "$FORCE_FULL" = false ] && [ -f "$state_file" ]; then
-        parent=$(cat "$state_file")
+    prev_parent=""
+    [ -f "$state_file" ] && prev_parent=$(cat "$state_file")
+    if [ "$FORCE_FULL" = false ] && [ -n "$prev_parent" ]; then
+        parent="$prev_parent"
         if ! echo "$raw_list" | grep -q "^${parent},"; then
             warn "[$config] Parent snapshot #$parent no longer on server; falling back to full send"
             parent=""
@@ -200,6 +202,18 @@ backup_config() {
     # the same instant), and mtime is the source directory's mtime carried in the
     # send stream, which only coincidentally tracks when we received it.
     printf '%s\t%s\n' "$dest_name" "$(date +%s)" >> "$RECEIVED_INDEX"
+
+    # Pin the new parent against snapper's timeline cleanup so a multi-day gap
+    # before the next run can't age it out and force a full resend, then release
+    # the previous parent back to normal aging. Skip the release when the old
+    # parent is already gone from the server (raw_list is authoritative).
+    "${SSH[@]}" "$SSH_TARGET" "sudo snapper -c $config modify --cleanup-algorithm '' --userdata pin=roost-backup $newest" \
+        || warn "[$config] Could not pin #$newest; a >24h gap may force a full resend"
+    if [ -n "$prev_parent" ] && [ "$prev_parent" != "$newest" ] \
+        && echo "$raw_list" | grep -q "^${prev_parent},"; then
+        "${SSH[@]}" "$SSH_TARGET" "sudo snapper -c $config modify --cleanup-algorithm timeline --userdata pin= $prev_parent" \
+            || warn "[$config] Could not unpin old parent #$prev_parent; snapper will never clean it up"
+    fi
 
     log "[$config] Backup complete: #$newest -> $BACKUP_DIR/$dest_name"
 
