@@ -158,6 +158,7 @@ files/cron-roost|/etc/cron.d/$ROOST_DIR_NAME|envsubst:USERNAME,HOME_DIR,ROOST_DI
 files/tmux.conf|$HOME_DIR/.tmux.conf|plain|run:tmux source-file ~/.tmux.conf
 files/sshd/50-clip-forward.conf|/etc/ssh/sshd_config.d/50-clip-forward.conf|plain|restart:ssh
 files/tailscaled-iptables.conf|/etc/systemd/system/tailscaled.service.d/iptables-pin.conf|plain|daemon-reload,restart:tailscaled
+files/notion-webhook.service|/etc/systemd/system/notion-webhook.service|plain|daemon-reload,restart:notion-webhook
 files/travel/xray.service|/etc/systemd/system/xray.service|plain|daemon-reload,restart:xray
 files/travel/xray-boot-guard|/usr/local/bin/xray-boot-guard|plain+x|restart:xray
 files/travel/xray-logrotate.conf|/etc/logrotate.d/xray|plain|

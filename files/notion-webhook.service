@@ -1,0 +1,13 @@
+[Unit]
+Description=Notion webhook receiver (notion mirror event feed)
+After=network.target
+
+[Service]
+User=moiri
+ExecStart=/usr/bin/python3 /home/moiri/roost/apart-research/notion/_tools/webhook_receiver.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

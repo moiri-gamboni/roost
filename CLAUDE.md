@@ -101,6 +101,7 @@ Services that must stay **v4-only** pin their bind explicitly: Caddy via `defaul
   - `glances.service` -- Systemd unit for Glances monitoring
   - `ram-monitor.service` / `ram-monitor.timer` -- Systemd units for per-process RAM alerting (30s interval)
   - `dufs.service` -- Systemd unit for the dufs file server that backs the drop folder (`setup/dufs.sh` installs it; see Native Services)
+  - `notion-webhook.service` -- Systemd unit for the Notion webhook receiver (`apart-research/notion/_tools/webhook_receiver.py`; captured from the previously hand-installed live unit). `Restart=on-failure` does **not** reload on file change: any edit to `webhook_receiver.py` needs `sudo systemctl restart notion-webhook`, and rollback order is revert-the-file *then* restart
   - `privatebin/` -- PrivateBin app configs (see Native Services): `conf.php` (markdown default, CF-aware rate limiting; deployed to `/etc/privatebin/`), `php-fpm-pool.conf` (dedicated `privatebin` user, socket consumed by Caddy), `privatebin.caddy` (loopback origin `127.0.0.1:8095` + public write gate: tunnel-tagged write methods → 403), `privatebin-cloudflare.yml.tmpl` (tunnel ingress fragment for `paste.$DOMAIN`)
   - `cron-roost` -- Crontab entries for health checks, scheduled tasks, auto-update
   - `bashrc-append.sh` -- Stub appended to `~/.bashrc`; sources `~/.bashrc.d/$ROOST_DIR_NAME.sh`
