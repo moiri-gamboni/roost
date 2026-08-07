@@ -175,9 +175,6 @@ else
     logger -t "$_HOOK_TAG" "uv: skipped (release < 7 days old)"
 fi
 
-# --- Ollama models (pinned tag, no guard needed) ---
-track "Ollama models" ollama pull qwen3-embedding:0.6b
-
 # --- gitleaks (7-day cooldown + major version guard) ---
 if github_release_cooldown_ok "gitleaks/gitleaks" 7; then
     GITLEAKS_LATEST=$(github_latest_version "gitleaks/gitleaks")

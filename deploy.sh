@@ -787,7 +787,7 @@ ok "fnm + Node LTS, Go, uv, gitleaks installed"
 
 section "Ollama"
 remote_script "setup/ollama.sh"
-ok "Ollama + Qwen3-Embedding-0.6B ready"
+ok "Ollama ready"
 
 # ============================================
 # Claude Code
