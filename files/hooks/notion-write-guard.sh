@@ -22,7 +22,9 @@
 # Stripping either one would discard the true positives and keep the noise.
 set -uo pipefail
 
-cmd=$(jq -r '.tool_input.command // empty' 2>/dev/null || true)
+# `|| true` and not `2>/dev/null`: a malformed payload should still leave a visible parse error
+# for whoever is debugging, it just must not take the turn down with it.
+cmd=$(jq -r '.tool_input.command // empty' || true)
 [ -n "$cmd" ] || exit 0
 
 # Not about Notion's REST API at all -> not ours. Keys on the host, so SDK calls
