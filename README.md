@@ -511,7 +511,7 @@ it creates a btrfs snapshot. After finishing, it sends an ntfy summary with
 what was updated, what failed, and any available major version bumps.
 
 Updated tools: Claude Code, claude-code-tools, claude-code-transcripts,
-aichat-search, Go, fnm, Node.js, uv, Ollama models, gitleaks, dufs,
+aichat-search, Go, fnm, Node.js, uv, gitleaks, dufs,
 PrivateBin, acme.sh, rodney, and OS packages.
 
 Safeguards:

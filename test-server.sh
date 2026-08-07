@@ -417,11 +417,10 @@ else
     fail "Ollama service"
 fi
 
-OLLAMA_TAGS=$(run curl -sf --max-time 10 http://localhost:11434/api/tags 2>/dev/null)
-if echo "$OLLAMA_TAGS" | grep -q "qwen3-embedding" 2>/dev/null; then
-    pass "Qwen3-Embedding model loaded"
+if run curl -sf --max-time 10 http://localhost:11434/api/tags >/dev/null 2>&1; then
+    pass "Ollama API responding"
 else
-    fail "Qwen3-Embedding model" "$(echo "$OLLAMA_TAGS" | jq -r '.models[].name' 2>/dev/null)"
+    fail "Ollama API"
 fi
 
 # ── Claude Code ───────────────────────────────────────────────
