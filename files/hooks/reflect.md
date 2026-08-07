@@ -1,6 +1,6 @@
 Before compacting, review this conversation for learnings worth preserving:
 
-1. Search ~/roost/memory/ via grepai for existing notes on topics covered
+1. Check for existing notes on topics covered
 2. For each non-obvious discovery, bug fix, pattern, or dead end:
    - Does it pass the "6-month test"?
    - If a matching note exists: update it

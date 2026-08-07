@@ -10,7 +10,6 @@ After running the deploy script you will have:
 - Private networking via Tailscale (SSH gated by Hetzner cloud firewall, no public HTTP/HTTPS ports)
 - Public web apps via Cloudflare Tunnel (zero open HTTP/HTTPS ports)
 - Claude Code with agent teams, session persistence, and push notifications
-- Semantic search over skills (Ollama + grepai)
 - Session search and lineage tracking (claude-code-tools)
 - Push notifications to your phone (ntfy)
 - System monitoring (Glances) with automated health alerts
@@ -446,7 +445,6 @@ The directory name `roost` is configurable via `ROOST_DIR_NAME` in `.env`.
 │   └── projects/           Session transcripts (auto-managed)
 ├── cloudflared/            Cloudflare Tunnel fragments
 │   └── apps/               Per-app ingress YAML fragments
-├── memory/                 Structured notes (grepai-indexed)
 └── code/                   Project repositories
 
 ~/.bashrc.d/
@@ -460,7 +458,6 @@ The deployed `settings.json` includes:
 - **Agent teams** enabled (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`)
 - **Session transcripts** never cleaned up (`cleanupPeriodDays: 99999`)
 - **Auto-compaction** disabled (`autoCompactEnabled: false`)
-- **Semantic search** via grepai, initialized on `~/roost/claude/skills/` and `~/roost/memory/` (the latter currently unused)
 
 ## Updating Config After Deploy
 
@@ -514,7 +511,7 @@ it creates a btrfs snapshot. After finishing, it sends an ntfy summary with
 what was updated, what failed, and any available major version bumps.
 
 Updated tools: Claude Code, claude-code-tools, claude-code-transcripts,
-aichat-search, Go, fnm, Node.js, uv, Ollama models, grepai, gitleaks, dufs,
+aichat-search, Go, fnm, Node.js, uv, Ollama models, gitleaks, dufs,
 PrivateBin, acme.sh, rodney, and OS packages.
 
 Safeguards:
