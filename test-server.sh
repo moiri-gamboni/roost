@@ -644,24 +644,6 @@ done
 echo ""
 echo "--- Agent Tools ---"
 
-if run_login "command -v grepai" >/dev/null 2>&1 || run test -x /usr/local/bin/grepai; then
-    pass "grepai installed"
-else
-    fail "grepai"
-fi
-
-if run test -d "$HOME_DIR/$ROOST_DIR_NAME/memory/.grepai"; then
-    pass "grepai initialized in ~/$ROOST_DIR_NAME/memory"
-else
-    fail "grepai not initialized in ~/$ROOST_DIR_NAME/memory"
-fi
-
-if run test -d "$HOME_DIR/$ROOST_DIR_NAME/claude/skills/.grepai"; then
-    pass "grepai initialized in ~/$ROOST_DIR_NAME/claude/skills"
-else
-    fail "grepai not initialized in ~/$ROOST_DIR_NAME/claude/skills"
-fi
-
 if run_login "command -v aichat" >/dev/null 2>&1; then
     pass "claude-code-tools (aichat) installed"
 else

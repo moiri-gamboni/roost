@@ -178,20 +178,6 @@ fi
 # --- Ollama models (pinned tag, no guard needed) ---
 track "Ollama models" ollama pull qwen3-embedding:0.6b
 
-# --- grepai (7-day cooldown + major version guard) ---
-if github_release_cooldown_ok "yoanbernabeu/grepai" 7; then
-    GREPAI_TAG=$(github_latest_tag "yoanbernabeu/grepai")
-    GREPAI_LATEST=$(echo "$GREPAI_TAG" | sed 's/^v//')
-    GREPAI_CURRENT=$(grepai --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' || echo "")
-    if [ -n "$GREPAI_LATEST" ]; then
-        if [ -z "$GREPAI_CURRENT" ] || major_guard "grepai" "$GREPAI_CURRENT" "$GREPAI_LATEST"; then
-            track "grepai" bash -c "curl -sSL 'https://raw.githubusercontent.com/yoanbernabeu/grepai/$GREPAI_TAG/install.sh' | sh"
-        fi
-    fi
-else
-    logger -t "$_HOOK_TAG" "grepai: skipped (release < 7 days old)"
-fi
-
 # --- gitleaks (7-day cooldown + major version guard) ---
 if github_release_cooldown_ok "gitleaks/gitleaks" 7; then
     GITLEAKS_LATEST=$(github_latest_version "gitleaks/gitleaks")

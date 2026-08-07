@@ -1097,12 +1097,12 @@ remote_script "setup/ram-monitor.sh"
 ok "RAM monitor checking every 30s (3GB threshold)"
 
 # ============================================
-# Cron Jobs + grepai Index
+# Cron Jobs
 # ============================================
 
-section "Cron Jobs + grepai Index"
+section "Cron Jobs"
 remote_script "setup/cron.sh"
-ok "Cron jobs configured and grepai initialized"
+ok "Cron jobs configured"
 
 # Install unattended-upgrades last so it can't hold the dpkg lock
 # during earlier apt operations.

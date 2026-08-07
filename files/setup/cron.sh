@@ -1,5 +1,5 @@
 #!/bin/bash
-# Configure cron jobs and initialize grepai.
+# Configure cron jobs.
 source "$(dirname "$0")/../_setup-env.sh"
 
 # --- Cron jobs ---
@@ -12,21 +12,3 @@ envsubst '$USERNAME $HOME_DIR $ROOST_DIR_NAME' \
 chmod 644 "/etc/cron.d/$ROOST_DIR_NAME"
 
 echo "  [+] Cron jobs configured"
-
-# --- Initial grepai setup ---
-
-if as_user "command -v grepai" &>/dev/null; then
-    for dir in "$ROOST_DIR/memory" "$ROOST_DIR/claude/skills"; do
-        if [ ! -f "$dir/.grepai/config.yaml" ]; then
-            echo "  [*] Initializing grepai in $dir..."
-            as_user "cd $dir && grepai init" && \
-                echo "  [+] grepai initialized in $dir" || \
-                echo "  [*] grepai init failed in $dir (run manually: cd $dir && grepai init)"
-        else
-            echo "  [-] grepai already initialized in $dir (already done)"
-        fi
-    done
-    echo "  [*] Start grepai watch daemons with: grepai watch --background"
-else
-    echo "  [*] grepai not available; skipping init"
-fi

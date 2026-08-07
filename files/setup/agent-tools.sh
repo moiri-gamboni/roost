@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install agent tools: claude-code-tools, grepai, claude-code-transcripts.
+# Install agent tools: claude-code-tools, claude-code-transcripts.
 source "$(dirname "$0")/../_setup-env.sh"
 
 # claude-code-tools (session search + lineage)
@@ -20,21 +20,6 @@ else
             info "aichat-search install failed (retry manually)"
     else
         info "Could not determine aichat-search version (install manually)"
-    fi
-fi
-
-# grepai (semantic search) -- pinned to latest release tag, not main
-if as_user "command -v grepai" &>/dev/null; then
-    skip "grepai already installed"
-else
-    info "Installing grepai..."
-    GREPAI_VERSION=$(curl -sf https://api.github.com/repos/yoanbernabeu/grepai/releases/latest | jq -r '.tag_name // empty')
-    if [ -n "$GREPAI_VERSION" ]; then
-        as_user "curl -sSL 'https://raw.githubusercontent.com/yoanbernabeu/grepai/$GREPAI_VERSION/install.sh' | sh" && \
-            ok "grepai $GREPAI_VERSION installed" || \
-            info "grepai install failed (retry manually)"
-    else
-        info "Could not determine grepai version (install manually)"
     fi
 fi
 
