@@ -30,6 +30,10 @@
     ],
     "defaultMode": "auto"
   },
+  "model": "claude-fable-5[1m]",
+  "fallbackModel": [
+    "claude-opus-5"
+  ],
   "hooks": {
     "SessionStart": [],
     "PreCompact": [],
@@ -177,12 +181,8 @@
       }
     }
   },
-  "effortLevel": "xhigh",
+  "effortLevel": "high",
   "askUserQuestionTimeout": "never",
-  "model": "claude-fable-5[1m]",
-  "fallbackModel": [
-    "claude-opus-5"
-  ],
   "tui": "fullscreen",
   "autoMemoryEnabled": true,
   "autoDreamEnabled": true,
