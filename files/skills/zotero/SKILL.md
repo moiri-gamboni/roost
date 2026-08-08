@@ -44,6 +44,20 @@ PY
 
 pyzotero also ships an optional CLI and MCP server (same local-API requirement); for at-scale pipelines prefer scripts — per-call tool overhead dominates on hundreds of items.
 
+## Generating summaries at scale
+
+The patterns above store summaries; generating them is its own stage. For bulk runs, summarize with headless `claude -p` — one document per invocation, not the interactive session's own context (keeps each summary grounded in exactly one paper, and the run resumable):
+
+```bash
+pdftotext "$pdf" - | claude -p --model claude-sonnet-5 \
+  "Summarize this paper for a research-library note: 2-3 paragraphs, then key claims, methods, limitations, and likely connections to adjacent work. Markdown, no preamble."
+```
+
+- Sonnet is the right tier for per-paper summarization. Save the interactive session's model for the passes that need cross-paper judgment: drawing links, clustering, synthesis — and run those over the *notes*, not the PDFs (orders of magnitude less input).
+- The loop composes with the idempotency marker: select items lacking the `ai-summary` child note → `pdftotext` → `claude -p` → write the note. A failed item stays unmarked and is retried next run, so chunk the backlog freely.
+- Bulk runs burn the logged-in account's 5h/weekly rate-limit windows — plan multi-hundred-paper backlogs as resumable chunks rather than one sitting.
+- `pdftotext` is the cheap default; for figure-heavy papers where layout carries the content, Read the PDF directly (vision) instead, accepting the higher cost per item.
+
 ## Setup on a new device
 
 1. Zotero app installed by guest-bootstrap (deb repo on Ubuntu — self-update disabled, apt handles upgrades; cask on macOS). Sign in and let the library finish syncing (storage files download lazily; "Sync full-text content" + attachment download settings matter for bulk PDF work).
