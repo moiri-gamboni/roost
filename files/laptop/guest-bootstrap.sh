@@ -97,6 +97,10 @@ if [ -n "$MAC" ]; then
         info "Zotero..."
         brew install --quiet --cask zotero
     fi
+    if [ ! -d "/Applications/Claude.app" ]; then
+        info "Claude Desktop..."
+        brew install --quiet --cask claude
+    fi
 elif ! command -v zotero >/dev/null; then
     info "Zotero (retorquere deb repo; self-update disabled, apt handles upgrades)..."
     curl -sL https://raw.githubusercontent.com/retorquere/zotero-pkg/master/install.sh | sudo bash
