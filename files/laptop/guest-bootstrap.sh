@@ -47,6 +47,8 @@ if ! command -v claude >/dev/null; then
     curl -fsSL https://claude.ai/install.sh | bash
 fi
 export PATH="$HOME/.local/bin:$PATH"
+# ~/.local/bin (claude, uv, showboat, gdoc) isn't on PATH by default on macOS
+grep -q '\.local/bin' "$RC" 2>/dev/null || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$RC"
 
 # --- package manager + base kit ---
 if [ -n "$MAC" ]; then
