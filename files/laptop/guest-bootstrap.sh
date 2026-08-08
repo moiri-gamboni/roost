@@ -166,14 +166,23 @@ for s in $SKILLS; do
 done
 ok "skills: $SKILLS"
 
+# --- research workspace ---
+WS="$HOME/research"
+mkdir -p "$WS"
+[ -e "$WS/CLAUDE.md" ] || cp "$src/../laptop/guest-CLAUDE.md" "$WS/CLAUDE.md"
+ok "workspace: $WS"
+
 cat <<'EOF'
 
-Done. Next steps:
-  1. Open a new shell (PATH additions), run `claude`, then /login as the designated guest account.
-  2. Optional account pinning: `claude setup-token` (authorize in the browser as that same
-     account), then add  export CLAUDE_CODE_OAUTH_TOKEN=<token>  to your shell rc.
-  3. Zotero: sign in and let it sync; enable Settings > Advanced > "Allow other applications...";
-     for API writes see the setup section of ~/.claude/skills/zotero/SKILL.md.
+Done. Workspace: ~/research (its CLAUDE.md documents the toolkit and the
+Google Docs / Zotero / GitHub setup steps). /login as the designated guest
+account when Claude starts.
 
-This device holds no roost credentials and should stay off the tailnet.
 EOF
+
+# Hand off into a claude tour of the setup. Under `curl | bash` stdin is the
+# script pipe, so rewire it to the terminal; skip silently when there is none.
+if [ -e /dev/tty ] && [ -t 1 ]; then
+    cd "$WS"
+    claude "Read CLAUDE.md and give me a short tour of this research setup: what's installed, what you can do at scale (Zotero library work, Google Docs, scraping, document production), and what isn't configured yet (Google OAuth client + gdoc auth, Zotero sign-in and API key, gh auth). Then ask what to set up or work on first." </dev/tty || true
+fi
