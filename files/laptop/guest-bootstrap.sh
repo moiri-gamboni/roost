@@ -45,12 +45,12 @@ if [ -n "$MAC" ]; then
     eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"
     grep -q 'brew shellenv' "$HOME/.zprofile" 2>/dev/null \
         || echo 'eval "$('"$(command -v brew)"' shellenv)"' >> "$HOME/.zprofile"
-    info "Base packages (git, jq, gh, pandoc, go, fnm)..."
-    brew install --quiet git jq gh pandoc go fnm
+    info "Base packages (git, jq, gh, pandoc, poppler, go, fnm)..."
+    brew install --quiet git jq gh pandoc poppler go fnm
 else
-    info "Base packages (git, jq, unzip, build-essential, gh, pandoc)..."
+    info "Base packages (git, jq, unzip, build-essential, gh, pandoc, poppler-utils)..."
     sudo apt-get update -qq
-    sudo apt-get install -y -qq git jq unzip build-essential curl ca-certificates gnupg gh pandoc
+    sudo apt-get install -y -qq git jq unzip build-essential curl ca-certificates gnupg gh pandoc poppler-utils
 fi
 
 # --- Google Chrome (backs rodney; mmdc's puppeteer can use it too) ---
@@ -66,6 +66,19 @@ elif ! command -v google-chrome >/dev/null; then
         | sudo tee /etc/apt/sources.list.d/google-chrome.list >/dev/null
     sudo apt-get update -qq
     sudo apt-get install -y -qq google-chrome-stable
+fi
+
+# --- Zotero (reference manager; pdftotext above backs bulk PDF extraction) ---
+if [ -n "$MAC" ]; then
+    if [ ! -d "/Applications/Zotero.app" ]; then
+        info "Zotero..."
+        brew install --quiet --cask zotero
+    fi
+elif ! command -v zotero >/dev/null; then
+    info "Zotero (retorquere deb repo; self-update disabled, apt handles upgrades)..."
+    curl -sL https://raw.githubusercontent.com/retorquere/zotero-pkg/master/install.sh | sudo bash
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq zotero
 fi
 
 # --- fnm + Node LTS ---
@@ -133,7 +146,7 @@ if ! command -v claude >/dev/null; then
 fi
 
 # --- skills (credential-free subset) ---
-SKILLS="html2markdown havelock-api humanizer"
+SKILLS="html2markdown havelock-api humanizer zotero"
 src=""
 if [ -n "${BASH_SOURCE[0]:-}" ] && [ -e "${BASH_SOURCE[0]}" ]; then
     d=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -158,6 +171,8 @@ Done. Next steps:
   1. Open a new shell (PATH additions), run `claude`, then /login as the designated guest account.
   2. Optional account pinning: `claude setup-token` (authorize in the browser as that same
      account), then add  export CLAUDE_CODE_OAUTH_TOKEN=<token>  to your shell rc.
+  3. Zotero: sign in and let it sync; enable Settings > Advanced > "Allow other applications...";
+     for API writes see the setup section of ~/.claude/skills/zotero/SKILL.md.
 
 This device holds no roost credentials and should stay off the tailnet.
 EOF
