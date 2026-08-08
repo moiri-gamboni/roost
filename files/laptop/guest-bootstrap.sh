@@ -60,7 +60,9 @@ if [ -n "$MAC" ]; then
         # download can outlive sudo's 5-minute TTL.
         sudo -v
         ( while true; do sleep 50; sudo -n true 2>/dev/null || exit; kill -0 "$$" 2>/dev/null || exit; done ) &
+        SUDO_KEEPALIVE=$!
         NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        kill "$SUDO_KEEPALIVE" 2>/dev/null || true
     fi
     # brew lives in /opt/homebrew (Apple Silicon) or /usr/local (Intel)
     eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"
