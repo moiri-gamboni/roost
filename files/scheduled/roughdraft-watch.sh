@@ -1,7 +1,7 @@
 #!/bin/bash
 # Watch upstream Roughdraft for anything that would change our fork's job.
 #
-# The global `roughdraft` is built from our fork's all-fixes branch because
+# The global `roughdraft` is built from our fork's main branch because
 # registry 0.1.10 is broken three ways (see the Roughdraft section of
 # CLAUDE.md). That arrangement only stays correct if we notice when upstream
 # moves: a merged PR means dropping a cherry-pick, a release means re-checking
@@ -54,7 +54,7 @@ if [ -n "$upstream_sha" ]; then
     if is_new "main=$upstream_sha"; then
         subject="$(gh api "repos/$UPSTREAM_REPO/commits/$upstream_sha" --jq '.commit.message' 2>/dev/null | head -1)"
         note_change "upstream main moved to ${upstream_sha:0:8}: ${subject:-unknown}
-  -> rebase all-fixes, rebuild, reinstall"
+  -> rebase fork main, rebuild, reinstall"
     fi
 fi
 
@@ -81,10 +81,10 @@ check_pr() {
 
     case "$role:$state" in
         cherry-pick:MERGED)
-            note_change "PR #$pr (cherry-picked into all-fixes) MERGED $merged_at
+            note_change "PR #$pr (cherry-picked into the fork) MERGED $merged_at
   -> drop our copy of it when rebasing" ;;
         cherry-pick:CLOSED)
-            note_change "PR #$pr (cherry-picked into all-fixes) was CLOSED without merging
+            note_change "PR #$pr (cherry-picked into the fork) was CLOSED without merging
   -> we now carry it alone; it will not arrive via upstream" ;;
         ours:MERGED)
             note_change "our PR #$pr MERGED $merged_at
@@ -131,10 +131,10 @@ logger -t "$_HOOK_TAG" "upstream changed:$(printf '%s' "$changes" | tr '\n' ' ')
 behind=""
 if [ -d "$FORK_DIR/.git" ]; then
     git -C "$FORK_DIR" fetch upstream --quiet 2>/dev/null || true
-    n="$(git -C "$FORK_DIR" rev-list --count all-fixes..upstream/main 2>/dev/null)"
+    n="$(git -C "$FORK_DIR" rev-list --count main..upstream/main 2>/dev/null)"
     [ -n "$n" ] && [ "$n" != "0" ] && behind="
 
-all-fixes is $n commit(s) behind upstream/main."
+fork main is $n commit(s) behind upstream/main."
 fi
 
 ntfy_send -t "Roughdraft upstream changed" -p default \
