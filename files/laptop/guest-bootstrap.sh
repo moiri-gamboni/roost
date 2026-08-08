@@ -51,7 +51,13 @@ export PATH="$HOME/.local/bin:$PATH"
 # --- package manager + base kit ---
 if [ -n "$MAC" ]; then
     if ! command -v brew >/dev/null; then
-        info "Homebrew..."
+        info "Homebrew (your password will be requested once)..."
+        # The NONINTERACTIVE installer probes sudo with -n, which fails without a
+        # cached timestamp even for admins (its error then blames admin rights).
+        # Prime the timestamp and keep it fresh — a first-run Command Line Tools
+        # download can outlive sudo's 5-minute TTL.
+        sudo -v
+        ( while true; do sleep 50; sudo -n true 2>/dev/null || exit; kill -0 "$$" 2>/dev/null || exit; done ) &
         NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     fi
     # brew lives in /opt/homebrew (Apple Silicon) or /usr/local (Intel)
