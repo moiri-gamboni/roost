@@ -11,9 +11,9 @@ Read and batch-manipulate the local Zotero library. Three access paths — pick 
 
 1. **Direct storage reads — fastest, for PDF/attachment content.** Attachments live at `~/Zotero/storage/<8-char-key>/<file>`. Get the mapping from the API (attachment items carry the key; `zot.dump()`/`zot.file()` fetch content). For bulk text extraction prefer `pdftotext file.pdf -` (poppler, installed by guest-bootstrap) over vision-reading; use the Read tool on the PDF only when layout/figures matter.
 
-2. **Local API — reads, no key, Zotero app must be running.** Read-only mirror of web API v3 at `http://127.0.0.1:23119/api/`. Requires Zotero ≥7 with Settings → Advanced → "Allow other applications on this computer to communicate with Zotero" enabled. pyzotero: `zotero.Zotero(library_id, 'user', local=True)`.
+2. **Local API — preferred whenever the app is running.** Mirror of web API v3 at `http://127.0.0.1:23119/api/`; requires Settings → Advanced → "Allow other applications on this computer to communicate with Zotero". Reads need no key (pyzotero: `zotero.Zotero(library_id, 'user', local=True)`). Writes (Zotero 10+): authorize once via `POST http://127.0.0.1:23119/api/local/authorize` with an application name — Zotero shows Allow / Always Allow / Deny; **Always Allow** returns a reusable 32-char key (plain Allow is single-use). Store it at `~/.config/zotero/local-api-key` (0600), send as a `Zotero-API-Key` header. Request/response shapes are identical to the web API (items, collections, tags, saved searches, file uploads). pyzotero's local mode is documented for reads; if it refuses writes, hit the endpoints directly (requests/curl) — same JSON.
 
-3. **Web API via pyzotero — all writes.** Needs the numeric library/user ID (zotero.org → Settings → Security, "Your userID") and an API key with write access (zotero.org/settings/keys). Store the key at `~/.config/zotero/api-key` (0600), never in scripts. Writes land server-side and sync back to the desktop app on its next sync.
+3. **Web API via pyzotero — headless machines (no running app) or pre-10 clients.** Needs the numeric library/user ID (zotero.org → Settings → Security, "Your userID") and an API key created at zotero.org/settings/keys/new — enable **Allow write access** and **Allow notes access** (child-note writes need both). Store at `~/.config/zotero/api-key` (0600), never in scripts. Writes land server-side and sync down to the desktop app.
 
 Never write `zotero.sqlite` directly — schema is internal and the app corrupts easily; the API paths above are the only sanctioned writes.
 
@@ -24,9 +24,10 @@ uv run --with pyzotero python - <<'PY'
 from pyzotero import zotero
 from pathlib import Path
 
-key = Path.home().joinpath(".config/zotero/api-key").read_text().strip()
-zot = zotero.Zotero(LIBRARY_ID, "user", key)          # writes
-# zot = zotero.Zotero(LIBRARY_ID, "user", local=True) # fast reads, app running
+zot = zotero.Zotero(LIBRARY_ID, "user", local=True)   # app running (reads; writes need the local key, see above)
+# headless / pre-10 fallback — web API:
+# key = Path.home().joinpath(".config/zotero/api-key").read_text().strip()
+# zot = zotero.Zotero(LIBRARY_ID, "user", key)
 
 items = zot.everything(zot.top(itemType="-attachment || note"))  # paginates for you
 PY
@@ -62,4 +63,5 @@ pdftotext "$pdf" - | claude -p --model claude-sonnet-5 \
 
 1. Zotero app installed by guest-bootstrap (deb repo on Ubuntu — self-update disabled, apt handles upgrades; cask on macOS). Sign in and let the library finish syncing (storage files download lazily; "Sync full-text content" + attachment download settings matter for bulk PDF work).
 2. Enable the local-API setting (Advanced, see above).
-3. Create the API key, store per above, smoke-test with the skeleton (`zot.count_items()`).
+3. Before the first write: `POST /api/local/authorize`, have the user pick **Always Allow**, store the key per above. A zotero.org API key is only needed for headless/web-API use.
+4. Smoke-test with the skeleton (`zot.count_items()`).
