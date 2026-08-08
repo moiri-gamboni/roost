@@ -39,6 +39,22 @@ export PATH=$PATH:~/bin:~/.local/bin
 
 # Roost server management (symlink created by setup/shell-config.sh)
 
+# Roughdraft (local Markdown review app). The box is headless, so the reviewer
+# is always on another device: bind the tailnet address as well as loopback so
+# the document is reachable at http://<tailscale-ip>:7373/. Roughdraft refuses a
+# non-loopback bind without a token, since that exposes endpoints which rewrite
+# files on disk; the token is generated out-of-band and kept out of the repo.
+# No token file (fresh server, not yet set up) => loopback-only, which still
+# works over an SSH/VS Code port forward.
+if [[ -r "$HOME/.config/roughdraft/token" ]]; then
+    ROUGHDRAFT_TOKEN=$(<"$HOME/.config/roughdraft/token")
+    export ROUGHDRAFT_TOKEN
+    # Empty tailscale output degrades to loopback-only: resolveBindHosts()
+    # drops empty entries.
+    export ROUGHDRAFT_BIND_HOST="127.0.0.1,$(tailscale ip -4 2>/dev/null)"
+fi
+export ROUGHDRAFT_NO_OPEN=1  # headless: print the URL instead of calling xdg-open
+
 # --- VS Code Remote IPC ---
 
 # VS Code Remote-SSH creates a per-window unix socket under /run/user/$UID/ and
