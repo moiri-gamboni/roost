@@ -35,6 +35,14 @@ case "$(uname -s)" in
         ;;
 esac
 
+# --- Claude Code first: self-contained installer, and having `claude` available
+# --- from the start means a failed bootstrap can be debugged with it
+if ! command -v claude >/dev/null; then
+    info "Claude Code..."
+    curl -fsSL https://claude.ai/install.sh | bash
+fi
+export PATH="$HOME/.local/bin:$PATH"
+
 # --- package manager + base kit ---
 if [ -n "$MAC" ]; then
     if ! command -v brew >/dev/null; then
@@ -109,7 +117,6 @@ if ! command -v uv >/dev/null; then
     info "uv..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
-export PATH="$HOME/.local/bin:$PATH"
 
 # --- Go toolchain (for rodney + html2markdown; mac gets Go from brew above) ---
 if [ -z "$MAC" ]; then
@@ -138,12 +145,6 @@ npm install -g @mermaid-js/mermaid-cli roughdraft yaml
 
 info "showboat..."
 uv tool install showboat
-
-# --- Claude Code ---
-if ! command -v claude >/dev/null; then
-    info "Claude Code..."
-    curl -fsSL https://claude.ai/install.sh | bash
-fi
 
 # --- skills (credential-free subset) ---
 SKILLS="html2markdown havelock-api humanizer zotero"
