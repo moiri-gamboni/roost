@@ -39,7 +39,7 @@ PY
 - **Write in chunks of ≤50** — the web API caps items per `create_items`/`update_items` call. Check the returned `successful`/`failed` dict per chunk; on HTTP 412 (version conflict) re-fetch the item and retry, and back off on 429 honoring `Retry-After`.
 - **Collections:** `zot.create_collections([...])`, assign with `zot.addto_collection(coll_key, item)`; collections nest via `parentCollection`.
 - **Links between items:** set the item's `relations` field: `{"dc:relation": ["http://zotero.org/users/<userID>/items/<KEY>", ...]}` — shows up as "Related" in the app, and works bidirectionally once both sides are written.
-- **Synthesis documents:** for cross-item syntheses, standalone Zotero notes get unwieldy; prefer markdown files in the project, deep-linking items as `zotero://select/library/items/<KEY>` (clickable, opens the app on the item).
+- **Synthesis documents:** for cross-item syntheses, standalone Zotero notes get unwieldy; draft as markdown, deep-linking items as `zotero://select/library/items/<KEY>` (clickable, opens the app on the item). Where `gdoc` is available, deliver the finished document to Google Docs (`gdoc write`) — that's the user-facing reading/review surface; the per-item summaries stay in Zotero as the machine-readable layer.
 - **Templates:** `zot.item_template("note")` etc. for correct field scaffolding before create.
 
 pyzotero also ships an optional CLI and MCP server (same local-API requirement); for at-scale pipelines prefer scripts — per-call tool overhead dominates on hundreds of items.
