@@ -21,6 +21,12 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 # as plain text and archived to ~/$ROOST_DIR_NAME/claude/usage/briefs/.
 40 6 * * * $USERNAME flock -n $HOME_DIR/.locks/session-daily-brief $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/session-daily-brief.sh
 
+# Daily Roughdraft upstream watch (7:10am): the global roughdraft is built from
+# our fork because registry 0.1.10 is broken, so we need to notice when upstream
+# moves — a merged PR means dropping a cherry-pick. Silent unless something
+# changed. Daily is enough: upstream has merged nothing since 2026-06-19.
+10 7 * * * $USERNAME flock -n $HOME_DIR/.locks/roughdraft-watch $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/roughdraft-watch.sh
+
 # Weekly auto-update (Sunday 3am)
 0 3 * * 0 $USERNAME flock -n $HOME_DIR/.locks/auto-update $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/auto-update.sh
 
