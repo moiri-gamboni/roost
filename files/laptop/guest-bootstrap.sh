@@ -139,12 +139,12 @@ info "rodney + html2markdown..."
 go install github.com/simonw/rodney@latest
 go install github.com/JohannesKaufmann/html-to-markdown/v2/cli/html2markdown@latest
 
-info "mmdc + roughdraft..."
-# yaml alongside roughdraft: 0.1.10 ships without its yaml dependency
-npm install -g @mermaid-js/mermaid-cli roughdraft yaml
+info "mmdc..."
+npm install -g @mermaid-js/mermaid-cli
 
-info "showboat..."
+info "showboat + gdoc..."
 uv tool install showboat
+uv tool install git+https://github.com/LucaDeLeo/gdoc.git
 
 # --- skills (credential-free subset) ---
 SKILLS="html2markdown havelock-api humanizer zotero"
