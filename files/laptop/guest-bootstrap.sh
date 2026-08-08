@@ -28,6 +28,11 @@ case "$(uname -s)" in
     Darwin)
         MAC=1
         RC="$HOME/.zshrc"
+        if ! groups | grep -qw admin; then
+            echo "This macOS user must be an Administrator (Homebrew and /Applications installs need it)." >&2
+            echo "System Settings > Users & Groups > 'Allow this user to administer this computer', re-login, re-run." >&2
+            exit 1
+        fi
         ;;
     *)
         echo "This script targets Linux x86_64 or macOS." >&2
