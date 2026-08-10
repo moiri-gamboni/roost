@@ -24,6 +24,9 @@
 #   session name <id|prefix> · session id <title-substring>  cross-session
 #                     lookup, both directions (snapshots first, transcripts as
 #                     the slow fallback)
+#   session peers [--json]  live sessions on this box: cross-session address
+#                     (ListAgents name / SendMessage `to:`) ↔ session id +
+#                     title, with messaging-socket reachability
 #   session account [list|use <name>|save|rm <name>]  several subscription
 #                     logins out of one config dir: list them with each one's
 #                     rate-limit headroom (the question you switch on), or swap
@@ -259,6 +262,59 @@ EOF
   exit 0
 }
 case "${1:-}" in name|id) lookup_main "$@" ;; esac
+
+# ── Peer sessions (`session peers`) ──────────────────────────────
+# The bridge between ListAgents' cross-session addresses and session ids.
+# Claude Code (2.1.226+) registers every live process at
+# $CLAUDE_CONFIG_DIR/sessions/<pid>.json — peer name (the SendMessage `to:`),
+# sessionId, tmux pane, messaging socket path. ListAgents hides a session whose
+# socket is missing, so the REACH column makes that state visible instead of the
+# session just being absent. Dead pids' leftover records are skipped, never
+# deleted (the registry is Claude Code's, not ours).
+peers_main() {
+  local arg=${1:-} regdir mysid f rec pid sock reach sid pname pstatus ptmux title this rows=""
+  case "$arg" in
+    ""|--json) ;;
+    -h|--help)
+      cat >&2 <<'EOF'
+Usage: session peers [--json]
+Live Claude Code sessions on this box, one per row:
+  NAME     cross-session address (the row name ListAgents shows = SendMessage `to:`)
+  SESSION  8-char session-id prefix (feeds `session name`, `agent <dir> -r`, …)
+  REACH    yes = messaging socket live, ListAgents shows it; no = registered
+           without a socket — invisible to ListAgents until that session restarts
+--json prints the same rows with full session ids.
+EOF
+      exit 0 ;;
+    *) echo "session peers: unknown arg '$arg' (--json or -h)" >&2; exit 2 ;;
+  esac
+  regdir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions"
+  mysid=$(resolve_sid || true)
+  for f in "$regdir"/*.json; do
+    [ -e "$f" ] || break
+    rec=$(jq -c '{pid,sessionId,name,status,tmux,sock:(.messagingSocketPath//"")}' "$f" 2>/dev/null) || continue
+    pid=$(jq -r '.pid' <<<"$rec")
+    [ "$pid" -gt 0 ] 2>/dev/null || continue
+    kill -0 "$pid" 2>/dev/null || continue
+    IFS=$'\t' read -r sid pname pstatus ptmux sock < <(jq -r '[.sessionId,.name,.status,.tmux,.sock]|@tsv' <<<"$rec")
+    reach=no; [ -n "$sock" ] && [ -S "$sock" ] && reach=yes
+    title=$(session_title "$sid")
+    this=""; [ -n "$mysid" ] && [ "$sid" = "$mysid" ] && this=" ←this"
+    rows+="$pname	$sid	$pstatus	$reach	$ptmux	${title:-<untitled>}$this"$'\n'
+  done
+  [ -n "$rows" ] || { echo "session peers: no live sessions registered under $regdir" >&2; exit 1; }
+  if [ "$arg" = --json ]; then
+    printf '%s' "$rows" | jq -Rn \
+      '[inputs | split("\t") | {name: .[0], session_id: .[1], status: .[2],
+        reachable: (.[3]=="yes"), tmux: .[4], title: (.[5]|sub(" ←this$";""))}]'
+  else
+    { printf 'NAME\tSESSION\tSTATUS\tREACH\tTMUX\tTITLE\n'
+      printf '%s' "$rows" | awk -F'\t' -v OFS='\t' '{ $2=substr($2,1,8); print }'
+    } | column -t -s'	'
+  fi
+  exit 0
+}
+[ "${1:-}" = peers ] && { shift; peers_main "$@"; }
 
 # ── Accounts (`session account …`) ───────────────────────────────
 # Several subscription logins, ONE config dir. The live login is
@@ -625,6 +681,10 @@ Lookup (any session, both directions; 8-char table ids work as prefixes):
   session name <id|prefix>         that session's title
   session id <title-substring>     that session's id (case-insensitive; several
                                    matches print "id<TAB>name" lines instead)
+  session peers [--json]           live sessions on this box: cross-session
+                                   address (ListAgents name = SendMessage `to:`)
+                                   ↔ id + title; REACH = visible to ListAgents.
+                                   --json carries full session ids
 
 Usage attribution (who is burning the shared 5h/weekly caps):
   session usage [ID]               one session's counted $ burn + estimated share
