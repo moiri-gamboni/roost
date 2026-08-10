@@ -107,6 +107,19 @@ WEEK_GUARD="${WEEK_GUARD:-linear}"
 FIVE_WINDOW="${FIVE_WINDOW:-18000}"
 WEEK_WINDOW="${WEEK_WINDOW:-604800}"
 
+# Duration formatters, shared by the overview and `session account`.
+hm()  { local s=$(( $1<0 ? 0 : $1 )); printf '%dh%02dm' $(( s/3600 ))  $(( (s%3600)/60 )); }
+# Days+hours, but ROUNDED, and h+m below a day. Flooring the hour drops up to 59
+# minutes, which reads as a whole hour short: 58m of weekly headroom printed
+# "0d00h" — indistinguishable from "already reset" — while the built-in /usage
+# correctly showed the hour, and 6d08h50m prints "6d08h", implying a reset an hour
+# early. Below a day it falls through to hm() so a sub-hour remainder can never
+# render as a zero.
+dh()  { local s=$(( $1<0 ? 0 : $1 )) h
+        (( s < 86400 )) && { hm "$s"; return; }
+        h=$(( (s + 1800) / 3600 ))
+        printf '%dd%02dh' $(( h/24 )) $(( h%24 )); }
+
 # ── Session identity (`session whoami`) ──────────────────────────
 # Pane-safe by construction: the id comes from $CLAUDE_CODE_SESSION_ID, which
 # Claude Code exports into each session's own process tree; every concurrent
@@ -336,18 +349,44 @@ acct_resolve() {  # $1=substring -> vault path on stdout
 }
 
 # Per-account limits, read from that login's statusline cache — the whole point
-# of switching is "which login still has headroom", so `list` answers it.
-acct_limits() {  # $1=email -> "5h N% · wk N% (age)" | "no data yet"
-  local c="$HOME/roost/claude/usage/last-status.${1//[!A-Za-z0-9@._-]/_}.json" f w a
+# of switching is "which login still has headroom", so `list` answers it, with
+# each window's reset countdown in parentheses. A non-live login's cache stops
+# refreshing the moment you switch away, so here a stale resets_at is the NORMAL
+# case, and the two windows age differently (same asymmetry as the overview):
+# the weekly runs on a fixed 7-day wall-clock cadence, so a past boundary steps
+# forward (marked ~); the 5h is usage-anchored — it opens on that account's
+# first request after an idle gap — so a past boundary says nothing about the
+# next one and prints "?". Either way the used% belongs to the closed window,
+# so it gets a "?" too (the real value after the reset is lower).
+acct_limits() {  # $1=email -> "5h N% (left) · wk N% (left) (age)" | "no data yet"
+  local c="$HOME/roost/claude/usage/last-status.${1//[!A-Za-z0-9@._-]/_}.json" f w rf rw a now l5 lw f5 fw fq wq
   [ -s "$c" ] || { printf 'no data yet'; return; }
-  IFS=$'\t' read -r f w < <(jq -r '[(.rate_limits.five_hour.used_percentage//-1),
-                                    (.rate_limits.seven_day.used_percentage//-1)]|@tsv' "$c")
-  a=$(( $(date +%s) - $(stat -c %Y "$c") ))
+  IFS=$'\t' read -r f w rf rw < <(jq -r '[(.rate_limits.five_hour.used_percentage//-1),
+                                          (.rate_limits.seven_day.used_percentage//-1),
+                                          (.rate_limits.five_hour.resets_at//0),
+                                          (.rate_limits.seven_day.resets_at//0)]|@tsv' "$c")
+  now=$(date +%s); fq="" wq=""
+  if (( rf > now )); then
+    l5=$(( rf - now )); (( l5 > FIVE_WINDOW )) && l5=$FIVE_WINDOW
+    f5=$(hm "$l5")
+  else
+    f5="?"; (( rf > 0 )) && fq="?"        # rf==0: no reset data at all, but the % is current
+  fi
+  if (( rw > now )); then
+    lw=$(( rw - now )); (( lw > WEEK_WINDOW )) && lw=$WEEK_WINDOW
+    fw=$(dh "$lw")
+  elif (( rw > 0 )); then
+    lw=$(( rw + WEEK_WINDOW * ( (now - rw + WEEK_WINDOW - 1) / WEEK_WINDOW ) - now ))
+    fw="~$(dh "$lw")"; wq="?"
+  else
+    fw="?"
+  fi
+  a=$(( now - $(stat -c %Y "$c") ))
   if   [ "$a" -lt 120 ];   then a="live"
   elif [ "$a" -lt 3600 ];  then a="$(( a/60 ))m old"
   elif [ "$a" -lt 86400 ]; then a="$(( a/3600 ))h old"
   else                          a="$(( a/86400 ))d old"; fi
-  printf '5h %s%% · wk %s%% (%s)' "${f%%.*}" "${w%%.*}" "$a"
+  printf '5h %s%%%s (%s) · wk %s%%%s (%s) (%s)' "${f%%.*}" "$fq" "$f5" "${w%%.*}" "$wq" "$fw" "$a"
 }
 
 acct_main() {
@@ -360,11 +399,11 @@ acct_main() {
       [ -n "$(acct_paths)" ] || { echo "session account: no saved logins yet at $acctdir" >&2; return 1; }
       # marker goes LAST: printf pads by bytes, so a multibyte arrow inside a
       # %-Ns field would knock the columns out of line
-      printf '  %-32s %-28s %s\n' LOGIN LIMITS ''
+      printf '  %-32s %-44s %s\n' LOGIN 'LIMITS (RESET IN)' ''
       while IFS= read -r vf; do
         [ -n "$vf" ] || continue
         email=$(jq -r '.email // empty' "$vf")
-        printf '  %-32s %-28s %s\n' "$email" "$(acct_limits "$email")" \
+        printf '  %-32s %-44s %s\n' "$email" "$(acct_limits "$email")" \
           "$([ "$email" = "$live" ] && printf '← live' || true)"
       done < <(acct_paths)
       printf '\n  switch: session account use <name>   (next request, running sessions included)\n'
@@ -413,7 +452,11 @@ acct_main() {
     -h|--help)
       cat <<'EOF'
 Usage: session account [list | use <name> | save | rm <name>]
-  list           saved logins + each one's rate-limit headroom (default)
+  list           saved logins + each one's rate-limit headroom and reset
+                 countdowns (default). A non-live login's snapshot ages from
+                 the moment you switch away: its weekly reset is projected
+                 forward (~), but its 5h reset is usage-anchored and prints
+                 "?" once passed — it re-anchors on that account's next request
   use <name>     switch the live login in place; <name> is any unique
                  substring of the email. Takes effect on the next request,
                  for running sessions too — no restart, no re-auth. The
@@ -597,6 +640,7 @@ Time tracking (hook-fed turn boundaries; gaps between turns never count):
 
 Accounts (several subscription logins, one config dir; `session account -h`):
   session account                  saved logins + each one's rate-limit headroom
+                                   and reset countdowns
   session account use <name>       switch the live login in place; <name> is any
                                    unique substring of the email. Effective on
                                    the next request, running sessions included
@@ -956,17 +1000,6 @@ num() { local v=${1%.*}; { [ -z "$v" ] || [ "$v" = "-1" ]; } && { echo 0; return
 bar() { local p; p=$(num "$1"); local f=$(( p/10 )); (( f<0 )) && f=0; (( f>10 )) && f=10
         local i out=""; for ((i=0;i<f;i++)); do out+="█"; done; for ((i=f;i<10;i++)); do out+="░"; done; printf '%s' "$out"; }
 pct() { local v=${1%.*}; { [ -z "$v" ] || [ "$v" = "-1" ]; } && { echo "n/a"; return; }; echo "${v}%"; }
-hm()  { local s=$(( $1<0 ? 0 : $1 )); printf '%dh%02dm' $(( s/3600 ))  $(( (s%3600)/60 )); }
-# Days+hours, but ROUNDED, and h+m below a day. Flooring the hour drops up to 59
-# minutes, which reads as a whole hour short: 58m of weekly headroom printed
-# "0d00h" — indistinguishable from "already reset" — while the built-in /usage
-# correctly showed the hour, and 6d08h50m prints "6d08h", implying a reset an hour
-# early. Below a day it falls through to hm() so a sub-hour remainder can never
-# render as a zero.
-dh()  { local s=$(( $1<0 ? 0 : $1 )) h
-        (( s < 86400 )) && { hm "$s"; return; }
-        h=$(( (s + 1800) / 3600 ))
-        printf '%dd%02dh' $(( h/24 )) $(( h%24 )); }
 
 # cap for a power curve: round(100 * x^p), x=elapsed fraction, clamped [0,100]
 powcap() {  # $1=window $2=left $3=p

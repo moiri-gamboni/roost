@@ -40,19 +40,22 @@ $ session
 | `session account [list\|use <name>\|save\|rm <name>]` | switch subscription logins (see below) |
 
 ## Switching subscription logins — `session account`
-When a cap is spent and another subscription is available, `session account` lists every saved login **with its rate-limit headroom**, and `use` switches in place:
+When a cap is spent and another subscription is available, `session account` lists every saved login **with its rate-limit headroom and reset countdowns**, and `use` switches in place:
 
 ```
 $ session account
-  LOGIN                            LIMITS
-  you@example.com                  5h 34% · wk 97% (live)       ← live
-  you@work.example                 5h 0% · wk 12% (3h old)
+  LOGIN                            LIMITS (RESET IN)
+  you@example.com                  5h 34% (2h10m) · wk 97% (0h48m) (live)      ← live
+  you@work.example                 5h 0% (3h02m) · wk 12% (4d07h) (3h old)
+  old@example.com                  5h 100%? (?) · wk 49%? (~5d20h) (4d old)
 
 $ session account use work
-Switched to you@work.example — 5h 0% · wk 12% (3h old)
+Switched to you@work.example — 5h 0% (3h02m) · wk 12% (4d07h) (3h old)
 Takes effect on the next request — including the 4 session(s) already running,
 which share this config dir. Their displayed %s catch up one turn later.
 ```
+
+A non-live login's snapshot stops refreshing when you switch away, so its resets go stale asymmetrically: the weekly runs on a fixed 7-day cadence and is projected forward (`~`), but the 5h window is usage-anchored (it opens on that account's first request after an idle gap), so a passed 5h reset prints `?` — and a `?` on the used% means the number belongs to the already-closed window (the real value is lower).
 
 One config dir, swapped in place, so transcripts, memory, settings and MCP servers are unaffected and `--resume` still works. **A running session adopts the new login on its very next request** — no restart and no re-auth, so this works mid-task when a cap runs out (measured: a session reporting 5h 36%/wk 66% reported the other account's 5h 4%/wk 100% on the next request). Two things follow: the switch is **box-wide**, since every `claude` here shares the config dir, so all of them move; and between requests the statusline only repeats the last API response, so the displayed %s lag by one turn even though the switch already happened.
 
