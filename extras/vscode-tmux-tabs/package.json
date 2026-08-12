@@ -2,7 +2,7 @@
   "name": "roost-tmux-tabs",
   "displayName": "Roost tmux tabs",
   "description": "One VS Code terminal tab per window of the `main` tmux session, kept in sync.",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "publisher": "roost",
   "license": "AGPL-3.0-or-later",
   "engines": { "vscode": "^1.75.0" },

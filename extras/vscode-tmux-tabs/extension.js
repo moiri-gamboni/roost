@@ -24,6 +24,11 @@ let attachTerm = null;        // the single "attach main" view, once it is ours
 let attachSyncing = false;
 let pollTimer = null;
 let lastSig = '';             // last window-set signature, for change-only logging
+let lastTermsSig = '';        // non-owned terminal-set signature, change-only logging
+const probed = new WeakSet(); // terminals whose non-attach verdict was already logged
+let attachSyncingSince = 0;   // wedge watchdog: when each sync flag was taken
+let syncingSince = 0;
+let lastWedgeLog = 0;
 
 const cfg = () => vscode.workspace.getConfiguration('roostTmuxTabs');
 
@@ -115,18 +120,35 @@ const terminalLocation = () =>
     ? { viewColumn: vscode.ViewColumn.Active, preserveFocus: true } // editor-area tab
     : vscode.TerminalLocation.Panel;
 
-// Is this terminal an `attach` grouped-session view (main-<pid>)? Read from the
-// shell's own cmdline, the one signal that holds however the terminal was made:
-// the "Roost tmux (attach main)" default profile in settings.json, our profile
-// provider, the newAttach command, or a session VS Code revived on reload.
-async function isAttachTerminal(term) {
-  const pid = await term.processId;
-  if (!pid) return false;
+// Probe a terminal: is it an `attach` grouped-session view (main-<pid>)? Read
+// from the shell's own cmdline, the one signal that holds however the terminal
+// was made: the "Roost tmux (attach main)" default profile in settings.json,
+// our profile provider, the newAttach command, or a session VS Code revived on
+// reload. processId is raced against a timeout: on revived/dying terminals it
+// can be very slow or never settle, and an unbounded await here held the sync
+// flags forever — silently disabling every future sweep until reload. A timeout
+// counts as "not attach" and is simply retried by the next poll.
+async function attachProbe(term) {
+  const pid = await Promise.race([
+    term.processId,
+    new Promise((r) => setTimeout(() => r('timeout'), 5000)),
+  ]);
+  if (pid === 'timeout' || !pid) return { pid, cmd: null, attach: false };
   try {
-    return fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').includes('attach');
+    const cmd = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').filter(Boolean);
+    return { pid, cmd, attach: cmd.includes('attach') };
   } catch (e) {
-    return false; // process already gone
+    return { pid, cmd: null, attach: false }; // process already gone
   }
+}
+
+// Log (at most once a minute) if a sync flag has been held >30s: the signature
+// of an await that never settled, which turns every later sync into a no-op.
+function wedgeCheck(what, since) {
+  const now = Date.now();
+  if (!since || now - since < 30000 || now - lastWedgeLog < 60000) return;
+  lastWedgeLog = now;
+  dbg(`WEDGE? ${what} held for ${Math.round((now - since) / 1000)}s — syncing is disabled`);
 }
 
 // Our own attach view: a terminal on the whole `main` session, opened at the
@@ -161,15 +183,35 @@ function openAttach({ focus = true } = {}) {
 // ours they're all replaced, which costs a flicker on the first gesture after a
 // reload and nothing after that.
 async function syncAttachTabs({ focus = false } = {}) {
-  if (!cfg().get('singleAttach', true) || attachSyncing) return;
+  if (!cfg().get('singleAttach', true)) return;
+  if (attachSyncing) { wedgeCheck('attachSyncing', attachSyncingSince); return; }
   attachSyncing = true;
+  attachSyncingSince = Date.now();
   try {
     const mine = new Set(owned.values());
     const views = [];
+    const others = [];
     for (const term of vscode.window.terminals) {
-      if (mine.has(term) || term.exitStatus !== undefined) continue;
-      if (await isAttachTerminal(term)) views.push(term);
+      if (mine.has(term)) continue;
+      if (term.exitStatus !== undefined) {
+        // Deliberately never disposed (we can't identify a dead terminal's
+        // command), but logged: a lingering exited tab looks like a duplicate.
+        others.push(`${JSON.stringify(term.name)}(exited)`);
+        if (!probed.has(term)) { probed.add(term); dbg(`attach: ignoring exited terminal ${JSON.stringify(term.name)}`); }
+        continue;
+      }
+      const p = await attachProbe(term);
+      if (p.attach) { views.push(term); continue; }
+      others.push(JSON.stringify(term.name));
+      if (!probed.has(term)) {
+        probed.add(term);
+        dbg(`attach: not an attach view ${JSON.stringify(term.name)} pid=${p.pid} cmd=${JSON.stringify(p.cmd ? p.cmd.join(' ') : null)}`);
+      }
     }
+    // Change-only snapshot of the non-owned tab set, so a stray tab's lifetime
+    // can be reconstructed from the log after the fact.
+    const sig = `${views.length} attach view(s)${others.length ? ` + ${others.join(' ')}` : ''}`;
+    if (sig !== lastTermsSig) { dbg(`attach: ${sig}`); lastTermsSig = sig; }
     if (!views.length) { attachTerm = null; return; }
     const keep = views.includes(attachTerm) ? attachTerm : null;
     for (const term of views) if (term !== keep) term.dispose();
@@ -217,8 +259,9 @@ async function dropTab(id, term, reason = '?') {
 }
 
 async function reconcile({ explicit = false } = {}) {
-  if (syncing) return;
+  if (syncing) { wedgeCheck('syncing', syncingSince); return; }
   syncing = true;
+  syncingSince = Date.now();
   try {
     // Before the base-session lookup, so duplicate attach tabs still get swept
     // when `main` is absent (they're the reason it can look absent-but-busy).
@@ -297,6 +340,9 @@ function onCloseTerminal(term) {
     });
     return;
   }
+  // Non-owned close (our own disposals, user closes, shutdown cascades): the
+  // other half of the birth/death trace for stray attach tabs.
+  dbg(`terminal closed ${JSON.stringify(term.name)}`);
 }
 
 function stopPolling() {
@@ -346,7 +392,10 @@ function activate(context) {
     // Instant path: collapse a just-opened duplicate attach tab and focus the
     // one already there. The poll's sweep would catch it too, but seconds later
     // — too slow for this to feel like the tab-switch it's standing in for.
-    vscode.window.onDidOpenTerminal(() => syncAttachTabs({ focus: true })),
+    vscode.window.onDidOpenTerminal((t) => {
+      dbg(`terminal opened ${JSON.stringify(t.name)}`);
+      syncAttachTabs({ focus: true });
+    }),
     vscode.window.onDidChangeWindowState((s) => {
       if (!cfg().get('autoSync', true)) return;
       if (s.focused) { reconcile(); startPolling(); }
