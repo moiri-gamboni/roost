@@ -129,6 +129,7 @@ files/travel/travel-health.sh|$ROOST_DIR/claude/scheduled/health-check-apps.sh|p
 files/private/health-check-apps-private.sh|$ROOST_DIR/claude/scheduled/health-check-apps-private.sh|plain+x|
 files/shell/bashrc.sh|$HOME_DIR/.bashrc.d/roost.sh|plain|
 files/private/global-CLAUDE.md|$ROOST_DIR/claude/CLAUDE.md|plain|
+files/private/skills/tasksync/SKILL.md|$ROOST_DIR/claude/skills/tasksync/SKILL.md|plain|
 files/skills/codex/SKILL.md|$ROOST_DIR/claude/skills/codex/SKILL.md|plain|
 files/agents/effort-low.md|$ROOST_DIR/claude/agents/effort-low.md|plain|
 files/agents/effort-medium.md|$ROOST_DIR/claude/agents/effort-medium.md|plain|
@@ -141,7 +142,6 @@ files/skills/humanizer/SKILL.md|$ROOST_DIR/claude/skills/humanizer/SKILL.md|plai
 files/skills/pastebin/SKILL.md|$ROOST_DIR/claude/skills/pastebin/SKILL.md|envsubst:DOMAIN|
 files/skills/roughdraft/SKILL.md|$ROOST_DIR/claude/skills/roughdraft/SKILL.md|plain|
 files/skills/session/SKILL.md|$ROOST_DIR/claude/skills/session/SKILL.md|plain|
-files/skills/tasksync/SKILL.md|$ROOST_DIR/claude/skills/tasksync/SKILL.md|plain|
 files/skills/zotero/SKILL.md|$ROOST_DIR/claude/skills/zotero/SKILL.md|plain|
 files/privatebin/privatebin-cloudflare.yml.tmpl|$ROOST_DIR/cloudflared/apps/privatebin.yml|envsubst:DOMAIN|run:~/roost/claude/lib/cloudflare-assemble.sh,restart:cloudflared
 MANIFEST_A
