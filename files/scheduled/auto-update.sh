@@ -201,6 +201,24 @@ else
     logger -t "$_HOOK_TAG" "dufs: skipped (release < 7 days old)"
 fi
 
+# --- rclone (drives the daily Google Drive mirror; rclone.org install script,
+# not apt-managed). selfupdate is pinned to the version the guard checked so a
+# release landing mid-run can't slip past it. Version parse via sed, single
+# full-drain stage — no `| head` under pipefail (see pipefail-grep-q footgun). ---
+if command -v rclone >/dev/null && github_release_cooldown_ok "rclone/rclone" 7; then
+    RCLONE_LATEST=$(github_latest_version "rclone/rclone")
+    RCLONE_CURRENT=$(rclone version 2>/dev/null | sed -n '1s/^rclone v//p')
+    if [ -n "$RCLONE_LATEST" ] && [ "$RCLONE_LATEST" != "$RCLONE_CURRENT" ]; then
+        if [ -z "$RCLONE_CURRENT" ] || major_guard "rclone" "$RCLONE_CURRENT" "$RCLONE_LATEST"; then
+            track "rclone" sudo rclone selfupdate --version "v${RCLONE_LATEST}"
+        fi
+    else
+        logger -t "$_HOOK_TAG" "rclone: up to date (${RCLONE_CURRENT:-unknown})"
+    fi
+elif command -v rclone >/dev/null; then
+    logger -t "$_HOOK_TAG" "rclone: skipped (release < 7 days old)"
+fi
+
 # --- PrivateBin (encrypted pastebin webapp) ---
 # Tarball swap; /etc/privatebin config and /var/lib/privatebin data live
 # outside the webroot and are untouched. php-fpm reload clears opcache.
