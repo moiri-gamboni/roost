@@ -412,28 +412,30 @@ acct_resolve() {  # $1=substring -> vault path on stdout
 # the weekly runs on a fixed 7-day wall-clock cadence, so a past boundary steps
 # forward (marked ~); the 5h is usage-anchored — it opens on that account's
 # first request after an idle gap — so a past boundary says nothing about the
-# next one and prints "?". Either way the used% belongs to the closed window,
-# so it gets a "?" too (the real value after the reset is lower).
+# next one and prints "?". Either way a passed boundary means the used% is not
+# merely doubtful, it is KNOWN: usage dropped to 0 at the reset, so the % is
+# projected to ~0 rather than showing the dead window's value (a floor — usage
+# since the reset is invisible until that account's next render, hence the ~).
 acct_limits() {  # $1=email -> "5h N% (left) · wk N% (left) (age)" | "no data yet"
-  local c="$HOME/roost/claude/usage/last-status.${1//[!A-Za-z0-9@._-]/_}.json" f w rf rw a now l5 lw f5 fw fq wq
+  local c="$HOME/roost/claude/usage/last-status.${1//[!A-Za-z0-9@._-]/_}.json" f w rf rw a now l5 lw f5 fw
   [ -s "$c" ] || { printf 'no data yet'; return; }
   IFS=$'\t' read -r f w rf rw < <(jq -r '[(.rate_limits.five_hour.used_percentage//-1),
                                           (.rate_limits.seven_day.used_percentage//-1),
                                           (.rate_limits.five_hour.resets_at//0),
                                           (.rate_limits.seven_day.resets_at//0)]|@tsv' "$c")
-  now=$(date +%s); fq="" wq=""
+  now=$(date +%s); f="${f%%.*}"; w="${w%%.*}"
   if (( rf > now )); then
     l5=$(( rf - now )); (( l5 > FIVE_WINDOW )) && l5=$FIVE_WINDOW
     f5=$(hm "$l5")
   else
-    f5="?"; (( rf > 0 )) && fq="?"        # rf==0: no reset data at all, but the % is current
+    f5="?"; (( rf > 0 )) && f="~0"        # rf==0: no reset data at all, but the % is current
   fi
   if (( rw > now )); then
     lw=$(( rw - now )); (( lw > WEEK_WINDOW )) && lw=$WEEK_WINDOW
     fw=$(dh "$lw")
   elif (( rw > 0 )); then
     lw=$(( rw + WEEK_WINDOW * ( (now - rw + WEEK_WINDOW - 1) / WEEK_WINDOW ) - now ))
-    fw="~$(dh "$lw")"; wq="?"
+    fw="~$(dh "$lw")"; w="~0"
   else
     fw="?"
   fi
@@ -442,7 +444,7 @@ acct_limits() {  # $1=email -> "5h N% (left) · wk N% (left) (age)" | "no data y
   elif [ "$a" -lt 3600 ];  then a="$(( a/60 ))m old"
   elif [ "$a" -lt 86400 ]; then a="$(( a/3600 ))h old"
   else                          a="$(( a/86400 ))d old"; fi
-  printf '5h %s%%%s (%s) · wk %s%%%s (%s) (%s)' "${f%%.*}" "$fq" "$f5" "${w%%.*}" "$wq" "$fw" "$a"
+  printf '5h %s%% (%s) · wk %s%% (%s) (%s)' "$f" "$f5" "$w" "$fw" "$a"
 }
 
 acct_main() {
@@ -510,9 +512,11 @@ acct_main() {
 Usage: session account [list | use <name> | save | rm <name>]
   list           saved logins + each one's rate-limit headroom and reset
                  countdowns (default). A non-live login's snapshot ages from
-                 the moment you switch away: its weekly reset is projected
-                 forward (~), but its 5h reset is usage-anchored and prints
-                 "?" once passed — it re-anchors on that account's next request
+                 the moment you switch away; once a window's reset passes, its
+                 used% shows ~0 — usage zeroes at the boundary, and the real
+                 value returns on that account's next render. The weekly's
+                 next reset is projected forward (~); the 5h is usage-anchored
+                 and prints "?" — it re-anchors on the account's next request
   use <name>     switch the live login in place; <name> is any unique
                  substring of the email. Takes effect on the next request,
                  for running sessions too — no restart, no re-auth. The
@@ -1104,12 +1108,15 @@ leftw_p=$leftw
 (( leftw_p<0 )) && leftw_p=0; (( leftw_p>WEEK_WINDOW )) && leftw_p=WEEK_WINDOW
 
 # Display helpers shared by the overview and the compact/hook line. A stale
-# reading gets "?" on the % — it belongs to the window that already closed — and
-# a countdown phrase that says what is actually known.
-pctq() { local p; p=$(pct "$1"); [ "$2" = 1 ] && [ "$p" != "n/a" ] && p="$p?"; printf '%s' "$p"; }
-cd5()  { (( f_stale )) && { printf 'next reset unknown · stale snapshot'; return; }
+# reading shows "~0%" — the window it belonged to closed at the boundary, where
+# usage drops to 0, so the projected floor beats the dead value (~ because usage
+# since the reset is invisible until the next response) — and a countdown phrase
+# that says what is actually known.
+pctq() { local p; p=$(pct "$1"); [ "$2" = 1 ] && [ "$p" != "n/a" ] && p="~0%"; printf '%s' "$p"; }
+barq() { if [ "$2" = 1 ]; then bar 0; else bar "$1"; fi; }
+cd5()  { (( f_stale )) && { printf 'already reset — fresh window opens on the next request · stale snapshot'; return; }
          printf 'resets to 0%% in %s' "$(hm "$left5")"; }
-cdw()  { (( w_stale )) && { printf 'resets to 0%% in ~%s · stale snapshot' "$(dh "$leftw_p")"; return; }
+cdw()  { (( w_stale )) && { printf 'already reset — next reset in ~%s · stale snapshot' "$(dh "$leftw_p")"; return; }
          printf 'resets to 0%% in %s' "$(dh "$leftw")"; }
 
 # ── Per-session attribution ──────────────────────────────────────────────────
@@ -1301,7 +1308,7 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
   # cap; the parenthetical is the live reset countdown.
   # A resets_at in the PAST means this snapshot predates a reset (f_stale/w_stale
   # above): cd5/cdw say so rather than emitting a confidently-wrong "resets in
-  # 0h00m", and pctq marks the % as belonging to the closed window.
+  # 0h00m", and pctq projects the % to ~0 — the window it belonged to closed.
   seg() {  # $1=label  $2=pct  $3=stale(1)  $4=countdown phrase (already stale-aware)
     local p; p=$(pctq "$2" "$3")
     if [ "$p" = "n/a" ]; then printf '%s n/a' "$1"
@@ -1542,8 +1549,8 @@ fi
 printf "  account  %s\n" "$acct"
 # %-24s pads by BYTES, but every stale phrase (the only multibyte ones, via ·)
 # already exceeds the field, so the pad only ever lands on ASCII countdowns
-printf "  5-hour   %s  %-5s %-24s (%s)\n" "$(bar "$five")" "$(pctq "$five" "$f_stale")" "$(cd5)" "$F_LBL"
-printf "  weekly   %s  %-5s %-24s (%s)\n" "$(bar "$week")" "$(pctq "$week" "$w_stale")" "$(cdw)" "$W_LBL"
+printf "  5-hour   %s  %-5s %-24s (%s)\n" "$(barq "$five" "$f_stale")" "$(pctq "$five" "$f_stale")" "$(cd5)" "$F_LBL"
+printf "  weekly   %s  %-5s %-24s (%s)\n" "$(barq "$week" "$w_stale")" "$(pctq "$week" "$w_stale")" "$(cdw)" "$W_LBL"
 printf "  context  %s  %-5s %s\n"         "$(bar "$ctx")"  "$(pct "$ctx")" "(this session)"
 if [ -n "${sid:-}" ] && sest=$(est_sessions); then
   IFS=$'\t' read -r st5 stw so5 sow < <(awk -F'\t' -v s="$sid" \
