@@ -83,6 +83,8 @@
 #                     time rather than polling. Run in the background (e.g. Bash
 #                     run_in_background) so the exit notifies you exactly at the
 #                     reset/pass — cleaner than polling or ScheduleWakeup hops.
+#                     A login switch mid-wait exits at once: the switch is the
+#                     wake-up (the old login's countdown no longer applies).
 #   session --file PATH  read a specific cache file
 #
 # Guard config — set EACH window independently (FIVE_GUARD / WEEK_GUARD) to:
@@ -720,6 +722,8 @@ Limits & pacing:
   session --compact                one frugal line: date/time + 5h & wk %s; exit 0
   session --guard                  pacing gate for fan-outs: OK=exit 0, PAUSE=exit 3
   session --wait [5h|week]         block until that window resets, then exit 0
+                                   (a login switch mid-wait also exits: the
+                                   switch is the wake-up)
                                    (run in the background; the exit is the wake-up)
   session --wait guard             block until `--guard` would pass (same
                                    FIVE_GUARD/WEEK_GUARD config): sleeps to the
@@ -1439,6 +1443,22 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
 fi
 
 if [ "$mode" = wait ]; then
+  # A login switch mid-wait is itself the wake-up: the wait was armed against
+  # the launch login's window (cache path and reset target resolved at launch),
+  # and after `session account use` the live session is gated by the new
+  # login's windows instead — sleeping on toward the old login's reset would
+  # wake at a meaningless time and sleep straight through the real event, the
+  # switch. Checked at each ≤300s sleep chunk, so detection lags the switch by
+  # up to 5m. Transient reads (the switch rewrites .claude.json in place) and
+  # an unknown launch login return "no flip" rather than a spurious wake-up.
+  login_flip() {
+    [ "$acct" = unknown ] && return 1
+    local a; a=$(jq -r '.oauthAccount.emailAddress // empty' "$cfg/.claude.json" 2>/dev/null || true)
+    a=${a//[!A-Za-z0-9@._-]/_}
+    { [ -z "$a" ] || [ "$a" = "$acct" ]; } && return 1
+    printf 'Claude login switched mid-wait (%s → %s) — this wait no longer applies: the live login'\''s windows gate the session now. Treat this as the wake-up and re-check `session`.\n' "$acct" "$a"
+    return 0
+  }
   # `--wait guard`: block until the pace guard (same FIVE_GUARD/WEEK_GUARD
   # config as `--guard`) would pass, then emit one line and exit 0. Not a poll:
   # within a window used% only rises while the cap rises with elapsed time, so
@@ -1493,6 +1513,7 @@ if [ "$mode" = wait ]; then
         t=$(pass_time "$WEEK_GUARD" "$WEEK_WINDOW" "$weekreset" "$wp"); (( t > target )) && target=$t
       fi
       while now=$(date +%s); (( now < target )); do
+        login_flip && exit 0
         r=$(( target - now )); (( r > 300 )) && r=300; sleep "$r"
       done
     done
@@ -1512,6 +1533,7 @@ if [ "$mode" = wait ]; then
     echo "session: no ${label} reset timestamp in cache ($cache); cannot wait" >&2; exit 1
   fi
   while now=$(date +%s); (( now < target )); do
+    login_flip && exit 0
     r=$(( target - now )); (( r > 300 )) && r=300; sleep "$r"
   done
   note=""; [ "$tstale" = 1 ] && note=' — the cached snapshot was already past it, so this returned at once; re-check `session` for the live window'
