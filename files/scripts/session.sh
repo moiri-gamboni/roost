@@ -51,14 +51,16 @@
 #                     90). At/above it, emits that line + a ⚠ advisory wrapped as
 #                     hook JSON (hookSpecificOutput.additionalContext +
 #                     suppressOutput:true — injected into the model's context,
-#                     kept out of the user's transcript). The advisory is phrased
-#                     by reset distance: near reset = keep going (worst case a
-#                     brief pause; background `--wait` auto-resumes), far reset =
-#                     hold off fan-out (5h) / wind down (weekly). Once a warned
-#                     window's resets_at passes, the next turn gets a one-line
-#                     refresh notice (no breakdown) telling the model the cap is
-#                     fresh and work can resume; per-session warn state lives in
-#                     sessions/<sid>.warn.
+#                     kept out of the user's transcript). ONE advisory whatever
+#                     the window or reset distance — only the lead sentence
+#                     names which window(s) crossed: keep working (fan-out
+#                     included) and arm a background `--wait` so a pause
+#                     auto-resumes. Once a warned window's resets_at passes —
+#                     or the login switches to an account that isn't warning —
+#                     the next turn gets a one-line refresh notice (no
+#                     breakdown) telling the model the cap is fresh and work
+#                     can resume; per-session warn state (reset ts + login)
+#                     lives in sessions/<sid>.warn.
 #                     Side effect every turn, gated or not: appends this turn's
 #                     START event to the turn log.
 #   session --turn-end  Stop-hook plumbing: appends the turn's END event to the
@@ -1351,22 +1353,32 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
     [ -n "$hsid" ] && printf '%s\t%s\ts\t%s\t-\t-\n' "$(date +%s)" "$hsid" "${hpid:--}" >> "$tlog"
     # Reset-refresh notice: a session that was warned about a window is told,
     # once, when that window's resets_at has passed — otherwise a model that
-    # wound down on the ⚠ has no signal that the cap turned over (the gate
-    # keeps the hook silent below the threshold). Warn state is per session
-    # ("five_ts<TAB>week_ts", 0 = no outstanding warn) in sessions/<sid>.warn,
-    # which the statusline's existing mtime+8d sweep cleans up. A window that
-    # is warning again right now (new window already >= thr) skips its notice.
+    # paused on the cap has no signal that it turned over (the gate keeps the
+    # hook silent below the threshold). Warn state is per session
+    # ("five_ts<TAB>week_ts<TAB>login", 0 = no outstanding warn) in
+    # sessions/<sid>.warn, which the statusline's existing mtime+8d sweep
+    # cleans up. A window that is warning again right now (new window already
+    # >= thr) skips its notice. The login column exists because a warn issued
+    # under another account is settled by the account SWITCH, not by the old
+    # account's countdown: after `session account use`, f_warn/w_warn are
+    # computed from the new login's windows, so comparing now against the old
+    # login's reset timestamps would sit silent for days on a weekly warn when
+    # the switch itself already supplied the fresh window.
     if [ -n "$hsid" ]; then
       wfile="$snapdir/$hsid.warn"
-      rf=0; rw=0
-      [ -s "$wfile" ] && IFS=$'\t' read -r rf rw < "$wfile"
+      rf=0; rw=0; racct=""
+      [ -s "$wfile" ] && IFS=$'\t' read -r rf rw racct < "$wfile"
       case "$rf" in ''|*[!0-9]*) rf=0 ;; esac
       case "$rw" in ''|*[!0-9]*) rw=0 ;; esac
+      if [ -n "$racct" ] && [ "$racct" != "$acct" ] && (( rf > 0 || rw > 0 )); then
+        [ "$f_warn" = 0 ] && [ "$w_warn" = 0 ] && refresh="the login has switched to $acct, whose rate-limit windows are below the warning threshold"
+        rf=0; rw=0
+      fi
       [ "$f_warn" = 0 ] && (( rf > 0 && now >= rf )) && { refresh="the 5h rate-limit window has reset to 0%"; rf=0; }
       [ "$w_warn" = 0 ] && (( rw > 0 && now >= rw )) && { refresh="${refresh:+$refresh, and }the weekly (7-day) rate-limit window has reset to 0%"; rw=0; }
       [ "$f_warn" = 1 ] && rf=$fivereset
       [ "$w_warn" = 1 ] && rw=$weekreset
-      if (( rf > 0 || rw > 0 )); then [ -d "$snapdir" ] || mkdir -p "$snapdir"; printf '%s\t%s\n' "$rf" "$rw" > "$wfile"
+      if (( rf > 0 || rw > 0 )); then [ -d "$snapdir" ] || mkdir -p "$snapdir"; printf '%s\t%s\t%s\n' "$rf" "$rw" "$acct" > "$wfile"
       else rm -f "$wfile"; fi
     fi
     if [ "$warn" = 1 ] && [ -n "$hsid" ] && sest=$(est_sessions); then
@@ -1383,35 +1395,30 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
     fi
   fi
   # Hook only: when a window nears its hard cap, tell Claude the right reaction.
-  # Phrased by RESET DISTANCE, not just usage: models otherwise pattern-match
-  # "high % + small countdown" to "stop now" — the exact wrong reading. Usage peaks
-  # right before a reset, so a distance-blind advisory fires loudest precisely when
-  # continuing is safest (worst case: a brief pause, then a fresh window). Policy:
-  # winding down is only ever right when usage is high AND the reset is far away;
-  # a near reset or low usage is never a reason to stop. Near cutoffs: 30m for the
-  # 5h window, 6h for the weekly (≈ the longest pause worth just riding out).
-  # The wait is phrased as launch-it-NOW, because both failure modes end the same
-  # way (observed): a model that narrates "I'll wait for the reset" and ends its
-  # turn has launched nothing and sleeps until a human returns, and once the pause
-  # actually lands mid-turn no tool can be launched at all. Only a background
-  # `--wait` started BEFORE either moment produces a wake-up.
-  # Threshold configurable via USAGE_WARN_PCT (default 90; set >100 to disable
-  # the hook's output entirely).
+  # ONE advisory, identical for every window and reset distance — only the lead
+  # sentence names which window(s) crossed the threshold. Models otherwise
+  # pattern-match "high % + small countdown" to "stop now", the exact wrong
+  # reading: the cap never makes stopping useful — worst case is a pause the
+  # background `--wait` rides out — so the policy is always keep working,
+  # fan-out included. The wait is phrased as launch-it-NOW, because both
+  # failure modes end the same way (observed): a model that narrates "I'll wait
+  # for the reset" and ends its turn has launched nothing and sleeps until a
+  # human returns, and once the pause actually lands mid-turn no tool can be
+  # launched at all. Only a background `--wait` started BEFORE either moment
+  # produces a wake-up. Threshold configurable via USAGE_WARN_PCT (default 90;
+  # set >100 to disable the hook's output entirely).
   if [ "$warn" = 1 ]; then
-    if [ "$f_warn" = 1 ]; then
-      if (( left5 <= 1800 )); then
-        line="$line"$'\n'"⚠ 5h rate limit at ${fp}%, but the window resets to 0% in $(hm "$left5") — an imminent reset is NOT a reason to stop or wind down: worst case is a brief pause until it. Launch \`session --wait 5h\` in the background NOW (Bash run_in_background: true; skip if one is already running) — once paused you cannot launch anything, and that process's exit is the only signal that auto-resumes you. Then keep working, fan-out included."
-      else
-        line="$line"$'\n'"⚠ 5h rate limit at ${fp}% with $(hm "$left5") still to run before the reset — you may be paused before it. FIRST launch \`session --wait 5h\` in the background (Bash run_in_background: true; skip if one is already running): its exit is the only signal that auto-resumes you — ending a turn saying \"I'll wait for the reset\" launches nothing and sleeps until a human returns, and once paused you cannot launch anything. Then keep current work going, but hold off on new parallel/fan-out work until the window turns."
-      fi
+    if [ "$f_warn" = 1 ] && [ "$w_warn" = 1 ]; then
+      lead="⚠ 5h rate limit at ${fp}% (resets to 0% in $(hm "$left5")) and weekly (7-day) at ${wp}% (resets to 0% in $(dh "$leftw"))."
+      wcmd="\`session --wait 5h\` and \`session --wait week\` in the background (one Bash call each, run_in_background: true; skip any already running)"
+    elif [ "$f_warn" = 1 ]; then
+      lead="⚠ 5h rate limit at ${fp}% (resets to 0% in $(hm "$left5"))."
+      wcmd="\`session --wait 5h\` in the background (Bash run_in_background: true; skip if one is already running)"
+    else
+      lead="⚠ weekly (7-day) rate limit at ${wp}% (resets to 0% in $(dh "$leftw"))."
+      wcmd="\`session --wait week\` in the background (Bash run_in_background: true; skip if one is already running)"
     fi
-    if [ "$w_warn" = 1 ]; then
-      if (( leftw <= 21600 )); then
-        line="$line"$'\n'"⚠ weekly (7-day) rate limit at ${wp}%, but it resets to 0% in $(dh "$leftw") — not a reason to stop or wind down; worst case is a pause until then. Launch \`session --wait week\` in the background now (Bash run_in_background: true; skip if already running) — its exit auto-resumes you; a stated intention to wait resumes nothing."
-      else
-        line="$line"$'\n'"⚠ weekly (7-day) rate limit at ${wp}% and the reset is $(dh "$leftw") away — high usage with a distant reset is the one case where winding down is right: a pause here would block for days. Checkpoint current work, avoid new fan-out, and pace what remains with \`session --guard\`."
-      fi
-    fi
+    line="$line"$'\n'"$lead This is not a reason to stop, wind down, or hold back parallel/fan-out work — worst case is a pause until the reset. FIRST launch $wcmd: a \`--wait\`'s exit is the only signal that auto-resumes you — ending a turn saying \"I'll wait for the reset\" launches nothing and sleeps until a human returns, and once paused you cannot launch anything. Then keep working, fan-out included."
   fi
   # Below the threshold the hook emits nothing at all (for UserPromptSubmit, no
   # stdout = no context injected) — unless a refresh notice is pending, which
@@ -1423,7 +1430,7 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
       [ -n "$refresh" ] && line="$line"$'\n'"Also: $refresh."
       emit "$line"
     elif [ -n "$refresh" ]; then
-      emit "Claude usage limits: $refresh — a fresh window is available. Work can continue normally, fan-out included; any earlier wind-down or pacing advice from the ⚠ warnings no longer applies."
+      emit "Claude usage limits: $refresh — a fresh window is available. Work can continue normally, fan-out included; the earlier ⚠ warning no longer applies."
     fi
     exit 0
   fi
