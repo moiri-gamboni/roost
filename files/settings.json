@@ -188,7 +188,7 @@
   "autoDreamEnabled": true,
   "skipWorkflowUsageWarning": true,
   "verbose": false,
-  "autoCompactEnabled": false,
+  "autoCompactEnabled": true,
   "switchModelsOnFlag": false,
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
