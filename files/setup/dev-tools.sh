@@ -177,3 +177,15 @@ EOF
 else
     skip "bwrap AppArmor profile already present"
 fi
+
+# --- GitHub host key, pinned (not TOFU) --------------------------------------
+# The apart-tools plugin install (claude-config.sh) is the provision's first
+# SSH-to-GitHub operation. Seed known_hosts from GitHub's published keys over
+# TLS (the same trust the HTTPS fetches above already extend) so it neither
+# TOFU-accepts nor silently skips.
+if ! sudo -u "$USERNAME" ssh-keygen -F github.com >/dev/null 2>&1; then
+    curl -fsSL https://api.github.com/meta | jq -r '.ssh_keys[]' | sed 's/^/github.com /' \
+        >> "$HOME_DIR/.ssh/known_hosts" 2>/dev/null \
+        && chown "$USERNAME:$USERNAME" "$HOME_DIR/.ssh/known_hosts" \
+        && ok "GitHub host keys seeded" || warn "GitHub host-key seed failed (plugin install will need it)"
+fi

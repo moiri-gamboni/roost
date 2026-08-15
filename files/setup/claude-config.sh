@@ -59,3 +59,12 @@ sed -i "s|~/roost/|~/$ROOST_DIR_NAME/|g" "$CLAUDE_DIR/settings.json"
 sed -i "s|~/roost/|~/$ROOST_DIR_NAME/|g" "$CLAUDE_DIR/hooks/reflect.md"
 
 ok "All hook scripts installed"
+
+# --- private plugin installs (optional) -------------------------------------
+# Personal/work-specific Claude Code plugins live in the private repo; this
+# hook stays generic. The private script sees the same _setup-env vars.
+if [ -f "$REMOTE_DIR/files/private/claude-plugins.sh" ]; then
+    source "$REMOTE_DIR/files/private/claude-plugins.sh"
+else
+    info "No private claude-plugins.sh; skipping plugin installs."
+fi
