@@ -64,7 +64,7 @@ fi
 # last SUCCESS, not on exit status: a wedged nightly holds the lock
 # indefinitely and every tick behind it exits 1 from flock -n, so
 # alert-on-failure would never fire.
-ROWS_STATUS="$HOME/roost/work/notion/_tools/rows_status.py"
+ROWS_STATUS="$HOME/roost/work/work-tools/notion-mirror/rows_status.py"
 if [ -f "$ROWS_STATUS" ]; then
     if ! ROWS_ALARMS="$(python3 "$ROWS_STATUS" --check 2>&1)"; then
         # 6h cooldown matches the staleness threshold, so a real outage nags

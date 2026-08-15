@@ -1,10 +1,13 @@
 [Unit]
+# The receiver refuses to start when the mirror state dir is absent (never
+# creates it), so the mount ordering is load-bearing, not cosmetic.
+RequiresMountsFor=/home/moiri/roost/work/notion
 Description=Notion webhook receiver (notion mirror event feed)
 After=network.target
 
 [Service]
 User=moiri
-ExecStart=/usr/bin/python3 /home/moiri/roost/work/notion/_tools/webhook_receiver.py
+ExecStart=/usr/bin/python3 /home/moiri/roost/work/work-tools/notion-mirror/webhook_receiver.py
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
