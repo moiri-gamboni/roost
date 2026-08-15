@@ -119,3 +119,11 @@ as_user "git config --global gpg.format ssh"
 as_user "git config --global user.signingkey '$HOME_DIR/.ssh/id_ed25519.pub'"
 as_user "git config --global commit.gpgsign true"
 echo "  [+] Git commit signing configured"
+
+# `tasks` — the tasksync CLI from the apart-tools clone inside the apart-research
+# workspace. Guarded: a box without that checkout just skips the link.
+tasks_cli="$HOME_DIR/$ROOST_DIR_NAME/apart-research/apart-tools/tasksync/tasks"
+if [ -x "$tasks_cli" ]; then
+    ln -sfn "$tasks_cli" "$HOME_DIR/bin/tasks"
+    chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/tasks"
+fi

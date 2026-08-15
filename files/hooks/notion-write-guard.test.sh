@@ -83,5 +83,13 @@ check allow 'grep for a write call by name' \
 check deny 'KNOWN FALSE POSITIVE: paren in the pattern, host in the same command' \
     'grep -rn "requests.post(" $(grep -rl api.notion.com .)'
 
+# --- the apart-tools clone: its two tool dirs are sanctioned, the repo root is not ---
+check allow 'push via the apart-tools clone CLI' \
+    'apart-tools/tasksync/tasks push some-slug --apply # writes api.notion.com'
+check allow 'mirror refresh from the apart-tools clone' \
+    'apart-tools/notion-mirror/refresh.sh daily # api.notion.com'
+check deny 'incidental mention of the clone root does not sanction a raw write' \
+    'cd apart-tools && curl -X PATCH "https://api.notion.com/v1/pages/abc"'
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

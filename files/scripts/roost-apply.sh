@@ -129,7 +129,6 @@ files/travel/travel-health.sh|$ROOST_DIR/claude/scheduled/health-check-apps.sh|p
 files/private/health-check-apps-private.sh|$ROOST_DIR/claude/scheduled/health-check-apps-private.sh|plain+x|
 files/shell/bashrc.sh|$HOME_DIR/.bashrc.d/roost.sh|plain|
 files/private/global-CLAUDE.md|$ROOST_DIR/claude/CLAUDE.md|plain|
-files/private/skills/tasksync/SKILL.md|$ROOST_DIR/claude/skills/tasksync/SKILL.md|plain|
 files/skills/codex/SKILL.md|$ROOST_DIR/claude/skills/codex/SKILL.md|plain|
 files/agents/effort-low.md|$ROOST_DIR/claude/agents/effort-low.md|plain|
 files/agents/effort-medium.md|$ROOST_DIR/claude/agents/effort-medium.md|plain|
