@@ -63,12 +63,12 @@ check allow 'write verb but different host' \
 check allow 'queue.put is not an HTTP put' \
     'python3 -c "q.put(1)"  # see api.notion.com/v1/pages for the shape'
 
-# --- must allow: the sanctioned path ---
-check allow 'tasks/_tools invocation' \
+# --- the retired in-workspace tool paths (trees deleted 2026-08-16) ---
+# Without the host in the command the host gate passes these anyway; WITH the
+# host and a write verb they must now deny — the old allowlist alternative is gone.
+check allow 'old tasks/_tools path, no host mentioned (host gate)' \
     'python3 tasks/_tools/push.py --slug 2026-08-05-foo --write'
-check allow 'notion/_tools invocation' \
-    'notion/_tools/refresh.sh daily'
-check allow 'tasks/_tools even with a write flag in argv' \
+check deny 'old tasks/_tools path no longer sanctions a write' \
     'python3 tasks/_tools/push.py --endpoint https://api.notion.com/v1/pages -X POST'
 
 # --- degenerate input ---

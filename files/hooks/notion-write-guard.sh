@@ -32,11 +32,11 @@ cmd=$(jq -r '.tool_input.command // empty' || true)
 grep -qF 'api.notion.com' <<<"$cmd" || exit 0
 
 # The sync tools own their writes: guarded, dry-runnable, and the sanctioned path.
-# Two epochs of the same allowlist: the old in-workspace tool dirs (kept until the
-# retirement lands so a rollback never re-denies sanctioned writes) and the
-# apart-tools clone's two tool dirs — the clone ROOT alone is deliberately not
-# enough, or any command mentioning the repo would pass.
-grep -qE '(tasks|notion)/_tools/|apart-tools/(tasksync|notion-mirror)/' <<<"$cmd" && exit 0
+# The apart-tools clone's two tool dirs — the clone ROOT alone is deliberately
+# not enough, or any command merely mentioning the repo would pass. (The old
+# in-workspace (tasks|notion)/_tools/ alternative was retired 2026-08-16 with
+# the trees themselves.)
+grep -qE 'apart-tools/(tasksync|notion-mirror)/' <<<"$cmd" && exit 0
 
 # Whatever may sit between a method keyword and its verb: spaces, `=`, and quotes — including
 # backslash-escaped ones, since `node -e "…{method: \"POST\"}"` and `python3 -c "…method=\"PATCH\""`
