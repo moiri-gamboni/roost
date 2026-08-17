@@ -122,6 +122,14 @@
             "type": "command",
             "command": "~/roost/claude/scripts/session.sh --hook",
             "timeout": 2
+          },
+          {
+            "type": "command",
+            "command": "~/roost/claude/scripts/session.sh --rewake-waiter",
+            "asyncRewake": true,
+            "timeout": 700000,
+            "rewakeMessage": "Claude usage limits (auto-resume waiter):",
+            "rewakeSummary": "usage waiter: fresh window — auto-resuming"
           }
         ]
       }
