@@ -90,13 +90,15 @@ chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-net"
 # per-session attribution (`session` / `session usage [--all]`), guard/wait
 ln -sf "$ROOST_DIR/claude/scripts/session.sh" "$HOME_DIR/bin/session"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/session"
-# granola: meeting-notes mirror tooling. granola-digest ships from files/private/,
-# so skip any that aren't deployed (public-repo-only checkouts won't have it).
-for g in granola granola-transcripts granola-refresh granola-digest; do
-    [ -f "$ROOST_DIR/claude/scripts/$g.sh" ] || continue
-    ln -sf "$ROOST_DIR/claude/scripts/$g.sh" "$HOME_DIR/bin/$g"
-    chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/$g"
-done
+# granola-digest ships from files/private/, so skip when it isn't deployed
+# (public-repo-only checkouts won't have it). The granola mirror tooling itself
+# (granola/granola-transcripts/granola-refresh) lives in the apart-tools clone
+# since 2026-08-19; its symlinks are wired by the private claude-plugins.sh
+# alongside the plugin install.
+if [ -f "$ROOST_DIR/claude/scripts/granola-digest.sh" ]; then
+    ln -sf "$ROOST_DIR/claude/scripts/granola-digest.sh" "$HOME_DIR/bin/granola-digest"
+    chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/granola-digest"
+fi
 
 # --- Git identity ---
 if [ -n "${GIT_USER_NAME:-}" ] && [ -n "${GIT_USER_EMAIL:-}" ]; then

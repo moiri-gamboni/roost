@@ -121,9 +121,6 @@ files/scripts/roost-net.sh|$ROOST_DIR/claude/scripts/roost-net.sh|plain+x|
 files/scripts/session.sh|$ROOST_DIR/claude/scripts/session.sh|plain+x|
 files/hooks/shellcheck-edit.sh|$ROOST_DIR/claude/hooks/shellcheck-edit.sh|plain+x|
 files/hooks/notion-write-guard.sh|$ROOST_DIR/claude/hooks/notion-write-guard.sh|plain+x|
-files/scripts/granola.sh|$ROOST_DIR/claude/scripts/granola.sh|plain+x|
-files/scripts/granola-transcripts.sh|$ROOST_DIR/claude/scripts/granola-transcripts.sh|plain+x|
-files/scripts/granola-refresh.sh|$ROOST_DIR/claude/scripts/granola-refresh.sh|plain+x|
 files/private/granola-digest.sh|$ROOST_DIR/claude/scripts/granola-digest.sh|plain+x|
 files/private/drive-mirror-refresh.sh|$ROOST_DIR/claude/scripts/drive-mirror-refresh.sh|plain+x|
 files/travel/travel-health.sh|$ROOST_DIR/claude/scheduled/health-check-apps.sh|plain+x|
