@@ -115,6 +115,7 @@ files/scheduled/track-ssh-activity.sh|$ROOST_DIR/claude/scheduled/track-ssh-acti
 files/scheduled/vision-abuse-watch.sh|$ROOST_DIR/claude/scheduled/vision-abuse-watch.sh|plain+x|
 files/scheduled/session-daily-brief.sh|$ROOST_DIR/claude/scheduled/session-daily-brief.sh|plain+x|
 files/scheduled/roughdraft-watch.sh|$ROOST_DIR/claude/scheduled/roughdraft-watch.sh|plain+x|
+files/scheduled/btrfs-balance.sh|$ROOST_DIR/claude/scheduled/btrfs-balance.sh|plain+x|
 files/scripts/roost-apply.sh|$ROOST_DIR/claude/scripts/roost-apply.sh|plain+x|
 files/scripts/roost-net.sh|$ROOST_DIR/claude/scripts/roost-net.sh|plain+x|
 files/scripts/session.sh|$ROOST_DIR/claude/scripts/session.sh|plain+x|

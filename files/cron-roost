@@ -27,6 +27,11 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 # changed. Daily is enough: upstream has merged nothing since 2026-06-19.
 10 7 * * * $USERNAME flock -n $HOME_DIR/.locks/roughdraft-watch $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/roughdraft-watch.sh
 
+# Weekly btrfs data balance (Sunday 2:30am): return slack trapped in
+# part-empty data chunks to the unallocated pool so the metadata pool can keep
+# growing. Complement of the health-check unallocated alert (RO-flip prevention).
+30 2 * * 0 $USERNAME flock -n $HOME_DIR/.locks/btrfs-balance $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/btrfs-balance.sh
+
 # Weekly auto-update (Sunday 3am)
 0 3 * * 0 $USERNAME flock -n $HOME_DIR/.locks/auto-update $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/auto-update.sh
 
