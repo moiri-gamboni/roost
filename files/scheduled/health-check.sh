@@ -47,6 +47,22 @@ DISK_PCT=$(df / --output=pcent | tail -1 | tr -d ' %')
 logger -t "$_HOOK_TAG" "Disk: ${DISK_PCT}%"
 [ "$DISK_PCT" -gt 80 ] && FAILURES="$FAILURES\n- Disk usage at ${DISK_PCT}%"
 
+# Btrfs allocation headroom — the failure df can't see: once chunk allocation
+# reaches the device edge the metadata pool can't grow, and the next metadata
+# spike force-flips the fs read-only (2026-08-19: root went RO at df=75%).
+# The weekly btrfs-balance job keeps this high; an alert means it isn't enough.
+for mnt in / /mnt/roost-data; do
+    mountpoint -q "$mnt" || continue
+    UNALLOC_GIB=$(sudo -n btrfs filesystem usage -b "$mnt" 2>/dev/null |
+        awk '/Device unallocated:/ {printf "%d", $3 / 1024^3}')
+    logger -t "$_HOOK_TAG" "Btrfs unallocated $mnt: ${UNALLOC_GIB:-?}GiB"
+    if [ -z "$UNALLOC_GIB" ]; then
+        FAILURES="$FAILURES\n- btrfs unallocated unreadable on $mnt"
+    elif [ "$UNALLOC_GIB" -lt 5 ]; then
+        FAILURES="$FAILURES\n- btrfs unallocated ${UNALLOC_GIB}GiB on $mnt (read-only-flip risk; run btrfs-balance.sh)"
+    fi
+done
+
 # Source app-specific health checks if present
 if [ -f "$(dirname "$0")/health-check-apps.sh" ]; then
     source "$(dirname "$0")/health-check-apps.sh"
