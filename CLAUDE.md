@@ -321,6 +321,7 @@ Agent management functions (defined in `files/shell/bashrc.sh`, deployed to `~/.
 | `agents` | Interactive tmux window picker |
 | `agent_stop <index>` | Graceful stop (Ctrl-D) |
 | `agent_kill <index>` | Force stop (double Ctrl-C) |
+| `roost_reload` | Re-source `roost.sh` in a live shell after a deploy. A plain `source` is a **silent no-op** (double-source guard returns first) — this bypasses it |
 
 Using `/rename` inside a session updates the tmux window name automatically.
 

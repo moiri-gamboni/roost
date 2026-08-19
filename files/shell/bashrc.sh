@@ -5,8 +5,17 @@
 # Guard against double-sourcing (interactive login shells source both .profile and .bashrc)
 # Uses function check instead of a variable — VS Code Remote injects env vars into terminals,
 # which would cause a variable-based guard to block sourcing in new terminals.
+# NB: this makes a plain `source` of this file a silent no-op in a live shell —
+# deployed changes look applied when nothing was redefined. Use `roost_reload`.
 type _roost_env_loaded &>/dev/null && return
 _roost_env_loaded() { :; }
+
+# Re-source this file in a live shell, bypassing the guard above.
+roost_reload() {
+    unset -f _roost_env_loaded
+    # shellcheck source=/dev/null
+    source "$HOME/.bashrc.d/${ROOST_DIR_NAME:-roost}.sh"
+}
 
 export ROOST_DIR_NAME="${ROOST_DIR_NAME:?ROOST_DIR_NAME not set}"
 _ROOST_DIR="$HOME/$ROOST_DIR_NAME"
