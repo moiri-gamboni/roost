@@ -1,0 +1,16 @@
+[Unit]
+Description=Granola webhook receiver (event-driven granola-mirror refresh)
+# Refuses to start without the signing secret (~/.config/granola/webhook-secret,
+# written once at endpoint registration) — an unverifiable endpoint would accept
+# forged posts, so a loud failed unit beats silently-off verification.
+After=network.target
+
+[Service]
+User=moiri
+ExecStart=/usr/bin/python3 /home/moiri/roost/apart-research/apart-tools/granola-mirror/webhook_receiver.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
