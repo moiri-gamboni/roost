@@ -289,18 +289,25 @@ agent() {
         fi
     fi
     if [[ $state -eq 0 ]]; then
-        # Inside tmux: tmux resolves the "current" session of a shared pane by
-        # most-recent activity among the group's members — normally the view
-        # being typed into. Follow it to the new window, except in a VS Code
-        # attach view (main-vsc*): the tmux-tabs extension opens a pinned tab
-        # for the window anyway, and following would show the session twice.
-        local cur
-        cur=$(tmux display-message -p '#{session_name}')
-        if [[ "$cur" == main-vsc* ]]; then
-            tmux new-window -d -t main -n "$name" "${cmd_parts[*]}"
-        else
-            tmux new-window -n "$name" "${cmd_parts[*]}"
-        fi
+        # Inside tmux the invoking pane is shared by every grouped view, so
+        # "which view was this typed into" can't come from tmux's current-
+        # session resolution: session *and* client activity are both bumped
+        # continuously by claude output elsewhere (terminals answering escape-
+        # sequence queries count as client input). The solid signal is which
+        # client is *viewing this pane's window* — pinned tabs sit on their own
+        # windows, so a viewer of this window is the attach view being typed
+        # into. Follow it to the new window, unless it's a VS Code view
+        # (main-vsc*/vsc-*): the tmux-tabs extension opens a pinned tab for
+        # the window anyway, and following would show the session twice.
+        local mywin viewer
+        mywin=$(tmux display-message -p -t "$TMUX_PANE" '#{window_id}')
+        viewer=$(tmux list-clients -F '#{client_activity} #{window_id} #{client_session}' \
+            | awk -v w="$mywin" '$2 == w {print $1, $3}' | sort -rn | awk 'NR==1 {print $2}')
+        tmux new-window -d -t main -n "$name" "${cmd_parts[*]}"
+        case "$viewer" in
+            ''|main-vsc*|vsc-*) ;;
+            *) tmux select-window -t "$viewer:$name" ;;
+        esac
     else
         # Outside tmux: create window in main, then attach via grouped session
         local group
