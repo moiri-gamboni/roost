@@ -145,22 +145,33 @@ fi
 
 # Name for this connection's grouped tmux session. $ROOST_CLIENT (set by the
 # client's alias, e.g. ROOST_CLIENT=pixel) gives stable rejoining across
-# reconnects; falls back to PID for plain ssh invocations.
+# reconnects; falls back to PID for plain ssh invocations. VS Code terminals
+# (TERM_PROGRAM=vscode, set by VS Code before tmux is entered) get the
+# distinguishable main-vsc<pid> form so `agent` can tell the tmux-tabs
+# extension's attach view apart from an SSH attach tab.
 _roost_group_name() {
-    printf 'main-%s' "${ROOST_CLIENT:-$$}"
+    if [[ -n "${ROOST_CLIENT:-}" ]]; then
+        printf 'main-%s' "$ROOST_CLIENT"
+    elif [[ "${TERM_PROGRAM:-}" == vscode ]]; then
+        printf 'main-vsc%s' "$$"
+    else
+        printf 'main-%s' "$$"
+    fi
 }
 
 # Kill grouped sessions whose PID suffix no longer exists. Only sweeps
-# numeric suffixes (PID-style), never named ones (laptop/pixel/etc).
+# PID-style suffixes (main-<pid>, main-vsc<pid>), never named ones
+# (laptop/pixel/etc).
 _sweep_dead_groups() {
     tmux list-sessions -F '#{session_name}' 2>/dev/null | while read -r s; do
+        local pid
         case "$s" in
-            main-*[!0-9]*|main) ;;  # non-numeric or bare "main" — skip
-            main-*)
-                local pid="${s#main-}"
-                kill -0 "$pid" 2>/dev/null || tmux kill-session -t "$s" 2>/dev/null
-                ;;
+            main-vsc*) pid="${s#main-vsc}" ;;
+            main-*)    pid="${s#main-}" ;;
+            *)         continue ;;
         esac
+        [[ "$pid" =~ ^[0-9]+$ ]] || continue  # named group — keep
+        kill -0 "$pid" 2>/dev/null || tmux kill-session -t "$s" 2>/dev/null
     done
 }
 
@@ -276,8 +287,18 @@ agent() {
         fi
     fi
     if [[ $state -eq 0 ]]; then
-        # Inside tmux: target current (grouped) session so it switches to the new window
-        tmux new-window -n "$name" "${cmd_parts[*]}"
+        # Inside tmux: tmux resolves the "current" session of a shared pane by
+        # most-recent activity among the group's members — normally the view
+        # being typed into. Follow it to the new window, except in a VS Code
+        # attach view (main-vsc*): the tmux-tabs extension opens a pinned tab
+        # for the window anyway, and following would show the session twice.
+        local cur
+        cur=$(tmux display-message -p '#{session_name}')
+        if [[ "$cur" == main-vsc* ]]; then
+            tmux new-window -d -t main -n "$name" "${cmd_parts[*]}"
+        else
+            tmux new-window -n "$name" "${cmd_parts[*]}"
+        fi
     else
         # Outside tmux: create window in main, then attach via grouped session
         local group
