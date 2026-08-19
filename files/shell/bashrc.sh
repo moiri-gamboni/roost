@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Roost shell configuration
 # Sourced from ~/.bashrc and ~/.profile via ~/.bashrc.d/$ROOST_DIR_NAME.sh
 
@@ -51,7 +52,8 @@ if [[ -r "$HOME/.config/roughdraft/token" ]]; then
     export ROUGHDRAFT_TOKEN
     # Empty tailscale output degrades to loopback-only: resolveBindHosts()
     # drops empty entries.
-    export ROUGHDRAFT_BIND_HOST="127.0.0.1,$(tailscale ip -4 2>/dev/null)"
+    ROUGHDRAFT_BIND_HOST="127.0.0.1,$(tailscale ip -4 2>/dev/null)"
+    export ROUGHDRAFT_BIND_HOST
 fi
 export ROUGHDRAFT_NO_OPEN=1  # headless: print the URL instead of calling xdg-open
 
