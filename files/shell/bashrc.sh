@@ -251,6 +251,11 @@ _ensure_tmux() {
 agent() {
     local dir="$PWD"
     local -a claude_args=()
+    # Debug trace (hijack investigation): one line per invocation + one per
+    # launch decision, ~/.roost-agent.log.
+    printf '%(%F %T)T pid=%s tty=%s TMUX=%s pane=%s TERM_PROGRAM=%s args=[%s]\n' \
+        -1 "$$" "$(tty 2>/dev/null)" "${TMUX:+y}" "${TMUX_PANE:-}" "${TERM_PROGRAM:-}" "$*" \
+        >> "$HOME/.roost-agent.log"
 
     # If first arg is a directory, use it as the working dir
     if [[ $# -gt 0 ]] && [[ -d "$1" ]]; then
@@ -313,6 +318,10 @@ agent() {
         viewer=$(tmux list-clients -F '#{client_activity} #{window_id} #{client_session}' \
             | awk -v w="$mywin" '$2 == w {print $1, $3}' | sort -rn | awk 'NR==1 {print $2}')
         tmux new-window -d -t main -n "$name" "${cmd_parts[*]}"
+        printf '%(%F %T)T pid=%s inside-tmux: mywin=%s viewer=%s name=%s follow=%s\n' \
+            -1 "$$" "$mywin" "${viewer:-none}" "$name" \
+            "$(case "$viewer" in ''|main-vsc*|vsc-*) echo no;; *) echo "$viewer";; esac)" \
+            >> "$HOME/.roost-agent.log"
         case "$viewer" in
             ''|main-vsc*|vsc-*) ;;
             *) tmux select-window -t "$viewer:$name" ;;
@@ -321,6 +330,8 @@ agent() {
         # Outside tmux: create window in main, then attach via grouped session
         local group
         group=$(_roost_group_name)
+        printf '%(%F %T)T pid=%s outside-tmux: group=%s name=%s state=%s\n' \
+            -1 "$$" "$group" "$name" "$state" >> "$HOME/.roost-agent.log"
         tmux new-window -t main -n "$name" "${cmd_parts[*]}"
         if tmux has-session -t "$group" 2>/dev/null; then
             tmux attach-session -t "$group" \; select-window -t "$name"
