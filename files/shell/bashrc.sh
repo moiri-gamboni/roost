@@ -2,23 +2,20 @@
 # Roost shell configuration
 # Sourced from ~/.bashrc and ~/.profile via ~/.bashrc.d/$ROOST_DIR_NAME.sh
 
-# Guard against double-sourcing (interactive login shells source both .profile and .bashrc)
-# Uses function check instead of a variable — VS Code Remote injects env vars into terminals,
-# which would cause a variable-based guard to block sourcing in new terminals.
-# NB: this makes a plain `source` of this file a silent no-op in a live shell —
-# deployed changes look applied when nothing was redefined. Use `roost_reload`.
-type _roost_env_loaded &>/dev/null && return
-_roost_env_loaded() { :; }
-
-# Re-source this file in a live shell, bypassing the guard above.
-roost_reload() {
-    unset -f _roost_env_loaded
-    # shellcheck source=/dev/null
-    source "$HOME/.bashrc.d/${ROOST_DIR_NAME:-roost}.sh"
-}
+# Deliberately idempotent, not guarded: interactive login shells source this
+# twice (.profile + .bashrc), and a live shell re-sources it to pick up a
+# deploy. A blanket load-once guard made that re-source a silent no-op — old
+# function definitions kept running while the deploy looked applied. The few
+# non-idempotent pieces below carry their own narrow guards instead.
+# (Per-shell one-time markers are *functions*, not variables: VS Code Remote
+# injects captured env vars into new terminals, which would trip a variable
+# marker in a shell that never sourced this file.)
 
 export ROOST_DIR_NAME="${ROOST_DIR_NAME:?ROOST_DIR_NAME not set}"
 _ROOST_DIR="$HOME/$ROOST_DIR_NAME"
+
+_roost_path_append()  { case ":$PATH:" in *":$1:"*) ;; *) PATH="$PATH:$1" ;; esac }
+_roost_path_prepend() { case ":$PATH:" in *":$1:"*) ;; *) PATH="$1:$PATH" ;; esac }
 
 # Claude Code config lives under ~/roost/claude/
 export CLAUDE_CONFIG_DIR="$_ROOST_DIR/claude"
@@ -27,25 +24,30 @@ export CLAUDE_CONFIG_DIR="$_ROOST_DIR/claude"
 [[ -z "${COLORTERM:-}" ]] && export COLORTERM=truecolor
 
 # Go
-export PATH=$PATH:/usr/local/go/bin:~/go/bin
+_roost_path_append /usr/local/go/bin
+_roost_path_append "$HOME/go/bin"
 
-# fnm (Node.js)
+# fnm (Node.js) — once per shell: a fresh shell drops any stale multishell
+# path inherited from a long-lived parent and lets the eval allocate its own;
+# a re-source keeps this shell's live multishell (re-running the eval would
+# allocate and prepend another one).
 FNM_DIR="$HOME/.local/share/fnm"
-if [ -x "$FNM_DIR/fnm" ]; then
-    export PATH="$FNM_DIR:$PATH"
-    # Drop any stale multishell path inherited from a long-lived parent;
-    # the eval below always allocates a fresh one and prepends its bin to PATH.
+if [ -x "$FNM_DIR/fnm" ] && ! type _roost_fnm_inited &>/dev/null; then
+    _roost_fnm_inited() { :; }
+    _roost_path_prepend "$FNM_DIR"
     unset FNM_MULTISHELL_PATH
     eval "$($FNM_DIR/fnm env --use-on-cd --shell bash)"
 fi
 
 # clip-forward shims (must precede system xclip/wl-paste)
 if [ -d "$HOME/.local/lib/clip-forward/shims" ]; then
-    export PATH="$HOME/.local/lib/clip-forward/shims:$PATH"
+    _roost_path_prepend "$HOME/.local/lib/clip-forward/shims"
 fi
 
 # Local binaries
-export PATH=$PATH:~/bin:~/.local/bin
+_roost_path_append "$HOME/bin"
+_roost_path_append "$HOME/.local/bin"
+export PATH
 
 # Roost server management (symlink created by setup/shell-config.sh)
 

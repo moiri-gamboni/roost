@@ -319,9 +319,9 @@ Agent management functions (defined in `files/shell/bashrc.sh`, deployed to `~/.
 | `agent [path] [claude-args...]` | Launch interactive Claude in a tmux window (path defaults to cwd) |
 | `agent -c` | Continue last session in cwd |
 | `agents` | Interactive tmux window picker |
-| `agent_stop <index>` | Graceful stop (Ctrl-D) |
-| `agent_kill <index>` | Force stop (double Ctrl-C) |
-| `roost_reload` | Re-source `roost.sh` in a live shell after a deploy. A plain `source` is a **silent no-op** (double-source guard returns first) — this bypasses it |
+| `attach` | Grouped view on `main` (independent current-window per client) |
+
+`roost.sh` is **idempotent**: after a deploy, a plain `source ~/.bashrc.d/roost.sh` in a live shell applies the new version (the former load-once guard made that a silent no-op; only the fnm init is once-per-shell now).
 
 Using `/rename` inside a session updates the tmux window name automatically.
 
