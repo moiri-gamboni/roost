@@ -7,6 +7,14 @@ After=network.target
 
 [Service]
 User=moiri
+# All three are literal absolute paths — the unit deploys `plain` (no envsubst) and
+# systemd Environment= does not expand ~. GRANOLA_MIRROR is now required by the receiver
+# (no personal default); PATH must carry ~/.local/bin so the RUNNER's refresh.sh finds
+# `claude` (systemd's default PATH omits it — the bug that meant webhook-triggered notes
+# never generated); CLAUDE_CONFIG_DIR points the headless notes.sh at the roost config.
+Environment=GRANOLA_MIRROR=/home/moiri/roost/apart-research/granola
+Environment=PATH=/home/moiri/.local/bin:/home/moiri/bin:/usr/local/bin:/usr/bin:/bin
+Environment=CLAUDE_CONFIG_DIR=/home/moiri/roost/claude
 ExecStart=/usr/bin/python3 /home/moiri/roost/apart-research/apart-tools/granola-mirror/webhook_receiver.py
 Restart=on-failure
 RestartSec=5
