@@ -73,7 +73,27 @@ Validate every document you write with `roughdraft doctor <path>` before handing
 
 ## When something is broken
 
-The install is a build of our own fork, because the published package is not usable. Provenance, the fix list, and the rebase procedure are in the Roughdraft section of `CLAUDE.md` — read that before reinstalling or debugging anything that smells like a Roughdraft bug rather than a usage mistake. Two symptoms worth recognising on sight:
+The install is a build of our own fork, because the published package is not usable. Read this section before reinstalling or debugging anything that smells like a Roughdraft bug rather than a usage mistake. Two symptoms worth recognising on sight:
 
-- **`command not found`** — a Node upgrade stranded the install. Reinstall per CLAUDE.md, with `--prefix "$HOME/.local"`.
+- **`command not found`** — a Node upgrade stranded the install. Rebuild and reinstall per the procedure below, with `--prefix "$HOME/.local"`.
 - **The waiter dies around the five-minute mark** — the fork build fixes this; a stock 0.1.10 has crept back in. Interim workaround: `roughdraft open "$f" --no-watch` plus a `curl` long-poll against `POST /api/review-events/watch` with `{"projectPath":"<dirname>","path":"<basename>","fromNow":true}`, which has no client-side header cap.
+
+### Provenance
+
+Registry 0.1.10 is broken three ways, so the global `roughdraft` is built from `~/roost/code/roughdraft` (remotes: `upstream` = Lex-Inc, `fork` = moiri-gamboni), branch `main`. **The fork's `main` is the integration branch, not an upstream mirror**: a fork you install from should show its fixes on the branch you land on, and PRs are cut from separate topic branches based on `upstream/main`. As of 2026-08-24 `main` is 88 commits ahead of `upstream/main` (`git log --oneline upstream/main..main`): draft persistence and save recovery, remote-CLI reconnect, image and whitespace comments, serializer/anchor fixes, the fuzz harnesses, plus the three upstream-facing fixes:
+
+| Fix | Origin | Upstream status |
+|---|---|---|
+| `yaml` missing from the published package (every command dies on `ERR_MODULE_NOT_FOUND`) | cherry-picked from PR #110 | open |
+| `runWatch` crashed at 300s on undici's `headersTimeout`, losing the reviewer's click | cherry-picked from PR #144 | open |
+| Comment rail and selection banner dropped replies stored in YAML endmatter, and replying to such a reply silently did nothing | ours, PR #145 | open |
+
+Nothing has merged upstream since 2026-06-19. `~/roost/claude/scheduled/roughdraft-watch.sh` (daily) ntfys when upstream `main`, the npm version or any of those PRs changes, saying what it implies for the next rebase; its state is in `~/roost/claude/state/roughdraft-watch.state`.
+
+### Rebase and reinstall
+
+On `main`: `git fetch upstream && git rebase upstream/main`, drop any commit that has landed upstream, then `pnpm install && pnpm test && pnpm build && npm pack && npm i -g --prefix "$HOME/.local" ./roughdraft-*.tgz` (`pnpm` via `corepack enable --install-directory ~/bin`) and `git push --force-with-lease fork main`. The force-push is expected: rebasing keeps the fix set legible as N commits on top of upstream, which matters more here than an append-only history on a branch only we consume. Cut PR branches from `upstream/main`, never from fork `main`, or the PR carries our other work with it. The repo's own `CLAUDE.md`/`AGENTS.md` are upstream's and use a worktree-specific `roughdraft-dev-<worktree>` CLI for development; the global `roughdraft` is only ever the packed build.
+
+### Server lifecycle
+
+One long-lived process on `:7373`, started on demand by `roughdraft open`, state in `~/.roughdraft/server.json`. No systemd unit and none needed: it is not per-document, and it restarts on the next `open` after a reboot. `~/.bashrc.d/roost.sh` exports `ROUGHDRAFT_BIND_HOST` (loopback + the Tailscale IP, so the UI is reachable from the tailnet), `ROUGHDRAFT_TOKEN` (from `~/.config/roughdraft/token`; Roughdraft refuses a non-loopback bind without one because its remote endpoints rewrite files on disk) and `ROUGHDRAFT_NO_OPEN=1`.
