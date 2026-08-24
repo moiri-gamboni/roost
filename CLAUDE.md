@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guidance for Claude Code sessions on **this server** (every session on the box loads this file via the global CLAUDE.md) and for work **in this repo**. Subsystem detail lives next to the code: `files/CLAUDE.md` (deployed config files), `files/hooks/`, `files/scripts/`, `files/scheduled/`, `files/travel/`, `files/laptop/`, `files/private/` each have their own `CLAUDE.md`, loaded when you work there. Reusable procedures are in `docs/runbooks/`.
+Guidance for work **in this repo**. The box-wide facts a session elsewhere needs (layout, network, hooks, gotchas) live in the deployed global CLAUDE.md (`files/private/global-CLAUDE.md`, Infrastructure section), which no longer includes this file. Subsystem detail lives next to the code: `files/CLAUDE.md` (deployed config files), `files/hooks/`, `files/scripts/`, `files/scheduled/`, `files/travel/`, `files/laptop/`, `files/private/` each have their own `CLAUDE.md`, loaded when you work there. Reusable procedures are in `docs/runbooks/`.
 
 ## Project Overview
 
