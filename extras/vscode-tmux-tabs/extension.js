@@ -126,20 +126,38 @@ const terminalLocation = () =>
 // our profile provider, the newAttach command, or a session VS Code revived on
 // reload. processId is raced against a timeout: on revived/dying terminals it
 // can be very slow or never settle, and an unbounded await here held the sync
-// flags forever — silently disabling every future sweep until reload. A timeout
-// counts as "not attach" and is simply retried by the next poll.
+// flags forever — silently disabling every future sweep until reload.
+//
+// Verdicts are cached per terminal. A settled verdict (real pid read) is final:
+// the attach shell never execs, so its cmdline can't change out from under us.
+// A timeout is retried, but three strikes classify the terminal as a dead
+// revival corpse (`dead: true`, final) — without that, one corpse taxed every
+// future sweep 5s, which is exactly what let duplicate tabs linger for ~10s and
+// made the deferred focus land long after the gesture it belonged to.
+const probeCache = new WeakMap(); // term -> {timeouts} while unsettled, else final verdict
 async function attachProbe(term) {
+  const cached = probeCache.get(term);
+  if (cached && cached.final) return cached;
   const pid = await Promise.race([
     term.processId,
     new Promise((r) => setTimeout(() => r('timeout'), 5000)),
   ]);
-  if (pid === 'timeout' || !pid) return { pid, cmd: null, attach: false };
-  try {
-    const cmd = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').filter(Boolean);
-    return { pid, cmd, attach: cmd.includes('attach') };
-  } catch (e) {
-    return { pid, cmd: null, attach: false }; // process already gone
+  let v;
+  if (pid === 'timeout' || !pid) {
+    const timeouts = ((cached && cached.timeouts) || 0) + 1;
+    v = timeouts >= 3
+      ? { pid, cmd: null, attach: false, dead: true, final: true }
+      : { pid, cmd: null, attach: false, timeouts };
+  } else {
+    try {
+      const cmd = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').filter(Boolean);
+      v = { pid, cmd, attach: cmd.includes('attach'), final: true };
+    } catch (e) {
+      v = { pid, cmd: null, attach: false, dead: true, final: true }; // process already gone
+    }
   }
+  probeCache.set(term, v);
+  return v;
 }
 
 // Log (at most once a minute) if a sync flag has been held >30s: the signature
@@ -182,7 +200,7 @@ function openAttach({ focus = true } = {}) {
 // the only way to land in the editor area every time. When none of the views is
 // ours they're all replaced, which costs a flicker on the first gesture after a
 // reload and nothing after that.
-async function syncAttachTabs({ focus = false } = {}) {
+async function syncAttachTabs({ focus = false, since = 0 } = {}) {
   if (!cfg().get('singleAttach', true)) return;
   if (attachSyncing) { wedgeCheck('attachSyncing', attachSyncingSince); return; }
   attachSyncing = true;
@@ -191,17 +209,30 @@ async function syncAttachTabs({ focus = false } = {}) {
     const mine = new Set(owned.values());
     const views = [];
     const others = [];
-    for (const term of vscode.window.terminals) {
-      if (mine.has(term)) continue;
-      if (term.exitStatus !== undefined) {
+    const live = vscode.window.terminals.filter((t) => !mine.has(t));
+    // Probe in parallel: each dead corpse costs its 5s timeout, and paying them
+    // serially once left the sweep blind for 25s after a reload.
+    const probes = await Promise.all(live.map((t) =>
+      t.exitStatus !== undefined ? null : attachProbe(t)));
+    for (let i = 0; i < live.length; i++) {
+      const term = live[i];
+      const p = probes[i];
+      if (p === null) {
         // Deliberately never disposed (we can't identify a dead terminal's
         // command), but logged: a lingering exited tab looks like a duplicate.
         others.push(`${JSON.stringify(term.name)}(exited)`);
         if (!probed.has(term)) { probed.add(term); dbg(`attach: ignoring exited terminal ${JSON.stringify(term.name)}`); }
         continue;
       }
-      const p = await attachProbe(term);
       if (p.attach) { views.push(term); continue; }
+      // A dead terminal named like our attach view is a previous session's
+      // revival corpse (only we create that name): scrollback with no process
+      // behind it. Dispose it — left alone it reads as a duplicate tab forever.
+      if (p.dead && term.name === 'tmux: main') {
+        dbg(`attach: disposing dead revived attach view (pid=${p.pid})`);
+        term.dispose();
+        continue;
+      }
       others.push(JSON.stringify(term.name));
       if (!probed.has(term)) {
         probed.add(term);
@@ -213,6 +244,14 @@ async function syncAttachTabs({ focus = false } = {}) {
     const sig = `${views.length} attach view(s)${others.length ? ` + ${others.join(' ')}` : ''}`;
     if (sig !== lastTermsSig) { dbg(`attach: ${sig}`); lastTermsSig = sig; }
     if (!views.length) { attachTerm = null; return; }
+    // The focus intent belongs to the new-terminal gesture that queued this
+    // sweep. If probing delayed us past the point where the redirect still
+    // reads as part of that gesture, focusing now would yank the user out of
+    // wherever they've since gone (the freshly opened agent tab, typically).
+    if (focus && since && Date.now() - since > 2000) {
+      dbg('attach: focus intent stale, revealing without focus');
+      focus = false;
+    }
     const keep = views.includes(attachTerm) ? attachTerm : null;
     for (const term of views) if (term !== keep) term.dispose();
     const dropped = views.length - (keep ? 1 : 0);
@@ -392,9 +431,13 @@ function activate(context) {
     // Instant path: collapse a just-opened duplicate attach tab and focus the
     // one already there. The poll's sweep would catch it too, but seconds later
     // — too slow for this to feel like the tab-switch it's standing in for.
+    // Focus only when the opened terminal is a user gesture: our own creations
+    // (pinned tabs, the attach view) fire this event too, and a focus-true
+    // sweep on those steals focus whenever any duplicate happens to exist.
     vscode.window.onDidOpenTerminal((t) => {
       dbg(`terminal opened ${JSON.stringify(t.name)}`);
-      syncAttachTabs({ focus: true });
+      const ours = t === attachTerm || [...owned.values()].includes(t);
+      syncAttachTabs({ focus: !ours, since: Date.now() });
     }),
     vscode.window.onDidChangeWindowState((s) => {
       if (!cfg().get('autoSync', true)) return;
