@@ -2,8 +2,8 @@
 # Watch upstream Roughdraft for anything that would change our fork's job.
 #
 # The global `roughdraft` is built from our fork's main branch because
-# registry 0.1.10 is broken three ways (see the Roughdraft section of
-# CLAUDE.md). That arrangement only stays correct if we notice when upstream
+# registry 0.1.10 is broken three ways (see the roughdraft skill's
+# "When something is broken" section). That arrangement only stays correct if we notice when upstream
 # moves: a merged PR means dropping a cherry-pick, a release means re-checking
 # whether the fork is still needed at all.
 #
