@@ -120,7 +120,7 @@ else
 fi
 
 # IPv6 is enabled server-wide for travel-vpn dual-stack parity (kill-switch,
-# fwmark, Xray inbounds, path-B/C direct). See CLAUDE.md "Networking".
+# fwmark, Xray inbounds, path-B/C direct). See CLAUDE.md "Key Design Patterns" (dual-stack).
 IPV6_DISABLE=$(run cat /proc/sys/net/ipv6/conf/all/disable_ipv6)
 if [ "$IPV6_DISABLE" = "0" ]; then
     pass "IPv6 stack enabled"

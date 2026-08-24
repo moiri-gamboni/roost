@@ -304,8 +304,8 @@ GFW-resistant remote access: Xray multi-path stack (VLESS+WS behind Cloudflare, 
 |---|---|---|---|---|
 | Home, normal | ISP direct | off | off | ISP |
 | Home, private | Tailscale exit node | off | on | Proton |
-| Travel | Xray A/B/C | on | off | Hetzner |
-| Travel, private | Xray A/B/C | on | on | Proton |
+| Travel | Xray A/B/C/D | on | off | Hetzner |
+| Travel, private | Xray A/B/C/D | on | on | Proton |
 
 ### Pre-departure (2+ weeks before)
 
@@ -403,6 +403,10 @@ roost-net travel off
 ```
 
 Installs the sing-box CLI, the wrapper, the systemd unit, and fetches your config. Then `roost-travel {on|off|status|logs|config}`; `on` persists across reboots (`enable --now`), `off` unpersists. `./files/laptop/travel-clients.sh ssh >> ~/.ssh/config` adds the `ssh roost-travel` alias (routes through sing-box's SOCKS5 inbound on `127.0.0.1:54321` -- only works while the tunnel is up).
+
+### Runbooks
+
+Procedures that get re-run live in `docs/runbooks/`: `singbox-client-deploy.md` (shipping a client-render change while in-country) and `path-d-vision.md` (Path D cert/listener/abuse troubleshooting). Design and state reference for the server pieces: `files/travel/CLAUDE.md`.
 
 ### Reboot behavior
 

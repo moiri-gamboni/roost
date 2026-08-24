@@ -7,8 +7,22 @@
 #   roost-data  -> roost-data-<N>   (the Hetzner volume: docker + the notion mirror)
 # Each config carries its own incremental-parent state file; the flat naming keeps
 # the privileged helper's no-subdir contract (btrfs-backup-helper.sh) intact.
-# Retention per config: newest of each of the 3 most recent days, plus the
-# newest of the previous ISO week and of the previous month.
+# Retention per config: 5 restore points — the newest of each of the 3 most
+# recent distinct days (the newest overall is the incremental parent), plus the
+# newest of the previous ISO week and of the previous month. Days are bucketed
+# by RECEIVE time from a script-maintained index: btrfs otime is unusable here,
+# an incremental receive inherits the clone ancestor's.
+#
+# After each successful receive the new parent is pinned server-side
+# (`snapper modify --cleanup-algorithm '' --userdata pin=roost-backup`) and the
+# previous one released, so a multi-day laptop-off gap can't let snapper's
+# 24-hourly timeline cleanup age the parent out and force a ~113 GiB full resend.
+#
+# Runs with no ssh-agent, so the key comes from ROOST_SSH_KEY (ssh -i +
+# IdentitiesOnly; the installer sets it when ~/.ssh/roost-backup exists) rather
+# than an ~/.ssh/config stanza: that key is `restrict`ed in the server's
+# authorized_keys, and a `Host roost` IdentityFile would strip port forwarding
+# from every interactive session too.
 set -euo pipefail
 
 # Direct terminal runs lack the ROOST_* env the systemd unit carries; import it
