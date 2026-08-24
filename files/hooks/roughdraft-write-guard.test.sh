@@ -1,0 +1,356 @@
+#!/usr/bin/env bash
+# Filesystem test for roughdraft-write-guard.sh. Not deployed (deliberately absent from the
+# roost-apply manifest) — run it from the repo: bash files/hooks/roughdraft-write-guard.test.sh
+#
+# Each case builds a throwaway document tree, feeds a synthetic PreToolUse payload to the hook,
+# and asserts on what landed in the sidecar. Two invariants are checked on EVERY case, because
+# they are the whole posture of this hook: it exits 0, and it prints nothing (any stdout would
+# be read as a permission decision, and an "ask" is a hard deny in a headless subagent).
+#
+# The 90-second debounce is exercised with `touch -d` rather than a sleep or a test-only knob:
+# the threshold stays a single hard-coded number in the hook, and the suite stays fast.
+#
+# shellcheck disable=SC2034  # case-local vars are read by the single-quoted assertions in yn()
+# shellcheck disable=SC2016  # those assertions are single-quoted on purpose: yn() evals them
+set -uo pipefail
+
+hook="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/roughdraft-write-guard.sh"
+pass=0
+fail=0
+skip=0
+tmproot=$(mktemp -d)
+trap 'chmod -R u+rwX "$tmproot" 2>/dev/null; rm -rf "$tmproot"' EXIT
+
+# A `logger` stub ahead of the real one on PATH, so the hook's refusals are assertable without
+# needing `sudo journalctl`. The real logger is exercised separately by the health-check probe.
+stubbin="$tmproot/stubbin"
+logcap="$tmproot/logcap"
+mkdir -p "$stubbin"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "$LOGCAP"\n' > "$stubbin/logger"
+chmod +x "$stubbin/logger"
+
+MARKED=$'# Doc\n\n{==reviewed==}{>>looks good<<}{#c1}\n'
+PLAIN=$'# Doc\n\nJust prose, no review markers. {#c1} is an anchor, not a marker.\n'
+
+# A fresh document directory per case.
+newcase() { mktemp -d "$tmproot/case.XXXXXX"; }
+
+# Fire the hook the way Claude Code does: JSON on stdin, nothing else, and the script executed
+# through its own shebang rather than handed to `bash` — a broken shebang has to fail here.
+# Records the exit status in $rc, stdout in $out (both asserted by ok()) and logger calls in
+# $logcap, which is truncated per fire so `logged` only ever sees this invocation.
+fire() {
+    local tool="$1" path="$2" cwd="${3:-$tmproot}"
+    : > "$logcap"
+    out=$(jq -nc --arg t "$tool" --arg p "$path" \
+        '{tool_name: $t, tool_input: {file_path: $p}}' |
+        (cd "$cwd" && PATH="$stubbin:$PATH" LOGCAP="$logcap" "$hook"))
+    rc=$?
+}
+
+# Fire with a raw payload, for the degenerate-input cases.
+fire_raw() {
+    : > "$logcap"
+    out=$(printf '%s' "$1" | PATH="$stubbin:$PATH" LOGCAP="$logcap" "$hook")
+    rc=$?
+}
+
+logged() { grep -qF -- "$1" "$logcap"; }
+
+# Several cases turn on a mode bit the root user ignores. Say so rather than passing vacuously.
+skip_if_root() {
+    [ "$(id -u)" -eq 0 ] || return 1
+    skip=$((skip + 1))
+    printf 'SKIP  %s  [running as root: mode bits do not apply]\n' "$1"
+    return 0
+}
+
+ok() {
+    local cond="$1" label="$2"
+    if [ "$rc" -ne 0 ]; then
+        fail=$((fail + 1))
+        printf 'FAIL  %s  [hook exited %d, must always be 0]\n' "$label" "$rc"
+        return
+    fi
+    if [ -n "$out" ]; then
+        fail=$((fail + 1))
+        printf 'FAIL  %s  [hook wrote to stdout: %s]\n' "$label" "$out"
+        return
+    fi
+    if [ "$cond" = "yes" ]; then
+        pass=$((pass + 1))
+        printf 'ok    %s\n' "$label"
+    else
+        fail=$((fail + 1))
+        printf 'FAIL  %s\n' "$label"
+    fi
+}
+
+yn() { if eval "$1"; then echo yes; else echo no; fi; }
+
+# Snapshots for <doc> live in <dir>/.roughdraft-history/v1/<stem>/.
+leafdir() {
+    local doc="$1" dir base
+    dir=$(dirname -- "$doc")
+    base=$(basename -- "$doc")
+    printf '%s/.roughdraft-history/v1/%s' "$dir" "${base%.md}"
+}
+
+# Counts real snapshots only — files whose names are conforming ids. Anything else in the leaf
+# is not a snapshot to the hook either, so counting it here would hide exactly that bug.
+countsnaps() {
+    local leaf
+    leaf=$(leafdir "$1")
+    find "$leaf" -maxdepth 1 -type f -regextype posix-extended \
+        -regex '.*/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{3}Z--p[0-9]+--(save|review|replaced|hook)\.md' \
+        2>/dev/null | wc -l
+}
+
+# Age everything already in the sidecar so the debounce never masks the case under test.
+age_sidecar() {
+    local leaf
+    leaf=$(leafdir "$1")
+    [ -d "$leaf" ] || return 0
+    find "$leaf" -maxdepth 1 -type f -name '*.md' -exec touch -d '2 hours ago' -- {} +
+}
+
+# --- the bail ladder ---
+
+d=$(newcase); printf '%s' "$MARKED" > "$d/notes.txt"
+fire Write "$d/notes.txt"
+ok "$(yn '[ ! -d "$d/.roughdraft-history" ]')" 'non-.md file is ignored'
+
+d=$(newcase); printf '%s' "$PLAIN" > "$d/plain.md"
+fire Write "$d/plain.md"
+ok "$(yn '[ ! -d "$d/.roughdraft-history" ]')" '.md without CriticMarkup markers is ignored'
+
+d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"
+fire Read "$d/doc.md"
+ok "$(yn '[ ! -d "$d/.roughdraft-history" ]')" 'a non-Write/Edit tool is ignored'
+
+d=$(newcase)
+fire Write "$d/absent.md"
+ok "$(yn '[ ! -d "$d/.roughdraft-history" ]')" 'a file that does not exist yet is ignored'
+
+d=$(newcase); printf '%s' "$MARKED" > "$d/secret.md"; chmod 000 "$d/secret.md"
+fire Write "$d/secret.md"
+ok "$(yn '[ ! -d "$d/.roughdraft-history" ]')" 'an unreadable file is ignored (and does not crash)'
+chmod 644 "$d/secret.md"
+
+d=$(newcase); mkdir -p "$d/.roughdraft-history/v1/doc"
+printf '%s' "$MARKED" > "$d/.roughdraft-history/v1/doc/2026-01-01T00-00-00-000Z--p1--save.md"
+fire Write "$d/.roughdraft-history/v1/doc/2026-01-01T00-00-00-000Z--p1--save.md"
+ok "$(yn '[ ! -d "$d/.roughdraft-history/v1/doc/.roughdraft-history" ]')" \
+    'a path already inside .roughdraft-history is skipped (no history of history)'
+
+d=$(newcase); mkdir -p "$d/.RoughDraft-History/v1/doc"
+printf '%s' "$MARKED" > "$d/.RoughDraft-History/v1/doc/2026-01-01T00-00-00-000Z--p1--save.md"
+fire Write "$d/.RoughDraft-History/v1/doc/2026-01-01T00-00-00-000Z--p1--save.md"
+ok "$(yn '[ -z "$(find "$d/.RoughDraft-History/v1/doc" -mindepth 1 -type d)" ]')" \
+    'the history-segment skip is case-insensitive, matching the server'
+
+fire_raw ''
+ok yes 'empty stdin payload exits 0 silently'
+
+fire_raw 'not json at all'
+ok yes 'malformed payload exits 0 silently'
+
+fire_raw '{"tool_name":"Write","tool_input":{}}'
+ok yes 'missing file_path exits 0 silently'
+
+# --- the snapshot itself ---
+
+d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"
+fire Write "$d/doc.md"
+leaf=$(leafdir "$d/doc.md")
+ok "$(yn '[ "$(countsnaps "$d/doc.md")" -eq 1 ]')" 'Write to a marker-bearing .md creates one snapshot'
+
+snap=$(find "$leaf" -maxdepth 1 -type f -name '*.md')
+ok "$(yn 'cmp -s -- "$d/doc.md" "$snap"')" 'the snapshot is byte-identical to the pre-write file'
+
+ok "$(yn '[[ $(basename -- "$snap") =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{3}Z--p[0-9]+--hook\.md$ ]]')" \
+    'the snapshot filename matches the frozen id grammar'
+
+ok "$(yn '[ "$(cat "$d/.roughdraft-history/.gitignore")" = "*" ]')" \
+    'creating the history dir writes a .gitignore containing *'
+
+d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"
+fire Edit "$d/doc.md"
+ok "$(yn '[ "$(countsnaps "$d/doc.md")" -eq 1 ]')" 'Edit snapshots too'
+
+d=$(newcase); printf '%s' "$MARKED" > "$d/a b.md"
+fire Write "$d/a b.md"
+ok "$(yn '[ "$(countsnaps "$d/a b.md")" -eq 1 ]')" 'a document whose name contains a space is snapshotted'
+
+# The payload Claude Code actually sends carries five more top-level fields and a full
+# tool_input. The two the hook reads must still come out of it.
+d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"
+fire_raw "$(jq -nc --arg p "$d/doc.md" '{
+    session_id: "abc123", transcript_path: "/home/u/t.jsonl", cwd: "/home/u",
+    permission_mode: "acceptEdits", hook_event_name: "PreToolUse", tool_name: "Write",
+    tool_input: {file_path: $p, content: "# Doc\n\nrewritten\n"}}')"
+ok "$(yn '[ "$(countsnaps "$d/doc.md")" -eq 1 ]')" 'a full realistic PreToolUse payload is parsed'
+
+# --- dedup and debounce ---
+
+d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"
+fire Write "$d/doc.md"
+age_sidecar "$d/doc.md"
+fire Write "$d/doc.md"
+ok "$(yn '[ "$(countsnaps "$d/doc.md")" -eq 1 ]')" \
+    'identical content is deduped against the newest snapshot'
+
+d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"
+fire Write "$d/doc.md"
+printf '%s' "${MARKED}changed\n" > "$d/doc.md"
+fire Write "$d/doc.md"
+ok "$(yn '[ "$(countsnaps "$d/doc.md")" -eq 1 ]')" \
+    'a second write within the debounce window does not churn the ring'
+
+age_sidecar "$d/doc.md"
+fire Write "$d/doc.md"
+ok "$(yn '[ "$(countsnaps "$d/doc.md")" -eq 2 ]')" \
+    'changed content past the debounce window is snapshotted'
+
+# The debounce coalesces the hook against ITSELF and nothing else. A trigger-blind window would
+# swallow the one capture that matters most: Roughdraft saves the reviewer's work at t=0, the
+# reviewer keeps editing, an agent overwrites the file at t<90s, and the edits made since that
+# save exist in no snapshot anywhere. Whose burst it is decides whether coalescing is safe.
+for trigger in save review replaced; do
+    d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"
+    leaf="$d/.roughdraft-history/v1/doc"
+    mkdir -p "$leaf"
+    printf 'what the server wrote a moment ago\n' \
+        > "$leaf/2026-01-01T00-00-00-000Z--p1--$trigger.md"
+    fire Write "$d/doc.md"
+    ok "$(yn '[ "$(countsnaps "$d/doc.md")" -eq 2 ]')" \
+        "a fresh --$trigger snapshot does not debounce the hook's own capture"
+done
+
+d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"
+leaf="$d/.roughdraft-history/v1/doc"
+mkdir -p "$leaf"
+printf '%s' "$MARKED" > "$leaf/2026-01-01T00-00-00-000Z--p1--save.md"
+fire Write "$d/doc.md"
+ok "$(yn '[ "$(countsnaps "$d/doc.md")" -eq 1 ]')" \
+    'a fresh --save snapshot with identical bytes still dedups (content rule is trigger-blind)'
+
+# --- refusals that must leave a journald trace ---
+# Both of these mean this document silently gets no protection at all, for ever. The probe
+# cannot see either (it fires at its own fixture), so the log line is the only evidence.
+
+label='an unwritable document directory is refused, and says so in the log'
+if ! skip_if_root "$label"; then
+    d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"; chmod 0555 "$d"
+    fire Write "$d/doc.md"
+    ok "$(yn '[ ! -d "$d/.roughdraft-history" ] && logged "cannot create"')" "$label"
+    chmod 0755 "$d"
+fi
+
+label='an unlistable sidecar leaf is refused rather than treated as empty'
+if ! skip_if_root "$label"; then
+    d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"
+    leaf="$d/.roughdraft-history/v1/doc"
+    mkdir -p "$leaf"
+    printf 'older\n' > "$leaf/2020-01-01T00-00-00-000Z--p1--hook.md"
+    chmod 0300 "$leaf"
+    fire Write "$d/doc.md"
+    chmod 0755 "$leaf"   # restore before asserting: the assertion has to read the dir too
+    ok "$(yn '[ "$(countsnaps "$d/doc.md")" -eq 1 ] && logged "cannot list"')" "$label"
+fi
+
+# --- only conforming ids are snapshots ---
+# A bare *.md glob made any file in the leaf a snapshot: a hand-placed `zzz.md` sorting after
+# every real id became the dedup baseline (defeating both dedup and the --hook coalescing
+# window), counted toward the cap, and was itself evictable.
+
+d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"
+leaf="$d/.roughdraft-history/v1/doc"
+mkdir -p "$leaf"
+printf '%s' "$MARKED" > "$leaf/zzz.md"
+fire Write "$d/doc.md"
+ok "$(yn '[ "$(countsnaps "$d/doc.md")" -eq 1 ]')" \
+    'a non-conforming file is not the dedup baseline, even with identical bytes'
+
+d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"
+leaf="$d/.roughdraft-history/v1/doc"
+mkdir -p "$leaf"
+printf 'not a snapshot\n' > "$leaf/zzz.md"
+printf 'not a snapshot\n' > "$leaf/notes.md"
+printf 'not a snapshot\n' > "$leaf/2026-01-01T00-00-00-000Z--p1--bogus.md"
+for i in $(seq -w 1 55); do
+    printf 'filler %s\n' "$i" > "$leaf/2020-01-01T00-00-${i}-000Z--p1--save.md"
+done
+age_sidecar "$d/doc.md"
+fire Write "$d/doc.md"
+ok "$(yn '[ "$(countsnaps "$d/doc.md")" -eq 50 ]')" \
+    'non-conforming files do not count toward the 50-entry cap'
+ok "$(yn '[ -f "$leaf/zzz.md" ] && [ -f "$leaf/notes.md" ] && [ -f "$leaf/2026-01-01T00-00-00-000Z--p1--bogus.md" ]')" \
+    'non-conforming files are never evicted'
+
+# --- symlink refusal (S4) ---
+
+d=$(newcase); elsewhere=$(newcase)
+printf '%s' "$MARKED" > "$d/doc.md"
+ln -s "$elsewhere" "$d/.roughdraft-history"
+fire Write "$d/doc.md"
+ok "$(yn '[ -z "$(find "$elsewhere" -mindepth 1)" ]')" \
+    'a symlinked .roughdraft-history is refused, writing nothing into the target'
+
+d=$(newcase); elsewhere=$(newcase)
+printf '%s' "$MARKED" > "$d/doc.md"
+mkdir -p "$d/.roughdraft-history"
+ln -s "$elsewhere" "$d/.roughdraft-history/v1"
+fire Write "$d/doc.md"
+ok "$(yn '[ -z "$(find "$elsewhere" -mindepth 1)" ]')" 'a symlinked v1 dir is refused'
+
+d=$(newcase); elsewhere=$(newcase)
+printf '%s' "$MARKED" > "$d/doc.md"
+mkdir -p "$d/.roughdraft-history/v1"
+ln -s "$elsewhere" "$d/.roughdraft-history/v1/doc"
+fire Write "$d/doc.md"
+ok "$(yn '[ -z "$(find "$elsewhere" -mindepth 1)" ]')" 'a symlinked <stem> leaf is refused'
+
+# --- prune: the cap, the pinned review entry, and the poisoned-filename attack (S3) ---
+
+d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"
+leaf="$d/.roughdraft-history/v1/doc"
+mkdir -p "$leaf"
+# The oldest entry is the last reviewed state: it must survive eviction.
+printf 'reviewed\n' > "$leaf/2020-01-01T00-00-00-000Z--p1--review.md"
+for i in $(seq -w 2 56); do
+    printf 'filler %s\n' "$i" > "$leaf/2020-01-01T00-00-${i}-000Z--p1--save.md"
+done
+age_sidecar "$d/doc.md"
+before=$(countsnaps "$d/doc.md")
+fire Write "$d/doc.md"
+ok "$(yn '[ "$before" -eq 56 ] && [ "$(countsnaps "$d/doc.md")" -eq 50 ]')" \
+    'the ring is pruned back to 50 entries'
+ok "$(yn '[ -f "$leaf/2020-01-01T00-00-00-000Z--p1--review.md" ]')" \
+    'the newest --review entry is never evicted, even as the oldest file'
+ok "$(yn '[ ! -f "$leaf/2020-01-01T00-00-02-000Z--p1--save.md" ]')" \
+    'eviction takes the oldest non-review entries first'
+
+# S3: a planted filename containing a space must not turn the prune into a delete of unrelated
+# files in whatever directory the agent happened to be standing in. The id filter now closes
+# this twice over — a space cannot appear in a conforming id, so such a file is never a prune
+# candidate — but the NUL-safe enumeration is what has to hold if the grammar ever widens.
+d=$(newcase); cwd=$(newcase)
+printf '%s' "$MARKED" > "$d/doc.md"
+leaf="$d/.roughdraft-history/v1/doc"
+mkdir -p "$leaf"
+printf 'poison\n' > "$leaf/0000 evil.md"
+for i in $(seq -w 1 55); do
+    printf 'filler %s\n' "$i" > "$leaf/2020-01-01T00-00-${i}-000Z--p1--save.md"
+done
+age_sidecar "$d/doc.md"
+printf 'bystander\n' > "$cwd/0000"
+printf 'bystander\n' > "$cwd/evil.md"
+fire Write "$d/doc.md" "$cwd"
+ok "$(yn '[ -f "$cwd/0000" ] && [ -f "$cwd/evil.md" ]')" \
+    'S3: a space in a planted name does not delete same-named files in the cwd'
+ok "$(yn '[ -f "$leaf/0000 evil.md" ] && [ "$(countsnaps "$d/doc.md")" -eq 50 ]')" \
+    'S3: the prune ran to the cap and left the non-conforming planted file alone'
+
+printf '\n%d passed, %d failed, %d skipped\n' "$pass" "$fail" "$skip"
+[ "$fail" -eq 0 ]

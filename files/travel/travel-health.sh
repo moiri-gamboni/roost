@@ -149,3 +149,73 @@ else
     FAILURES="$FAILURES\n- PrivateBin write gate returned $_pb_gate (public side may be writable)"
 fi
 unset _pb_gate
+
+# --- Roughdraft write-guard hook liveness ---
+# The hook is invisible when it works and just as invisible when it breaks: a missing jq, a
+# drifted path layout, a syntax error, all of it fails silently by design, nothing reads its
+# journald tag, and the loss only surfaces months later as a clobber nobody can undo. Three
+# separate deaths are checked, because they fail in different places.
+_rdg_hook="$CLAUDE_CONFIG_DIR/hooks/roughdraft-write-guard.sh"
+_rdg_marker="$CLAUDE_CONFIG_DIR/state/roughdraft-hook-deployed"
+
+if [ -x "$_rdg_hook" ]; then
+    # 1. Does the script still work? Fire the DEPLOYED hook at a fixture and assert the two
+    # things it must do: write a snapshot, and write NOTHING to stdout (any output there is
+    # parsed as a permission decision, and an "ask" denies the tool call in every headless
+    # context on this box). Executed through its shebang, not via `bash`, so a broken shebang
+    # fails here rather than in production. One fixture per CriticMarkup marker: a single
+    # fixture carrying all five would still match on the others if one grep arm were lost, so
+    # it could not detect the drift it exists to detect.
+    _rdg_missed=""
+    _rdg_noisy=""
+    for _rdg_m in '{>>c<<}' '{++a++}' '{--d--}' '{~~o~>n~~}' '{==h==}'; do
+        _rdg_dir=$(mktemp -d)
+        printf '# probe\n\nbody %s\n' "$_rdg_m" > "$_rdg_dir/probe.md"
+        _rdg_out=$(printf '{"tool_name":"Write","tool_input":{"file_path":"%s"}}' \
+            "$_rdg_dir/probe.md" | "$_rdg_hook")
+        if [ -z "$(find "$_rdg_dir/.roughdraft-history/v1/probe" -maxdepth 1 -type f \
+            -name '*.md' 2>/dev/null | head -1)" ]; then
+            _rdg_missed="$_rdg_missed $_rdg_m"
+        fi
+        [ -n "$_rdg_out" ] && _rdg_noisy="$_rdg_noisy $_rdg_m"
+        rm -rf "$_rdg_dir"
+    done
+
+    if [ -n "$_rdg_missed" ]; then
+        logger -t "$_HOOK_TAG" "FAIL: roughdraft write-guard hook wrote no snapshot for:$_rdg_missed"
+        FAILURES="$FAILURES\n- roughdraft write-guard hook wrote no snapshot for:$_rdg_missed (broken or drifted)"
+    elif [ -n "$_rdg_noisy" ]; then
+        logger -t "$_HOOK_TAG" "FAIL: roughdraft write-guard hook wrote to stdout for:$_rdg_noisy"
+        FAILURES="$FAILURES\n- roughdraft write-guard hook emitted output (would be read as a permission decision)"
+    else
+        logger -t "$_HOOK_TAG" "OK: roughdraft write-guard hook snapshots silently"
+        # Remember that it was once working, so a later disappearance stops looking pre-deploy.
+        if [ ! -e "$_rdg_marker" ]; then
+            mkdir -p "$(dirname "$_rdg_marker")" && touch "$_rdg_marker"
+        fi
+    fi
+    unset _rdg_dir _rdg_out _rdg_m _rdg_missed _rdg_noisy
+
+    # 2. Is it still WIRED? A working script nothing calls is the likeliest death of all: the
+    # PreToolUse entry lives in settings.json, which the app rewrites at runtime and which is
+    # therefore edited live rather than deployed, so the entry can be dropped without anyone
+    # touching this repo. Assert an entry exists whose command names the hook and whose matcher
+    # — used as a regex, the way Claude Code uses it — covers both Write and Edit.
+    if jq -e '[ .hooks.PreToolUse[]?
+                | select([.hooks[]?.command // ""] | any(test("roughdraft-write-guard")))
+                | .matcher // ""
+                | . as $m
+                | select(("Write" | test($m)) and ("Edit" | test($m))) ] | length > 0' \
+        "$CLAUDE_CONFIG_DIR/settings.json" > /dev/null; then
+        logger -t "$_HOOK_TAG" "OK: roughdraft write-guard hook is wired for Write|Edit"
+    else
+        logger -t "$_HOOK_TAG" "FAIL: no PreToolUse Write|Edit entry invokes roughdraft-write-guard"
+        FAILURES="$FAILURES\n- roughdraft write-guard hook is deployed but not wired in settings.json (Claude Code never calls it)"
+    fi
+elif [ -e "$_rdg_marker" ]; then
+    # 3. It worked here once, so its absence is a regression — a lost manifest row, a bad
+    # roost-apply, a chmod — not the pre-deploy state. Before the marker exists, silence.
+    logger -t "$_HOOK_TAG" "FAIL: roughdraft write-guard hook is missing or not executable"
+    FAILURES="$FAILURES\n- roughdraft write-guard hook has disappeared since it last worked ($_rdg_hook)"
+fi
+unset _rdg_hook _rdg_marker
