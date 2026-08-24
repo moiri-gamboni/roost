@@ -201,5 +201,6 @@
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
   "agentPushNotifEnabled": false,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "autoContinueAtUsageLimit": false
 }
