@@ -179,6 +179,29 @@ fire Write "$d/doc.md"
 ok "$(yn '[ "$(countsnaps "$d/doc.md")" -eq 2 ]')" \
     'changed content past the debounce window is snapshotted'
 
+# The debounce coalesces the hook against ITSELF and nothing else. A trigger-blind window would
+# swallow the one capture that matters most: Roughdraft saves the reviewer's work at t=0, the
+# reviewer keeps editing, an agent overwrites the file at t<90s, and the edits made since that
+# save exist in no snapshot anywhere. Whose burst it is decides whether coalescing is safe.
+for trigger in save review replaced; do
+    d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"
+    leaf="$d/.roughdraft-history/v1/doc"
+    mkdir -p "$leaf"
+    printf 'what the server wrote a moment ago\n' \
+        > "$leaf/2026-01-01T00-00-00-000Z--p1--$trigger.md"
+    fire Write "$d/doc.md"
+    ok "$(yn '[ "$(countsnaps "$d/doc.md")" -eq 2 ]')" \
+        "a fresh --$trigger snapshot does not debounce the hook's own capture"
+done
+
+d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"
+leaf="$d/.roughdraft-history/v1/doc"
+mkdir -p "$leaf"
+printf '%s' "$MARKED" > "$leaf/2026-01-01T00-00-00-000Z--p1--save.md"
+fire Write "$d/doc.md"
+ok "$(yn '[ "$(countsnaps "$d/doc.md")" -eq 1 ]')" \
+    'a fresh --save snapshot with identical bytes still dedups (content rule is trigger-blind)'
+
 # --- symlink refusal (S4) ---
 
 d=$(newcase); elsewhere=$(newcase)

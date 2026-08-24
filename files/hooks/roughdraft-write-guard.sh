@@ -94,9 +94,21 @@ if [ -n "$newest" ]; then
     cmp -s -- "$file" "$newest" && exit 0
 
     # Debounce: an agent's edit burst is a dozen writes in a minute, and letting each one land
-    # would evict the reviewed state out of a 50-entry ring within a single task.
-    mtime=$(stat -c %Y -- "$newest" 2>/dev/null || echo 0)
-    [ $(( $(date +%s) - mtime )) -lt 90 ] && exit 0
+    # would evict the reviewed state out of a 50-entry ring within a single task. It coalesces
+    # the hook against ITSELF only — after the first capture the newest entry is a fresh
+    # `--hook` snapshot, so the rest of the burst folds into it, which is the whole point.
+    #
+    # It must NOT coalesce against another writer's trigger. Roughdraft saves the reviewer's
+    # work as `--save` at t=0, the reviewer keeps typing, an agent overwrites the file at
+    # t<90s: a trigger-blind window would skip precisely the capture that holds those edits,
+    # and they would exist in no snapshot anywhere. Whose burst it is decides whether
+    # coalescing is safe. (The server side is symmetric: it coalesces `save` against `save`.)
+    case "$newest" in
+        *--hook.md)
+            mtime=$(stat -c %Y -- "$newest" 2>/dev/null || echo 0)
+            [ $(( $(date +%s) - mtime )) -lt 90 ] && exit 0
+            ;;
+    esac
 fi
 
 snap="$leaf/$(date -u +%Y-%m-%dT%H-%M-%S-%3NZ)--p$$--hook.md"
