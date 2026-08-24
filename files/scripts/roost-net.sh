@@ -1,6 +1,26 @@
 #!/bin/bash
 # roost-net — travel-VPN control CLI.
 # Env sources: .sync-env (DOMAIN, USERNAME), state.env (Xray keys, 0600 root).
+#
+#   status                     toggles, egress IP, service states
+#   travel on|off              deploy/remove the CF tunnel fragment; open/close UFW for
+#                              443/tcp, 51820/tcp+udp and 8443/tcp (the last only when the
+#                              Vision cert exists; warns otherwise)
+#   vpn on|off                 enable/disable wg-quick@wg-proton + keepalive timer; on
+#                              activation verify egress is external (not our Hetzner IP)
+#   vpn profile [name]         list/activate Proton profiles under
+#                              /etc/roost-travel/proton-profiles/*.conf (synthesizes
+#                              /etc/wireguard/wg-proton.conf; hot-restarts if vpn=on)
+#   path [a|b|c|d|auto]        pin client renders to one Xray path (writes
+#                              /etc/roost-travel/path); render-time only — re-fetch
+#                              client configs to apply
+#   test                       fwmark masking, kill-switch REJECT, external egress,
+#                              Path D chain (cert validity, :8443, fallback responds)
+#   client {android|laptop|ssh}  emit sing-box or SSH config from state.env
+#   rotate-keys                keys-init.sh --force, then restart xray
+#
+# Design/state reference: files/travel/CLAUDE.md. Client deploy procedure:
+# docs/runbooks/singbox-client-deploy.md.
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/../lib/_hook-env.sh"
 
