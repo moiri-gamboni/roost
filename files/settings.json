@@ -210,5 +210,5 @@
   "remoteControlAtStartup": false,
   "agentPushNotifEnabled": false,
   "skipAutoPermissionPrompt": true,
-  "autoContinueAtUsageLimit": false
+  "autoContinueAtUsageLimit": true
 }
