@@ -55,6 +55,14 @@
             "type": "command",
             "command": "~/roost/claude/scripts/session.sh --turn-fail",
             "timeout": 2
+          },
+          {
+            "type": "command",
+            "command": "~/roost/claude/scripts/session.sh --rewake-waiter",
+            "timeout": 700000,
+            "asyncRewake": true,
+            "rewakeMessage": "Claude usage limits (auto-resume waiter):",
+            "rewakeSummary": "usage waiter: fresh window — auto-resuming"
           }
         ]
       }

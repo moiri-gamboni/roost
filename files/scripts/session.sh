@@ -63,18 +63,27 @@
 #                     one-line refresh notice (no breakdown) telling the model
 #                     the cap is fresh and work can resume; per-session warn
 #                     state (reset ts + login) lives in sessions/<sid>.warn.
-#   session --rewake-waiter  UserPromptSubmit plumbing, second entry, run with
-#                     asyncRewake:true so the harness backgrounds it and treats
-#                     exit 2 as "wake the model with stderr as a system
-#                     reminder" (task-notification channel — wakes even an idle
-#                     session; verified on 2.1.233). Below the warn threshold
-#                     every spawn exits 0 immediately; above it the first spawn
-#                     per session becomes the waiter (pidfile-deduped), sleeps
-#                     to the earliest warned reset, and exits 2 = auto-resume —
-#                     also on a mid-wait login switch. Exits 0 without waiting
-#                     under a `claude -p` parent: the harness only backgrounds
-#                     asyncRewake for interactive/streaming sessions, so there
-#                     the hook would run synchronously and block the print run.
+#   session --rewake-waiter  asyncRewake hook plumbing (second UserPromptSubmit
+#                     entry AND second StopFailure entry): the harness
+#                     backgrounds it and treats exit 2 as "wake the model with
+#                     stderr as a system reminder" (task-notification channel —
+#                     wakes even an idle session; verified on 2.1.233 for
+#                     UserPromptSubmit; StopFailure rides the same
+#                     schema-generic asyncRewake field). From UserPromptSubmit:
+#                     below the warn threshold every spawn exits 0 immediately;
+#                     above it the first spawn per session becomes the waiter
+#                     (pidfile-deduped). From StopFailure: arms only when the
+#                     turn died on a usage cap (error ~ rate_limit), and then
+#                     regardless of the warn threshold — the one path that
+#                     covers a cap arriving mid-turn with no prompt ever
+#                     submitted in the warned band. The waiter sleeps to the
+#                     earliest warned reset and exits 2 = auto-resume — also on
+#                     a mid-wait login switch, detected within ~1s via an
+#                     inotify watch on the config dir (15s polling without
+#                     inotifywait). Exits 0 without waiting under a `claude -p`
+#                     parent: the harness only backgrounds asyncRewake for
+#                     interactive/streaming sessions, so there the hook would
+#                     run synchronously and block the print run.
 #                     Side effect every turn, gated or not: appends this turn's
 #                     START event to the turn log.
 #   session --turn-end  Stop-hook plumbing: appends the turn's END event to the
@@ -753,8 +762,9 @@ Guard config (environment, per window):
 Plumbing (wired via settings.json hooks + tmux hooks; not for interactive use):
   session --hook                   UserPromptSubmit: log turn start; inject usage
                                    line + ⚠ only at >=USAGE_WARN_PCT (default 90)
-  session --rewake-waiter          UserPromptSubmit (asyncRewake entry): arms the
-                                   auto-resume waiter once a window warns; its
+  session --rewake-waiter          UserPromptSubmit + StopFailure (asyncRewake
+                                   entries): arms the auto-resume waiter once a
+                                   window warns (or the turn died on a cap); its
                                    exit 2 wakes the session at the reset/switch
   session --turn-end|--turn-fail|--session-end|--subagent-start|--subagent-end|
           --compact-mark|--perm-mark   append one lifecycle event row; always exit 0
@@ -1443,9 +1453,9 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
       wcmd="\`session --wait week\` in the background (Bash run_in_background: true; skip if one is already running)"
     fi
     if grep -q 'rewake-waiter' "$cfg/settings.json" 2>/dev/null; then
-      line="$line"$'\n'"$lead This is not a reason to stop, wind down, or hold back parallel/fan-out work — worst case is a pause until the reset, and an auto-resume waiter is already armed: if this session is paused by the cap, it will be woken automatically when the window resets or the login switches. No action needed; keep working, fan-out included."
+      line="$line"$'\n'"$lead This is not a reason to stop, wind down, or hold back parallel/fan-out work — worst case is a pause until the reset, and an auto-resume waiter is already armed: if this session is paused by the cap, it will be woken automatically when the window resets or the login switches. No action needed; keep working, fan-out included. Also: any usage-limit error's reset time — in this session or a subagent's failure message — is scoped to the current login; a login switch (\`session account\`) lifts the cap immediately, so never treat a quoted reset time as a deadline or a planning constraint."
     else
-      line="$line"$'\n'"$lead This is not a reason to stop, wind down, or hold back parallel/fan-out work — worst case is a pause until the reset. FIRST launch $wcmd: a \`--wait\`'s exit is the only signal that auto-resumes you — ending a turn saying \"I'll wait for the reset\" launches nothing and sleeps until a human returns, and once paused you cannot launch anything. Then keep working, fan-out included."
+      line="$line"$'\n'"$lead This is not a reason to stop, wind down, or hold back parallel/fan-out work — worst case is a pause until the reset. FIRST launch $wcmd: a \`--wait\`'s exit is the only signal that auto-resumes you — ending a turn saying \"I'll wait for the reset\" launches nothing and sleeps until a human returns, and once paused you cannot launch anything. Then keep working, fan-out included. Also: any usage-limit error's reset time — in this session or a subagent's failure message — is scoped to the current login; a login switch (\`session account\`) lifts the cap immediately, so never treat a quoted reset time as a deadline or a planning constraint."
     fi
   fi
   # Below the threshold the hook emits nothing at all (for UserPromptSubmit, no
@@ -1472,8 +1482,9 @@ if [ "$mode" = wait ] || [ "$mode" = rewake ]; then
   # and after `session account use` the live session is gated by the new
   # login's windows instead — sleeping on toward the old login's reset would
   # wake at a meaningless time and sleep straight through the real event, the
-  # switch. Checked at each ≤300s sleep chunk, so detection lags the switch by
-  # up to 5m. Transient reads (the switch rewrites .claude.json in place) and
+  # switch. Checked after every flip_wait, which returns within ~1s of a
+  # config-dir write when inotifywait is available (else at its 15s poll
+  # cadence). Transient reads (the switch rewrites .claude.json in place) and
   # an unknown launch login return "no flip" rather than a spurious wake-up.
   # Sets NEWACCT and returns 0 on a flip; call sites word their own message.
   login_flip() {
@@ -1484,23 +1495,46 @@ if [ "$mode" = wait ] || [ "$mode" = rewake ]; then
     NEWACCT=$a
   }
   flip_msg() { printf 'Claude login switched mid-wait (%s → %s) — this wait no longer applies: the live login'\''s windows gate the session now. Treat this as the wake-up and re-check `session`.\n' "$acct" "$NEWACCT"; }
+  # Sleep up to $1 seconds, returning early when the login may have changed.
+  # Event-driven: blocks on inotify for .claude.json / .credentials.json in the
+  # config DIR (the app replaces these files atomically via rename, which would
+  # orphan a watch on the file's own inode). The app rewrites .claude.json
+  # routinely, so early returns are frequent — each just costs the caller one
+  # jq compare — and the 1s settle both debounces that stream and lets a
+  # switch's second file land before the compare. Fallback without inotifywait:
+  # plain 15s polling (callers still cap chunks at 300s as a missed-event
+  # backstop, which was the only cadence before the watch existed).
+  flip_wait() {
+    if command -v inotifywait >/dev/null 2>&1; then
+      inotifywait -qq -t "$1" -e moved_to -e close_write \
+        --include '\.(claude|credentials)\.json$' "$cfg" 2>/dev/null || true
+      sleep 1
+    else
+      local t=$1; (( t > 15 )) && t=15
+      sleep "$t"
+    fi
+  }
 fi
 
 if [ "$mode" = rewake ]; then
-  # asyncRewake plumbing: the second UserPromptSubmit hook entry in
-  # settings.json runs this with asyncRewake:true, so the harness backgrounds
-  # it and — when it exits 2 — wakes the model with stderr as a system
-  # reminder, delivered through the same task-notification channel as a
-  # finished background Bash task (verified empirically on 2.1.233: an idle
-  # session gets a fresh turn). That makes the auto-resume waiter deterministic
-  # instead of an instruction the ⚠ advisory hopes the model follows: below
-  # the warn threshold every spawn exits 0 in ~no time; once a window crosses
-  # it, the first spawn becomes the waiter, sleeps to the earliest warned
-  # reset (login-switch aware), and exits 2 = wake. Exit 0 on every quiet
-  # path — an asyncRewake hook only wakes on exit 2.
+  # asyncRewake plumbing: run as the second hook entry (asyncRewake:true) on
+  # BOTH UserPromptSubmit and StopFailure, so the harness backgrounds it and —
+  # when it exits 2 — wakes the model with stderr as a system reminder,
+  # delivered through the same task-notification channel as a finished
+  # background Bash task (verified empirically on 2.1.233 for UserPromptSubmit:
+  # an idle session gets a fresh turn; asyncRewake is schema-generic across
+  # events). That makes the auto-resume waiter deterministic instead of an
+  # instruction the ⚠ advisory hopes the model follows: below the warn
+  # threshold every UserPromptSubmit spawn exits 0 in ~no time; once a window
+  # crosses it — or a turn dies on a usage cap (the StopFailure path) — the
+  # first spawn becomes the waiter, sleeps to the earliest warned reset
+  # (login-switch aware), and exits 2 = wake. Exit 0 on every quiet path — an
+  # asyncRewake hook only wakes on exit 2.
   [ -t 0 ] && exit 0                       # plumbing: needs the hook's stdin JSON
-  hsid=$(jq -r '.session_id // empty' 2>/dev/null || true)
-  [ -n "$hsid" ] || exit 0
+  IFS=$'\t' read -r hsid hev herr < <(jq -r \
+    '[(.session_id//""),(.hook_event_name//""),(.error_type//.error//"")]|@tsv' \
+    2>/dev/null || true)
+  [ -n "${hsid:-}" ] || exit 0
   # Never become a long waiter under a non-interactive parent: the harness
   # only backgrounds asyncRewake when isInteractive()||hasStreamingInput()
   # (read out of the 2.1.233 bundle), so under `claude -p` this hook runs
@@ -1516,7 +1550,24 @@ if [ "$mode" = rewake ]; then
   f_warn=0; w_warn=0
   [ "$f_stale" = 0 ] && (( fp >= thr )) && f_warn=1
   [ "$w_stale" = 0 ] && (( wp >= thr )) && w_warn=1
-  (( f_warn || w_warn )) || exit 0
+  if [ "$hev" = StopFailure ]; then
+    # a turn that died on a usage cap is capped whatever the (possibly lagging)
+    # cache says — this is the only arming path for a cap that arrives mid-turn
+    # with no prompt ever submitted in the warned band. Non-cap failures (API
+    # errors etc.) are not a reason to wait for anything: exit. When neither
+    # window shows warned, default to whichever reset is still ahead (5h first
+    # — it is the cap the harness itself attributes these deaths to); no future
+    # reset at all means the cache can't say when to wake, so don't arm.
+    case "$herr" in *rate_limit*|*usage_limit*) ;; *) exit 0 ;; esac
+    if ! (( f_warn || w_warn )); then
+      now=$(date +%s)
+      if (( fivereset > now )); then f_warn=1
+      elif (( weekreset > now )); then w_warn=1
+      else exit 0; fi
+    fi
+  else
+    (( f_warn || w_warn )) || exit 0
+  fi
   # one waiter per session: newest spawn wins the pidfile; a spawn that finds a
   # live owner leaves quietly, and a deposed owner never delivers a second wake
   pidf="$snapdir/$hsid.rewaiter"
@@ -1534,7 +1585,7 @@ if [ "$mode" = rewake ]; then
     login_flip && rewake_done "The Claude login switched ($acct → $NEWACCT) — the session now runs under $NEWACCT's rate-limit windows, so the earlier cap no longer applies. This is an automated wake-up from the usage hook's background waiter, not user input. Work can continue normally, fan-out included; if a turn was interrupted by the cap, continue that work."
     { read -r opid < "$pidf"; } 2>/dev/null || opid=""
     [ "$opid" = "$$" ] || exit 0
-    r=$(( target - now )); (( r > 300 )) && r=300; sleep "$r"
+    r=$(( target - now )); (( r > 300 )) && r=300; flip_wait "$r"
   done
   rewake_done "The Claude $wlabel rate-limit window has reset to 0% — a fresh window is available. This is an automated wake-up from the usage hook's background waiter, not user input. Work can continue normally, fan-out included; if a turn was interrupted by the cap, continue that work. The earlier ⚠ warning no longer applies."
 fi
@@ -1595,7 +1646,7 @@ if [ "$mode" = wait ]; then
       fi
       while now=$(date +%s); (( now < target )); do
         login_flip && { flip_msg; exit 0; }
-        r=$(( target - now )); (( r > 300 )) && r=300; sleep "$r"
+        r=$(( target - now )); (( r > 300 )) && r=300; flip_wait "$r"
       done
     done
   fi
@@ -1615,7 +1666,7 @@ if [ "$mode" = wait ]; then
   fi
   while now=$(date +%s); (( now < target )); do
     login_flip && { flip_msg; exit 0; }
-    r=$(( target - now )); (( r > 300 )) && r=300; sleep "$r"
+    r=$(( target - now )); (( r > 300 )) && r=300; flip_wait "$r"
   done
   note=""; [ "$tstale" = 1 ] && note=' — the cached snapshot was already past it, so this returned at once; re-check `session` for the live window'
   printf 'Claude %s usage window reset (was due %s) — fresh window available.%s\n' \
