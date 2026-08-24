@@ -729,6 +729,8 @@ Time tracking (hook-fed turn boundaries; gaps between turns never count):
                                    attended (focus), waits (this session)
   session time --all               the same, one row per session
   session time ... --yesterday     the same over yesterday's full day
+  session time --json              this session's figures as one JSON object
+                                   (attended_s is what `tasks stint` reads)
 
 Accounts (several subscription logins, one config dir; `session account -h`):
   session account                  saved logins + each one's rate-limit headroom
@@ -1035,6 +1037,18 @@ if [ "${submode:-}" = time ]; then
   fi
   sid=$(resolve_sid) || { echo "session: not inside a session — use \`session time --all\`" >&2; exit 1; }
   row=$(awk -F'\t' -v s="$sid" '$1==s' <<<"$rows")
+  if [ "$mode" = json ]; then
+    # Machine-readable single-session figures, for tooling that attributes attended
+    # time to a task (apart-tools' `tasks stint`). Zeros rather than an error when
+    # nothing is logged yet, so a caller can always take the delta.
+    IFS=$'\t' read -r _ tn tact tmx tuncl tpend tlast tnf tnp tna tasum tended <<<"${row:-$sid	0	0	0	0	0	0	0	0	0	0	0}"
+    ta=$(att_of "$sid"); tw=$(wov_of "$sid")
+    open_s=0; [ "$tpend" != 0 ] && open_s=$((dayend-tpend))
+    printf '{"sid":"%s","date":"%s","day":"%s","turns":%d,"active_s":%d,"longest_s":%d,"unclosed":%d,"open_turn_s":%d,"failed":%d,"prompts":%d,"subagents":%d,"waits_s":%d,"attended_s":%d,"watched_s":%d,"ended":%d}\n' \
+      "$sid" "$(date -d "@$midnight" +%F)" "$([ "$yday" = 1 ] && echo yesterday || echo today)" \
+      "$tn" "$tact" "$tmx" "$tuncl" "$open_s" "$tnf" "$tnp" "$tna" "$tasum" "$ta" "$tw" "$tended"
+    exit 0
+  fi
   [ -n "$row" ] || { printf 'session time · %.8s — nothing logged (%s)\n' "$sid" "$daylabel"; exit 0; }
   IFS=$'\t' read -r _ tn tact tmx tuncl tpend tlast tnf tnp tna tasum tended <<<"$row"
   printf '── session time · %.8s · %s ──\n' "$sid" "$daylabel"
