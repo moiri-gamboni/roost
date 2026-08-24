@@ -53,7 +53,10 @@ case "${file:-}" in
 esac
 
 # A snapshot is itself a .md file. Snapshotting one would build a history of the history.
-case "$file" in
+# Lowercased because the server compares this segment case-insensitively: on a case-insensitive
+# filesystem a `.RoughDraft-History/` path is the same directory, and a case-sensitive glob here
+# would let the hook snapshot exactly what the server refuses to open.
+case "${file,,}" in
     */.roughdraft-history/*) exit 0 ;;
 esac
 
@@ -80,13 +83,37 @@ for d in "$hist" "$hist/v1" "$leaf"; do
     fi
 done
 
-mkdir -p "$leaf" || exit 0
+if ! mkdir -p "$leaf"; then
+    # A read-only mount, a root-owned tree, a restrictive mode: this document gets no protection
+    # at all, for ever. The liveness probe cannot see it — that fires at its own fixture, so it
+    # proves the hook works somewhere, never that it works where this document lives.
+    logger -t roost/roughdraft-write-guard "refused: cannot create $leaf"
+    exit 0
+fi
+
+# Enumerating the leaf is the input to dedup, coalescing and pruning alike, so a listing that
+# silently comes back empty is not a harmless degradation: it would mean a snapshot per write
+# with the cap switched off. Check the directory is actually listable rather than trusting an
+# empty result.
+if ! [ -r "$leaf" ] || ! [ -x "$leaf" ]; then
+    logger -t roost/roughdraft-write-guard "refused: cannot list $leaf"
+    exit 0
+fi
 
 # `git clean -fd` would otherwise delete the sidecar and `git add -A` would publish content the
 # author deleted on purpose.
 [ -f "$hist/.gitignore" ] || printf '*\n' > "$hist/.gitignore"
 
-snapshots() { find "$leaf" -maxdepth 1 -type f -name '*.md' -print0 | sort -z; }
+# Only files whose names are conforming snapshot ids are snapshots. Anything else in the leaf —
+# a hand-placed file, an editor backup, a stray copy — must not become the dedup baseline, must
+# not count toward the cap, and must never be evicted. A bare `*.md` glob got all three wrong:
+# a `zzz.md` sorting after every real id would silently become "newest", defeating both the
+# content dedup and the `--hook` coalescing window. The TS store filters identically.
+snapshot_id_re='.*/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{3}Z--p[0-9]+--(save|review|replaced|hook)\.md'
+snapshots() {
+    find "$leaf" -maxdepth 1 -type f -regextype posix-extended -regex "$snapshot_id_re" \
+        -print0 | sort -z
+}
 
 newest=$(snapshots | tail -z -n 1 | tr -d '\0')
 if [ -n "$newest" ]; then

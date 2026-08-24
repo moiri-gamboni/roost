@@ -17,8 +17,17 @@ set -uo pipefail
 hook="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/roughdraft-write-guard.sh"
 pass=0
 fail=0
+skip=0
 tmproot=$(mktemp -d)
-trap 'rm -rf "$tmproot"' EXIT
+trap 'chmod -R u+rwX "$tmproot" 2>/dev/null; rm -rf "$tmproot"' EXIT
+
+# A `logger` stub ahead of the real one on PATH, so the hook's refusals are assertable without
+# needing `sudo journalctl`. The real logger is exercised separately by the health-check probe.
+stubbin="$tmproot/stubbin"
+logcap="$tmproot/logcap"
+mkdir -p "$stubbin"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "$LOGCAP"\n' > "$stubbin/logger"
+chmod +x "$stubbin/logger"
 
 MARKED=$'# Doc\n\n{==reviewed==}{>>looks good<<}{#c1}\n'
 PLAIN=$'# Doc\n\nJust prose, no review markers. {#c1} is an anchor, not a marker.\n'
@@ -26,20 +35,34 @@ PLAIN=$'# Doc\n\nJust prose, no review markers. {#c1} is an anchor, not a marker
 # A fresh document directory per case.
 newcase() { mktemp -d "$tmproot/case.XXXXXX"; }
 
-# Fire the hook the way Claude Code does: JSON on stdin, nothing else.
-# Records the exit status in $rc and stdout in $out; both are asserted by ok().
+# Fire the hook the way Claude Code does: JSON on stdin, nothing else, and the script executed
+# through its own shebang rather than handed to `bash` — a broken shebang has to fail here.
+# Records the exit status in $rc, stdout in $out (both asserted by ok()) and logger calls in
+# $logcap, which is truncated per fire so `logged` only ever sees this invocation.
 fire() {
     local tool="$1" path="$2" cwd="${3:-$tmproot}"
+    : > "$logcap"
     out=$(jq -nc --arg t "$tool" --arg p "$path" \
         '{tool_name: $t, tool_input: {file_path: $p}}' |
-        (cd "$cwd" && bash "$hook"))
+        (cd "$cwd" && PATH="$stubbin:$PATH" LOGCAP="$logcap" "$hook"))
     rc=$?
 }
 
 # Fire with a raw payload, for the degenerate-input cases.
 fire_raw() {
-    out=$(printf '%s' "$1" | bash "$hook")
+    : > "$logcap"
+    out=$(printf '%s' "$1" | PATH="$stubbin:$PATH" LOGCAP="$logcap" "$hook")
     rc=$?
+}
+
+logged() { grep -qF -- "$1" "$logcap"; }
+
+# Several cases turn on a mode bit the root user ignores. Say so rather than passing vacuously.
+skip_if_root() {
+    [ "$(id -u)" -eq 0 ] || return 1
+    skip=$((skip + 1))
+    printf 'SKIP  %s  [running as root: mode bits do not apply]\n' "$1"
+    return 0
 }
 
 ok() {
@@ -73,10 +96,14 @@ leafdir() {
     printf '%s/.roughdraft-history/v1/%s' "$dir" "${base%.md}"
 }
 
+# Counts real snapshots only — files whose names are conforming ids. Anything else in the leaf
+# is not a snapshot to the hook either, so counting it here would hide exactly that bug.
 countsnaps() {
     local leaf
     leaf=$(leafdir "$1")
-    find "$leaf" -maxdepth 1 -type f -name '*.md' 2>/dev/null | wc -l
+    find "$leaf" -maxdepth 1 -type f -regextype posix-extended \
+        -regex '.*/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{3}Z--p[0-9]+--(save|review|replaced|hook)\.md' \
+        2>/dev/null | wc -l
 }
 
 # Age everything already in the sidecar so the debounce never masks the case under test.
@@ -115,6 +142,12 @@ printf '%s' "$MARKED" > "$d/.roughdraft-history/v1/doc/2026-01-01T00-00-00-000Z-
 fire Write "$d/.roughdraft-history/v1/doc/2026-01-01T00-00-00-000Z--p1--save.md"
 ok "$(yn '[ ! -d "$d/.roughdraft-history/v1/doc/.roughdraft-history" ]')" \
     'a path already inside .roughdraft-history is skipped (no history of history)'
+
+d=$(newcase); mkdir -p "$d/.RoughDraft-History/v1/doc"
+printf '%s' "$MARKED" > "$d/.RoughDraft-History/v1/doc/2026-01-01T00-00-00-000Z--p1--save.md"
+fire Write "$d/.RoughDraft-History/v1/doc/2026-01-01T00-00-00-000Z--p1--save.md"
+ok "$(yn '[ -z "$(find "$d/.RoughDraft-History/v1/doc" -mindepth 1 -type d)" ]')" \
+    'the history-segment skip is case-insensitive, matching the server'
 
 fire_raw ''
 ok yes 'empty stdin payload exits 0 silently'
@@ -202,6 +235,59 @@ fire Write "$d/doc.md"
 ok "$(yn '[ "$(countsnaps "$d/doc.md")" -eq 1 ]')" \
     'a fresh --save snapshot with identical bytes still dedups (content rule is trigger-blind)'
 
+# --- refusals that must leave a journald trace ---
+# Both of these mean this document silently gets no protection at all, for ever. The probe
+# cannot see either (it fires at its own fixture), so the log line is the only evidence.
+
+label='an unwritable document directory is refused, and says so in the log'
+if ! skip_if_root "$label"; then
+    d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"; chmod 0555 "$d"
+    fire Write "$d/doc.md"
+    ok "$(yn '[ ! -d "$d/.roughdraft-history" ] && logged "cannot create"')" "$label"
+    chmod 0755 "$d"
+fi
+
+label='an unlistable sidecar leaf is refused rather than treated as empty'
+if ! skip_if_root "$label"; then
+    d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"
+    leaf="$d/.roughdraft-history/v1/doc"
+    mkdir -p "$leaf"
+    printf 'older\n' > "$leaf/2020-01-01T00-00-00-000Z--p1--hook.md"
+    chmod 0300 "$leaf"
+    fire Write "$d/doc.md"
+    chmod 0755 "$leaf"   # restore before asserting: the assertion has to read the dir too
+    ok "$(yn '[ "$(countsnaps "$d/doc.md")" -eq 1 ] && logged "cannot list"')" "$label"
+fi
+
+# --- only conforming ids are snapshots ---
+# A bare *.md glob made any file in the leaf a snapshot: a hand-placed `zzz.md` sorting after
+# every real id became the dedup baseline (defeating both dedup and the --hook coalescing
+# window), counted toward the cap, and was itself evictable.
+
+d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"
+leaf="$d/.roughdraft-history/v1/doc"
+mkdir -p "$leaf"
+printf '%s' "$MARKED" > "$leaf/zzz.md"
+fire Write "$d/doc.md"
+ok "$(yn '[ "$(countsnaps "$d/doc.md")" -eq 1 ]')" \
+    'a non-conforming file is not the dedup baseline, even with identical bytes'
+
+d=$(newcase); printf '%s' "$MARKED" > "$d/doc.md"
+leaf="$d/.roughdraft-history/v1/doc"
+mkdir -p "$leaf"
+printf 'not a snapshot\n' > "$leaf/zzz.md"
+printf 'not a snapshot\n' > "$leaf/notes.md"
+printf 'not a snapshot\n' > "$leaf/2026-01-01T00-00-00-000Z--p1--bogus.md"
+for i in $(seq -w 1 55); do
+    printf 'filler %s\n' "$i" > "$leaf/2020-01-01T00-00-${i}-000Z--p1--save.md"
+done
+age_sidecar "$d/doc.md"
+fire Write "$d/doc.md"
+ok "$(yn '[ "$(countsnaps "$d/doc.md")" -eq 50 ]')" \
+    'non-conforming files do not count toward the 50-entry cap'
+ok "$(yn '[ -f "$leaf/zzz.md" ] && [ -f "$leaf/notes.md" ] && [ -f "$leaf/2026-01-01T00-00-00-000Z--p1--bogus.md" ]')" \
+    'non-conforming files are never evicted'
+
 # --- symlink refusal (S4) ---
 
 d=$(newcase); elsewhere=$(newcase)
@@ -245,8 +331,10 @@ ok "$(yn '[ -f "$leaf/2020-01-01T00-00-00-000Z--p1--review.md" ]')" \
 ok "$(yn '[ ! -f "$leaf/2020-01-01T00-00-02-000Z--p1--save.md" ]')" \
     'eviction takes the oldest non-review entries first'
 
-# S3: a snapshot filename containing a space must not turn the prune into a
-# delete of unrelated files in whatever directory the agent happened to be in.
+# S3: a planted filename containing a space must not turn the prune into a delete of unrelated
+# files in whatever directory the agent happened to be standing in. The id filter now closes
+# this twice over — a space cannot appear in a conforming id, so such a file is never a prune
+# candidate — but the NUL-safe enumeration is what has to hold if the grammar ever widens.
 d=$(newcase); cwd=$(newcase)
 printf '%s' "$MARKED" > "$d/doc.md"
 leaf="$d/.roughdraft-history/v1/doc"
@@ -260,9 +348,9 @@ printf 'bystander\n' > "$cwd/0000"
 printf 'bystander\n' > "$cwd/evil.md"
 fire Write "$d/doc.md" "$cwd"
 ok "$(yn '[ -f "$cwd/0000" ] && [ -f "$cwd/evil.md" ]')" \
-    'S3: a space in a snapshot name does not delete same-named files in the cwd'
-ok "$(yn '[ ! -f "$leaf/0000 evil.md" ]')" \
-    'S3: the space-named oldest entry is itself evicted correctly'
+    'S3: a space in a planted name does not delete same-named files in the cwd'
+ok "$(yn '[ -f "$leaf/0000 evil.md" ] && [ "$(countsnaps "$d/doc.md")" -eq 50 ]')" \
+    'S3: the prune ran to the cap and left the non-conforming planted file alone'
 
-printf '\n%d passed, %d failed\n' "$pass" "$fail"
+printf '\n%d passed, %d failed, %d skipped\n' "$pass" "$fail" "$skip"
 [ "$fail" -eq 0 ]
