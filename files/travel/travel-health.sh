@@ -149,3 +149,32 @@ else
     FAILURES="$FAILURES\n- PrivateBin write gate returned $_pb_gate (public side may be writable)"
 fi
 unset _pb_gate
+
+# --- Roughdraft write-guard hook liveness ---
+# The hook is invisible when it works and just as invisible when it breaks: a missing jq, a
+# drifted path layout, a syntax error, all of it fails silently by design, nothing reads its
+# journald tag, and the loss only surfaces months later as a clobber nobody can undo. So fire
+# the DEPLOYED hook at a fixture and assert the two things it must do — write a snapshot, and
+# write nothing to stdout (any output there is read as a permission decision, and an "ask"
+# denies the tool call in every headless context on this box). Skips silently pre-deploy.
+_rdg_hook="$CLAUDE_CONFIG_DIR/hooks/roughdraft-write-guard.sh"
+if [ -x "$_rdg_hook" ]; then
+    _rdg_dir=$(mktemp -d)
+    printf '# probe\n\n{==liveness==}{>>probe<<}{#c1}\n' > "$_rdg_dir/probe.md"
+    _rdg_out=$(printf '{"tool_name":"Write","tool_input":{"file_path":"%s"}}' \
+        "$_rdg_dir/probe.md" | bash "$_rdg_hook")
+    _rdg_snap=$(find "$_rdg_dir/.roughdraft-history/v1/probe" -maxdepth 1 -type f \
+        -name '*.md' 2>/dev/null | head -1)
+    if [ -z "$_rdg_snap" ]; then
+        logger -t "$_HOOK_TAG" "FAIL: roughdraft write-guard hook wrote no snapshot"
+        FAILURES="$FAILURES\n- roughdraft write-guard hook wrote no snapshot (broken or drifted)"
+    elif [ -n "$_rdg_out" ]; then
+        logger -t "$_HOOK_TAG" "FAIL: roughdraft write-guard hook wrote to stdout: $_rdg_out"
+        FAILURES="$FAILURES\n- roughdraft write-guard hook emitted output (would be read as a permission decision)"
+    else
+        logger -t "$_HOOK_TAG" "OK: roughdraft write-guard hook snapshots silently"
+    fi
+    rm -rf "$_rdg_dir"
+    unset _rdg_dir _rdg_out _rdg_snap
+fi
+unset _rdg_hook
