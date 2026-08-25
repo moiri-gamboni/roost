@@ -166,6 +166,11 @@
             "type": "command",
             "command": "~/roost/claude/hooks/notion-write-guard.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/tasksync-write-guard.sh",
+            "timeout": 5
           }
         ]
       },
@@ -176,6 +181,11 @@
             "type": "command",
             "command": "~/roost/claude/hooks/roughdraft-write-guard.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/tasksync-write-guard.sh",
+            "timeout": 5
           }
         ]
       }
