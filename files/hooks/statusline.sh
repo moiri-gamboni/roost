@@ -75,11 +75,20 @@ _new_fr=$(_intonly "$_new_fr"); _new_wr=$(_intonly "$_new_wr")
 # tuples never write, which retires the old guard: its stale-idle-clobber case
 # can no longer occur, and within one account a changed tuple is always the
 # newest data there is.
+#   The sidecar is keyed per payload STREAM — (sid, pane) — not per session:
+# one session id can be live in two processes at once (`claude -r` of a
+# still-running session), each replaying a different frozen payload. Under a
+# shared sidecar the tuple alternates every render, every alternation passes
+# the changed-tuple test, and both stale payloads get stamped with the live
+# login (2026-08-26: team shown 5h 19% while really capped at 100%). TMUX_PANE
+# is process-stable and distinct across processes (same inheritance as the
+# pane map below); outside tmux the key stays the bare sid.
 _snapdir="$_u/sessions"
 [ -d "$_snapdir" ] || mkdir -p "$_snapdir"
 _owner=""; _fresh=0
 if [ -n "$_sid" ] && [ "$_sid" != "-" ]; then
-  _lim="$_snapdir/$_sid.limits"
+  _pane="${TMUX_PANE:-}"; _pane=${_pane//[!0-9A-Za-z]/}
+  _lim="$_snapdir/$_sid${_pane:+.p$_pane}.limits"
   _tuple="$_f5 $_w7 $_new_fr $_new_wr"
   if [ -s "$_lim" ]; then
     IFS=$'\t' read -r _p_tuple _p_owner < "$_lim"
