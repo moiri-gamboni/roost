@@ -10,7 +10,7 @@ else
     if [ "$RAM_MB" -le 8192 ]; then
         SWAP_MB="$RAM_MB"
     else
-        SWAP_MB=4096
+        SWAP_MB=8192
     fi
     SWAP_GB=$(( (SWAP_MB + 1023) / 1024 ))
 
