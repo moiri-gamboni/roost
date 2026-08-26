@@ -842,8 +842,15 @@ emit() {  # $1 = the status line
 # Pairs s/e events per session; active = Σ closed start→end spans, so idle gaps
 # between turns are excluded by construction. A trailing unpaired start shows as
 # "open" with its age (a running turn — or a dead one whose Stop never fired;
-# the age makes the difference obvious). Earlier unpaired starts count as
-# "unclosed" (interrupt/crash) and add no time, so active is a floor.
+# the age makes the difference obvious). Unpaired starts (interrupt/crash — no
+# harness event fires on Esc, measured 135 of 1,007 starts over ten days) still
+# count as "unclosed", but their WORK is no longer lost: a turn missing its end
+# is credited up to its last observed evidence of running — an intra-turn
+# subagent/compaction/permission event, or a statusline sample whose cumulative
+# API duration grew (samples land only when spend moved, so a sample is itself
+# proof of work at its timestamp). The tail between the last evidence and the
+# actual interrupt stays uncounted, so active remains a floor — just no longer
+# one that zeroes a 29-minute stretch because its Stop never fired.
 if [ "${submode:-}" = time ]; then
   [ -s "$tlog" ] || { echo "session: no turn log yet at $tlog (the per-turn hooks append it)" >&2; exit 1; }
   now=$(date +%s)
@@ -858,24 +865,53 @@ if [ "${submode:-}" = time ]; then
             if (( s>=3600 )); then printf '%dh%02dm' $((s/3600)) $(((s%3600)/60))
             elif (( s>=60 )); then printf '%dm%02ds' $((s/60)) $((s%60))
             else printf '%ds' "$s"; fi; }
-  rows=$(LC_ALL=C sort -t$'\t' -k1,1n "$tlog" | awk -F'\t' -v mid="$midnight" -v dend="$dayend" '
+  # Synthetic "g" evidence rows for unclosed-turn recovery: a statusline sample
+  # whose cumulative API duration (col 8) grew vs the sid's previous sample
+  # proves the model was still producing at that timestamp. prev[] is tracked
+  # across the whole log so the first in-window sample compares against
+  # yesterday's tail instead of emitting a spurious flank.
+  gevents=""
+  if [ -s "$slog" ]; then
+    gevents=$(LC_ALL=C sort -t$'\t' -k1,1n "$slog" | awk -F'\t' -v mid="$midnight" -v dend="$dayend" '
+      NF>=8 && $2!="" {
+        if (($2 in prev) && $8+0>prev[$2] && $1+0>=mid && $1+0<dend)
+          printf "%s\t%s\tg\t-\t-\t-\n", $1, $2
+        prev[$2]=$8+0 }')
+  fi
+  tmerged=$({ cat "$tlog"; [ -n "$gevents" ] && printf '%s\n' "$gevents"; } \
+    | LC_ALL=C sort -t$'\t' -k1,1n)
+  rows=$(awk -F'\t' -v mid="$midnight" -v dend="$dayend" '
+    function credit(sid,   d) {         # an unclosed turn: count start→last evidence
+      d=alive[sid]-pend[sid]
+      if (d>0) { act[sid]+=d; if (d>mx[sid]) mx[sid]=d }
+      alive[sid]=0
+    }
     $1+0>=mid && $1+0<dend && $2!="" {
       ts=$1+0; sid=$2; ev=$3
-      if (ev=="s") { if (pend[sid]) uncl[sid]++; pend[sid]=ts }
+      if (ev=="g") { if (pend[sid] && ts>alive[sid]) alive[sid]=ts; next }
+      if (ev=="s") { if (pend[sid]) { uncl[sid]++; credit(sid) } pend[sid]=ts }
       else if ((ev=="e" || ev=="f") && pend[sid]) {
         d=ts-pend[sid]
         if (d>=0) { act[sid]+=d; n[sid]++; if (d>mx[sid]) mx[sid]=d; if (ev=="f") nf[sid]++ }
-        pend[sid]=0
+        pend[sid]=0; alive[sid]=0
       }
-      else if (ev=="x") { if (pend[sid]) { uncl[sid]++; pend[sid]=0 } ended[sid]=ts }
-      else if (ev=="p") np[sid]++
-      else if (ev=="a") { na[sid]++; if ($6!="" && $6!="-") ast[$6]=ts }
-      else if (ev=="z") { aid=$6; if (aid!="" && aid!="-" && ast[aid]) { asum[sid]+=ts-ast[aid]; ast[aid]=0 } }
+      else if (ev=="x") { if (pend[sid]) { uncl[sid]++; credit(sid); pend[sid]=0 } ended[sid]=ts }
+      else if (ev=="p") { np[sid]++; if (pend[sid] && ts>alive[sid]) alive[sid]=ts }
+      else if (ev=="c") { if (pend[sid] && ts>alive[sid]) alive[sid]=ts }
+      else if (ev=="a") { na[sid]++; if ($6!="" && $6!="-") ast[$6]=ts
+                          if (pend[sid] && ts>alive[sid]) alive[sid]=ts }
+      else if (ev=="z") { aid=$6; if (aid!="" && aid!="-" && ast[aid]) { asum[sid]+=ts-ast[aid]; ast[aid]=0 }
+                          if (pend[sid] && ts>alive[sid]) alive[sid]=ts }
       seen[sid]=1; if (ts>lastev[sid]) lastev[sid]=ts
     }
-    END { for (s in seen) printf "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
-            s, n[s], act[s], mx[s], uncl[s], pend[s], lastev[s], nf[s], np[s], na[s], asum[s], ended[s] }' \
-    | LC_ALL=C sort -t$'\t' -k3,3nr)
+    END { for (s in seen) {
+            # a still-open trailing turn keeps its evidence-credit too: the next
+            # run recomputes from scratch, so a later real "e" replaces (never
+            # stacks on) this partial credit
+            if (pend[s] && alive[s]>pend[s]) { d=alive[s]-pend[s]; act[s]+=d; if (d>mx[s]) mx[s]=d }
+            printf "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+              s, n[s], act[s], mx[s], uncl[s], pend[s], lastev[s], nf[s], np[s], na[s], asum[s], ended[s] } }' \
+    <<<"$tmerged" | LC_ALL=C sort -t$'\t' -k3,3nr)
   # ── Correlating the two streams ─────────────────────────────────────────────
   # Turn spans (Claude working) and focus spans (you looking) are independent
   # interval sets over the same timeline. Their per-session overlap is WATCHED:
@@ -885,16 +921,26 @@ if [ "${submode:-}" = time ]; then
   # Focus spans: per client, an "in" opens (a new "in" first closes any open
   # one), "out"/detach closes, still-open closes at now; sid comes from the row
   # (log-time resolution; pane-map fallback for pre-first-render rows). Turn
-  # spans use CLOSED turns only, matching ACTIVE's floor semantics. Caveat: two
+  # spans mirror ACTIVE exactly: closed turns whole, unclosed turns up to their
+  # last evidence (same "g"/intra-turn crediting as the rows pass). Caveat: two
   # clients focused on the same pane double-count attended (not watched depth).
-  tspans=$(LC_ALL=C sort -t$'\t' -k1,1n "$tlog" | awk -F'\t' -v mid="$midnight" -v dend="$dayend" '
+  tspans=$(awk -F'\t' -v mid="$midnight" -v dend="$dayend" '
+    function flush(sid) {
+      if (pend[sid] && alive[sid]>pend[sid])
+        printf "%s\t%s\t%s\n", sid, pend[sid], alive[sid]
+      alive[sid]=0
+    }
     $1+0>=mid && $1+0<dend && $2!="" {
-      if ($3=="s") pend[$2]=$1+0
-      else if (($3=="e" || $3=="f") && pend[$2]) {
-        if ($1+0>=pend[$2]) printf "%s\t%s\t%s\n", $2, pend[$2], $1+0
-        pend[$2]=0 }
-      else if ($3=="x") pend[$2]=0
-    }')
+      ts=$1+0; sid=$2; ev=$3
+      if (ev=="g" || ev=="p" || ev=="c" || ev=="a" || ev=="z") {
+        if (pend[sid] && ts>alive[sid]) alive[sid]=ts; next }
+      if (ev=="s") { flush(sid); pend[sid]=ts }
+      else if ((ev=="e" || ev=="f") && pend[sid]) {
+        if (ts>=pend[sid]) printf "%s\t%s\t%s\n", sid, pend[sid], ts
+        pend[sid]=0; alive[sid]=0 }
+      else if (ev=="x") { flush(sid); pend[sid]=0 }
+    }
+    END { for (s in pend) flush(s) }' <<<"$tmerged")
   fspans=""
   if [ -s "$flog" ]; then
     pmap=""
@@ -1027,8 +1073,8 @@ if [ "${submode:-}" = time ]; then
     done <<<"$rows"
     printf '  %-9s %6s %8s %8s %8s  %s\n' 'you' '' '' '' \
       "$(fmt_d "$funion")" 'wall clock (union)'
-    printf '  (active = Claude working (closed turn spans; gaps and unclosed starts\n'
-    printf '   never count, so it is a floor) · attend = your focused-tab time on the\n'
+    printf '  (active = Claude working (turn spans; an interrupted turn counts up to\n'
+    printf '   its last observed work, so active is a floor) · attend = your focused-tab time on the\n'
     printf '   session · watched = their overlap, active ∩ attended: supervised work.\n'
     printf '   active−watched ran autonomously; attend−watched is reading/typing time.\n'
     printf '   "you" is the union of the attend spans — the wall-clock time you spent\n'
