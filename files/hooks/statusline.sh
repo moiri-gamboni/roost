@@ -242,9 +242,15 @@ _atag=""
 [ "$(readlink -f "$_cfg" 2>/dev/null)" != "$HOME/roost/claude" ] && _atag=" · ${_cfg##*/}"
 
 jq -r --arg five_seg "$_five_seg" --arg week_seg "$_week_seg" --arg atag "$_atag" '
-  # model comes fresh in every render payload, so this tracks mid-session
-  # switches (Fable safeguard fallback to Opus, /model) without any caching
-  ((.model.display_name // .model.id // "") | if . == "" then "" else . + " · " end) as $model |
+  # model + effort come fresh in every render payload, so this tracks
+  # mid-session switches (Fable safeguard fallback to Opus, /model, /effort)
+  # without any caching
+  (.model.display_name // .model.id // "") as $mn |
+  (.effort.level // "") as $ef |
+  (if $mn == "" and $ef == "" then ""
+   elif $ef == "" then $mn + " · "
+   elif $mn == "" then $ef + " · "
+   else "\($mn) (\($ef)) · " end) as $model |
   (.context_window.current_usage // {}) as $cu |
   ([$cu.input_tokens, $cu.cache_creation_input_tokens, $cu.cache_read_input_tokens]
     | map(. // 0) | add) as $used |
