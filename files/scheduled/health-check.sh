@@ -63,6 +63,13 @@ for mnt in / /mnt/roost-data; do
     fi
 done
 
+# Swap must exist: swap-swapfile.swap can fail silently at boot (2026-08-26: a
+# week at 0MB swap ended in an OOM kill of the whole user slice).
+SWAP_TOTAL_MB=$(free -m | awk '/Swap:/ {print $2; exit}')
+if [ "${SWAP_TOTAL_MB:-0}" -eq 0 ]; then
+    FAILURES="$FAILURES\n- no active swap (systemctl restart swap-swapfile.swap)"
+fi
+
 # Source app-specific health checks if present
 if [ -f "$(dirname "$0")/health-check-apps.sh" ]; then
     source "$(dirname "$0")/health-check-apps.sh"
