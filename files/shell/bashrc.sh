@@ -172,6 +172,20 @@ _roost_group_name() {
     fi
 }
 
+# Whether this client's grouped session shows the tmux status bar. On the phone
+# the bar is the only chrome there is — no tab strip, no window title — so it
+# earns its line there and nowhere else: tmux.conf defaults `status off`, VS
+# Code labels every tab with the same session name (vsc-pin.sh hides it in the
+# pinned tabs for that reason), and an SSH terminal has its own title bar.
+# $ROOST_CLIENT is set by the connecting client's own alias; only the phone
+# sets one today, so a second mobile client means one more case here.
+_roost_status_for_client() {
+    case "${ROOST_CLIENT:-}" in
+        pixel) printf on ;;
+        *)     printf off ;;
+    esac
+}
+
 # Kill grouped sessions whose PID suffix no longer exists. Only sweeps
 # PID-style suffixes (main-<pid>, main-vsc<pid>), never named ones
 # (laptop/pixel/etc).
@@ -341,10 +355,15 @@ agent() {
         # accepts a session *group* name, which is what keeps this working when
         # `main` itself is briefly missing. `=main` would defeat the group lookup
         # and silently start a second group literally named "=main".
+        local st
+        st=$(_roost_status_for_client)
         if tmux has-session -t "=$group" 2>/dev/null; then
+            tmux set-option -t "$group" status "$st"
             tmux attach-session -t "=$group" \; select-window -t "$name"
         else
-            tmux new-session -t main -s "$group" \; select-window -t "$name"
+            tmux new-session -t main -s "$group" \
+                \; set-option -t "$group" status "$st" \
+                \; select-window -t "$name"
         fi
     fi
 }
@@ -362,10 +381,15 @@ agents() {
         # ROOST_CLIENT name) that's usually a dead/garbage-sized et connection;
         # dropping it stops the pile-up. Laptop tabs use per-PID names, so -d
         # never kicks a different live tab.
+        local st
+        st=$(_roost_status_for_client)
         if tmux has-session -t "=$group" 2>/dev/null; then
+            tmux set-option -t "$group" status "$st"
             tmux attach-session -d -t "=$group" \; choose-window
         else
-            tmux new-session -t main -s "$group" \; choose-window
+            tmux new-session -t main -s "$group" \
+                \; set-option -t "$group" status "$st" \
+                \; choose-window
         fi
     fi
 }
@@ -383,9 +407,12 @@ attach() {
     _ensure_tmux
     _roost_await_sane_size || return 1
     local group; group=$(_roost_group_name)
+    local st
+    st=$(_roost_status_for_client)
     if tmux has-session -t "=$group" 2>/dev/null; then
+        tmux set-option -t "$group" status "$st"
         tmux attach-session -d -t "=$group"
     else
-        tmux new-session -t main -s "$group"
+        tmux new-session -t main -s "$group" \; set-option -t "$group" status "$st"
     fi
 }
