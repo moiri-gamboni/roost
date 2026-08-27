@@ -18,9 +18,24 @@ name=${1:?usage: vsc-pin <session-name> <window-target>}
 win=${2:?usage: vsc-pin <session-name> <window-target>}
 base=${ROOST_BASE:-main}
 
-sessions=$(tmux list-sessions -F '#{session_name}' 2>&1)
-if ! grep -qx "$base" <<<"$sessions"; then
-  printf 'roost: no "%s" tmux session yet — run `agent` first.\n' "$base" >&2
+list_sessions() { tmux list-sessions -F '#{session_name}	#{session_group}' 2>&1; }
+has_session()   { awk -F'\t' -v s="$1" '$1 == s {f = 1} END {exit !f}' <<<"$2"; }
+
+sessions=$(list_sessions)
+if ! has_session "$base" "$sessions"; then
+  # `$base` owns no client of its own — every view is a grouped session — so
+  # when something kills it the windows all survive under the group and only an
+  # exact-name check like this one notices. Rejoin the group instead of sending
+  # the user to `agent`, which, run from inside tmux, used to hit the very same
+  # wall. Same rejoin as ~/roost/claude/lib/tmux-main-guard.sh, inlined on
+  # purpose: this script ships inside the extension and must not reach out to
+  # ~/roost for a helper.
+  member=$(awk -F'\t' -v b="$base" '$2 == b {print $1; exit}' <<<"$sessions")
+  [ -n "$member" ] && tmux new-session -d -s "$base" -t "$member"
+  sessions=$(list_sessions)
+fi
+if ! has_session "$base" "$sessions"; then
+  printf 'roost: no "%s" tmux session, and no group left to rebuild it from — run `agent` first.\n' "$base" >&2
   sleep 3; exit 1
 fi
 
@@ -28,7 +43,7 @@ fi
 # otherwise). Not `new-session -A`: -A attaches when the session exists, which
 # steals this terminal before we've pinned the window. -d keeps it detached so
 # we select the window *before* attaching.
-grep -qx "$name" <<<"$sessions" || tmux new-session -d -s "$name" -t "$base"
+has_session "$name" "$sessions" || tmux new-session -d -s "$name" -t "$base"
 # Best effort: if the window vanished between enumerate and here, fall back to
 # main's current window and let the extension reconcile (dispose) this tab.
 tmux select-window -t "$name:$win" || true
