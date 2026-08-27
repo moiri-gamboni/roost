@@ -79,14 +79,42 @@ async function sessionTitles(base) {
   return titles;
 }
 
+// `main` owns no client of its own — every view is a grouped session sharing
+// its windows — so when something kills it the windows all survive and nothing
+// looks broken. Rejoin the group before giving up: this poll is the only thing
+// still running at that point, and without a repair here it finds nothing to
+// sync forever, so no tab ever spawns to fix it from the other side. Same
+// rejoin as ~/roost/claude/lib/tmux-main-guard.sh and vsc-pin.sh; the bundle
+// stays self-contained rather than reaching into ~/roost for a helper.
+async function rejoinBaseGroup(base) {
+  const r = await tmux(['list-sessions', '-F', '#{session_name}\t#{session_group}']);
+  if (r.code !== 0) return false;
+  for (const line of r.stdout.split('\n')) {
+    const [name, group] = line.split('\t');
+    if (!name || group !== base) continue;
+    const c = await tmux(['new-session', '-d', '-s', base, '-t', name]);
+    dbg(`base: "${base}" was missing — rejoined its group via ${name} (rc=${c.code})`);
+    return c.code === 0;
+  }
+  return false;
+}
+
 // Windows of the base session as [{id, windowName, title, index}] (title is the
 // session title or null), or null if the base session is absent.
 async function listWindows() {
   const base = cfg().get('baseSession', 'main');
-  const r = await tmux(['list-windows', '-t', base, '-F',
-    '#{window_id}\t#{window_name}\t#{window_index}']);
+  // `=base`, not `base`: tmux resolves a plain target by exact name, then
+  // fnmatch, then *prefix*. With the session gone and one grouped view alive,
+  // the plain form silently enumerates that view's windows — which is how a
+  // dead `main` went unnoticed for hours while vsc-pin.sh refused every tab.
+  const target = `=${base}`;
+  const fmt = '#{window_id}\t#{window_name}\t#{window_index}';
+  let r = await tmux(['list-windows', '-t', target, '-F', fmt]);
+  if (r.code !== 0 && await rejoinBaseGroup(base)) {
+    r = await tmux(['list-windows', '-t', target, '-F', fmt]);
+  }
   if (r.code !== 0) return null;
-  const titles = await sessionTitles(base);
+  const titles = await sessionTitles(target);
   const exclude = new Set(cfg().get('excludeNames', []));
   const wins = [];
   for (const line of r.stdout.split('\n')) {
@@ -310,7 +338,7 @@ async function reconcile({ explicit = false } = {}) {
     if (wins === null) {
       if (explicit) {
         vscode.window.showInformationMessage(
-          `Roost: no "${cfg().get('baseSession', 'main')}" tmux session — run \`agent\` first.`);
+          `Roost: no "${cfg().get('baseSession', 'main')}" tmux session, and no group left to rebuild it from — run \`agent\` first.`);
       }
       return;
     }

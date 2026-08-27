@@ -44,7 +44,7 @@ roost-apply --caddy|--cloudflare|--ntfy|--systemd|--cron|--xray|--proton|--all  
   - `hooks/` — Claude Code event hooks → `$CLAUDE_CONFIG_DIR/hooks/` (`files/hooks/CLAUDE.md`)
   - `scripts/` — user CLIs → `claude/scripts/`, symlinked into `~/bin`: `roost-apply`, `roost-net`, `session` (`files/scripts/CLAUDE.md`)
   - `scheduled/` — cron + systemd-timer jobs → `claude/scheduled/` (`files/scheduled/CLAUDE.md`)
-  - `lib/` — shared code → `claude/lib/`: `_hook-env.sh` (hook JSON input, ntfy, rate limiting, logging), `cloudflare-assemble.sh`
+  - `lib/` — shared code → `claude/lib/`: `_hook-env.sh` (hook JSON input, ntfy, rate limiting, logging), `cloudflare-assemble.sh`, `tmux-main-guard.sh` (rebuilds a killed `main` session from its surviving group; run by tmux's `session-closed` hook and `_ensure_tmux`)
   - `skills/` — skills → `$CLAUDE_CONFIG_DIR/skills/` (codex, html2markdown, havelock-api, humanizer, pastebin, roughdraft, session, zotero); each SKILL.md is self-describing
   - `travel/` — travel VPN server pieces (`files/travel/CLAUDE.md`)
   - `setup/` — modular setup scripts run by `deploy.sh` via `remote_script()`: `system`, `create-user`, `ssh-hardening`, `ufw`, `swap`, `snapper`, `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `privatebin`, `travel-vpn`, `dufs`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `et`, `clip-forward`, `unattended-upgrades`

@@ -101,6 +101,7 @@ define_manifest() {
 files/settings.json|$ROOST_DIR/claude/settings.json|sed-roost|
 files/lib/_hook-env.sh|$ROOST_DIR/claude/lib/_hook-env.sh|plain+x|
 files/lib/cloudflare-assemble.sh|$ROOST_DIR/claude/lib/cloudflare-assemble.sh|plain+x|
+files/lib/tmux-main-guard.sh|$ROOST_DIR/claude/lib/tmux-main-guard.sh|plain+x|
 files/hooks/reflect.sh|$ROOST_DIR/claude/hooks/reflect.sh|plain+x|
 files/hooks/notify.sh|$ROOST_DIR/claude/hooks/notify.sh|plain+x|
 files/hooks/statusline.sh|$ROOST_DIR/claude/hooks/statusline.sh|plain+x|

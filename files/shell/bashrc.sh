@@ -222,25 +222,27 @@ _roost_await_sane_size() {
 # Returns 0 if already inside tmux, 1 if a new session was started (caller
 # should use tmux send-keys instead of direct commands).
 _ensure_tmux() {
+    # `main` can be gone while its session group lives on, and then every `=main`
+    # target below fails. Repair it first — inside tmux too, where this function
+    # used to return early and leave `agent` failing with "can't find session:
+    # main". The guard is what rejoins the group; see its header for why the
+    # breakage stays invisible until it isn't.
+    [[ -x "$_ROOST_DIR/claude/lib/tmux-main-guard.sh" ]] \
+        && "$_ROOST_DIR/claude/lib/tmux-main-guard.sh"
+
     if [[ -n "${TMUX:-}" ]]; then
         return 0  # inside tmux
     fi
     _sweep_dead_groups
-    if tmux has-session -t main 2>/dev/null; then
+    # `=main` is an exact-match target. Plain `main` also matches by prefix, so
+    # with the session gone but one grouped view alive this test passes on
+    # `main-pixel` and the repair below never runs.
+    if tmux has-session -t '=main' 2>/dev/null; then
         return 1  # session exists, need attach
     fi
-    # Check if the main group survives via grouped sessions (main-<client>)
-    local group_member
-    group_member=$(tmux list-sessions -F '#{session_name} #{session_group}' 2>/dev/null \
-        | awk '$2 == "main" {print $1; exit}')
-    if [[ -n "$group_member" ]]; then
-        # Recreate main by joining the existing group
-        tmux new-session -d -s main -t "$group_member"
-        return 1
-    fi
     tmux new-session -d -s main -n shell
-    tmux set-option -w -t main:shell automatic-rename off
-    tmux select-pane -t main:shell -T shell
+    tmux set-option -w -t '=main:shell' automatic-rename off
+    tmux select-pane -t '=main:shell' -T shell
     return 2  # new session created, need attach (shell window already exists)
 }
 
@@ -277,7 +279,7 @@ agent() {
     if [[ -n "${TMUX:-}" ]]; then
         existing=$(tmux list-windows -F '#{window_name}' 2>/dev/null || true)
     else
-        existing=$(tmux list-windows -t main -F '#{window_name}' 2>/dev/null || true)
+        existing=$(tmux list-windows -t '=main' -F '#{window_name}' 2>/dev/null || true)
     fi
     if echo "$existing" | grep -Fqx "$name"; then
         local i=2
@@ -298,10 +300,10 @@ agent() {
     # Ensure a shell window exists (state=2 means _ensure_tmux already created one)
     # When inside tmux (state=0), main might not exist if we're in a different session
     if [[ $state -ne 2 ]] && ! echo "$existing" | grep -Fqx shell; then
-        if [[ $state -ne 0 ]] || tmux has-session -t main 2>/dev/null; then
-            tmux new-window -t main -n shell -d
-            tmux set-option -w -t main:shell automatic-rename off
-            tmux select-pane -t main:shell -T shell
+        if [[ $state -ne 0 ]] || tmux has-session -t '=main' 2>/dev/null; then
+            tmux new-window -t '=main' -n shell -d
+            tmux set-option -w -t '=main:shell' automatic-rename off
+            tmux select-pane -t '=main:shell' -T shell
         fi
     fi
     if [[ $state -eq 0 ]]; then
@@ -319,7 +321,7 @@ agent() {
         mywin=$(tmux display-message -p -t "$TMUX_PANE" '#{window_id}')
         viewer=$(tmux list-clients -F '#{client_activity} #{window_id} #{client_session}' \
             | awk -v w="$mywin" '$2 == w {print $1, $3}' | sort -rn | awk 'NR==1 {print $2}')
-        tmux new-window -d -t main -n "$name" "${cmd_parts[*]}"
+        tmux new-window -d -t '=main' -n "$name" "${cmd_parts[*]}"
         printf '%(%F %T)T pid=%s inside-tmux: mywin=%s viewer=%s name=%s follow=%s\n' \
             -1 "$$" "$mywin" "${viewer:-none}" "$name" \
             "$(case "$viewer" in ''|main-vsc*|vsc-*) echo no;; *) echo "$viewer";; esac)" \
@@ -334,9 +336,13 @@ agent() {
         group=$(_roost_group_name)
         printf '%(%F %T)T pid=%s outside-tmux: group=%s name=%s state=%s\n' \
             -1 "$$" "$group" "$name" "$state" >> "$HOME/.roost-agent.log"
-        tmux new-window -t main -n "$name" "${cmd_parts[*]}"
-        if tmux has-session -t "$group" 2>/dev/null; then
-            tmux attach-session -t "$group" \; select-window -t "$name"
+        tmux new-window -t '=main' -n "$name" "${cmd_parts[*]}"
+        # `new-session -t main` stays a fuzzy target on purpose: that flag also
+        # accepts a session *group* name, which is what keeps this working when
+        # `main` itself is briefly missing. `=main` would defeat the group lookup
+        # and silently start a second group literally named "=main".
+        if tmux has-session -t "=$group" 2>/dev/null; then
+            tmux attach-session -t "=$group" \; select-window -t "$name"
         else
             tmux new-session -t main -s "$group" \; select-window -t "$name"
         fi
@@ -356,8 +362,8 @@ agents() {
         # ROOST_CLIENT name) that's usually a dead/garbage-sized et connection;
         # dropping it stops the pile-up. Laptop tabs use per-PID names, so -d
         # never kicks a different live tab.
-        if tmux has-session -t "$group" 2>/dev/null; then
-            tmux attach-session -d -t "$group" \; choose-window
+        if tmux has-session -t "=$group" 2>/dev/null; then
+            tmux attach-session -d -t "=$group" \; choose-window
         else
             tmux new-session -t main -s "$group" \; choose-window
         fi
@@ -377,8 +383,8 @@ attach() {
     _ensure_tmux
     _roost_await_sane_size || return 1
     local group; group=$(_roost_group_name)
-    if tmux has-session -t "$group" 2>/dev/null; then
-        tmux attach-session -d -t "$group"
+    if tmux has-session -t "=$group" 2>/dev/null; then
+        tmux attach-session -d -t "=$group"
     else
         tmux new-session -t main -s "$group"
     fi
