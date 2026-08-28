@@ -1517,8 +1517,14 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
         # a read can catch one mid-write: a hook that printed a jq parse error
         # would put it in the model's context. A bad read yields "" and simply
         # retries next turn.
+        # Only an EXPLICIT "derived" promotes. An absent nameSource is a named
+        # session, not an unnamed one: the app writes the field only when the
+        # name is derived, and a record rebuilt after a promotion comes back
+        # with it omitted — reading absent as derived re-fired the promotion on
+        # every prompt, re-running the transcript read each turn for exactly
+        # the sessions that were already done.
         nsrc=$(jq -rs --arg s "$hsid" \
-          '[.[] | select(.sessionId == $s) | .nameSource // "derived"] | unique | join(",")' \
+          '[.[] | select(.sessionId == $s) | .nameSource // "named"] | unique | join(",")' \
           "${regs[@]}" 2>/dev/null || true)
         [ "$nsrc" = derived ] && ptitle=$(first_title "$hsid")
       fi
