@@ -25,7 +25,6 @@ check_service() {
     fi
 }
 
-check "Ollama" "http://localhost:11434/api/tags"
 # Phase 2 (uncomment when deployed):
 # check "llama-reranker" "http://localhost:8181/health"
 # check "Parakeet STT" "http://localhost:9000/v1/models"

@@ -47,7 +47,7 @@ roost-apply --caddy|--cloudflare|--ntfy|--systemd|--cron|--xray|--proton|--all  
   - `lib/` — shared code → `claude/lib/`: `_hook-env.sh` (hook JSON input, ntfy, rate limiting, logging), `cloudflare-assemble.sh`, `tmux-main-guard.sh` (rebuilds a killed `main` session from its surviving group; run by tmux's `session-closed` hook and `_ensure_tmux`)
   - `skills/` — skills → `$CLAUDE_CONFIG_DIR/skills/` (codex, html2markdown, havelock-api, humanizer, pastebin, roughdraft, session, zotero); each SKILL.md is self-describing
   - `travel/` — travel VPN server pieces (`files/travel/CLAUDE.md`)
-  - `setup/` — modular setup scripts run by `deploy.sh` via `remote_script()`: `system`, `create-user`, `ssh-hardening`, `ufw`, `swap`, `snapper`, `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `privatebin`, `travel-vpn`, `dufs`, `ollama`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `et`, `clip-forward`, `unattended-upgrades`
+  - `setup/` — modular setup scripts run by `deploy.sh` via `remote_script()`: `system`, `create-user`, `ssh-hardening`, `ufw`, `swap`, `snapper`, `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `privatebin`, `travel-vpn`, `dufs`, `glances`, `ram-monitor`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `et`, `clip-forward`, `unattended-upgrades`
   - `laptop/` — runs on the laptop, not the server; each component has its own `install-*.sh` (`files/laptop/CLAUDE.md`)
 - **`extras/`** — standalone utilities: `hetzner-watch.sh` (server-type availability poller → ntfy), `vscode-tmux-tabs/` (VS Code Remote-SSH extension: one editor tab per `main` tmux window; see its README)
 

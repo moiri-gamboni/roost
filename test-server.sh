@@ -407,22 +407,6 @@ else
     fail "ncat not installed"
 fi
 
-# ── Ollama ────────────────────────────────────────────────────
-echo ""
-echo "--- Ollama ---"
-
-if run systemctl is-active ollama >/dev/null 2>&1; then
-    pass "Ollama service active"
-else
-    fail "Ollama service"
-fi
-
-if run curl -sf --max-time 10 http://localhost:11434/api/tags >/dev/null 2>&1; then
-    pass "Ollama API responding"
-else
-    fail "Ollama API"
-fi
-
 # ── Claude Code ───────────────────────────────────────────────
 echo ""
 echo "--- Claude Code ---"
