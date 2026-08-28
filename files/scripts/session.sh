@@ -63,6 +63,14 @@
 #                     one-line refresh notice (no breakdown) telling the model
 #                     the cap is fresh and work can resume; per-session warn
 #                     state (reset ts + login) lives in sessions/<sid>.warn.
+#                     Independently of the gate, the same envelope carries
+#                     hookSpecificOutput.sessionTitle ONCE per session, to make
+#                     the session addressable by its title: it promotes the
+#                     auto-title to the presence registry's `name` — what
+#                     ListAgents prints and SendMessage addresses — while that
+#                     name is still the app's cwd slug. `claude --name` and
+#                     `/rename` set the same field themselves and are never
+#                     overwritten; rename is how you change it afterwards.
 #   session --rewake-waiter  asyncRewake hook plumbing (second UserPromptSubmit
 #                     entry AND second StopFailure entry): the harness
 #                     backgrounds it and treats exit 2 as "wake the model with
@@ -196,6 +204,24 @@ session_title() {  # $1=sid ; empty output if no title yet
     | awk '/"type":"custom-title"/ {c=$0} /"type":"ai-title"/ {a=$0}
            END {print (c != "" ? c : a)}')
   [ -n "$line" ] || return 0
+  printf '%s' "$line" | jq -r '.customTitle // .aiTitle // empty'
+}
+# The FIRST auto-title, for the one-shot peer-name promotion in the hook below.
+# Read from a bounded prefix: the app writes the title right after the opening
+# exchange (over the 1,492 titled session transcripts of Aug 2026 the entry sat
+# p50 32 KB / p99 386 KB / max 1.4 MB in, so the cap has never truncated a real
+# one), and the bound exists for the other shape — the ~4% of sessions that
+# never get a title at all, where an unbounded scan would re-read a transcript
+# that can reach tens of MB on every single prompt.
+TITLE_SCAN_BYTES=${TITLE_SCAN_BYTES:-2000000}
+first_title() {  # $1=sid -> its first ai-title (empty if none in the prefix)
+  local jsonl line
+  jsonl=$(transcript_of "$1")
+  [ -n "$jsonl" ] || return 0
+  # grep reads a process substitution rather than a pipe: `head | grep -m1`
+  # SIGPIPEs head on a match, and under pipefail that turns a HIT into a
+  # non-zero pipeline that reads as "no title".
+  line=$(grep -m1 '"type":"ai-title"' < <(head -c "$TITLE_SCAN_BYTES" "$jsonl")) || return 0
   printf '%s' "$line" | jq -r '.aiTitle // empty'
 }
 whoami_usage() {
@@ -321,7 +347,9 @@ peers_main() {
       cat >&2 <<'EOF'
 Usage: session peers [--json]
 Live Claude Code sessions on this box, one per row:
-  NAME     cross-session address (the row name ListAgents shows = SendMessage `to:`)
+  NAME     cross-session address (the row name ListAgents shows = SendMessage `to:`).
+           Normally the session's title — `session --hook` promotes it there once
+           the app has generated one; `/rename <name>` sets it yourself, any time
   SESSION  8-char session-id prefix (feeds `session name`, `agent <dir> -r`, …)
   REACH    yes = messaging socket live, ListAgents shows it; no = registered
            without a socket — invisible to ListAgents until that session restarts
@@ -778,7 +806,9 @@ Guard config (environment, per window):
 
 Plumbing (wired via settings.json hooks + tmux hooks; not for interactive use):
   session --hook                   UserPromptSubmit: log turn start; inject usage
-                                   line + ⚠ only at >=USAGE_WARN_PCT (default 90)
+                                   line + ⚠ only at >=USAGE_WARN_PCT (default 90);
+                                   promote the auto-title to the peer name once
+                                   (TITLE_SCAN_BYTES caps the transcript read)
   session --rewake-waiter          UserPromptSubmit + StopFailure (asyncRewake
                                    entries): arms the auto-resume waiter once a
                                    window warns (or the turn died on a cap); its
@@ -843,11 +873,17 @@ done
 
 # emit a status line either plain (compact) or wrapped in the UserPromptSubmit hook
 # JSON (hook): additionalContext is injected into the model's context; suppressOutput
-# keeps the JSON envelope out of the user's transcript.
-emit() {  # $1 = the status line
+# keeps the JSON envelope out of the user's transcript. sessionTitle ($ptitle, set
+# by the peer-name block below) rides the same envelope — a hook gets one JSON
+# object, so the two cannot be emitted separately. Either half may be absent: an
+# empty line with a title is the common case (a promotion below the warn gate).
+ptitle=""
+emit() {  # $1 = the status line (may be empty when only $ptitle is being set)
   if [ "$mode" = hook ]; then
-    jq -cn --arg c "$1" \
-      '{suppressOutput: true, hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $c}}'
+    jq -cn --arg c "$1" --arg t "$ptitle" \
+      '{suppressOutput: true, hookSpecificOutput: ({hookEventName: "UserPromptSubmit"}
+         + (if $c == "" then {} else {additionalContext: $c} end)
+         + (if $t == "" then {} else {sessionTitle: $t} end))}'
   else
     printf '%s\n' "$1"
   fi
@@ -1458,6 +1494,35 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
     # turn START event for `session time`; the Stop hook (--turn-end) logs the
     # matching end, sharing prompt_id so turns join to sample-log rows by id
     [ -n "$hsid" ] && printf '%s\t%s\ts\t%s\t-\t-\n' "$(date +%s)" "$hsid" "${hpid:--}" >> "$tlog"
+    # ── peer name ← session title, once ──────────────────────────────────────
+    # $cfg/sessions/<pid>.json is Claude Code's presence registry, and its
+    # `name` is what ListAgents prints and what SendMessage addresses. Left
+    # alone that name is a cwd slug ("apart-research-2a"): the app derives it
+    # from the directory and deliberately never promotes the readable title
+    # into it (the registry write is skipped for title source "auto"), so peers
+    # are addressable only by a code the user never sees, while the title they
+    # DO see lives in the transcript. Returning sessionTitle from this hook
+    # sets both, with source "hook".
+    #
+    # Once per session: the gate fires only while every registry record for
+    # this id still reads `derived`, so `claude --name` and `/rename` (source
+    # "user", and both already set the name natively) always win and are never
+    # overwritten — rename is how you change it afterwards. Cost once promoted
+    # is the one jq below (~11ms); the transcript read happens only in the
+    # turn or two before a title exists.
+    if [ -n "$hsid" ]; then
+      regs=("$cfg"/sessions/*.json)
+      if [ -e "${regs[0]}" ]; then
+        # stderr is dropped because the app rewrites these records in place and
+        # a read can catch one mid-write: a hook that printed a jq parse error
+        # would put it in the model's context. A bad read yields "" and simply
+        # retries next turn.
+        nsrc=$(jq -rs --arg s "$hsid" \
+          '[.[] | select(.sessionId == $s) | .nameSource // "derived"] | unique | join(",")' \
+          "${regs[@]}" 2>/dev/null || true)
+        [ "$nsrc" = derived ] && ptitle=$(first_title "$hsid")
+      fi
+    fi
     # Reset-refresh notice: a session that was warned about a window is told,
     # once, when that window's resets_at has passed — otherwise a model that
     # paused on the cap has no signal that it turned over (the gate keeps the
@@ -1544,6 +1609,8 @@ if [ "$mode" = compact ] || [ "$mode" = hook ]; then
       emit "$line"
     elif [ -n "$refresh" ]; then
       emit "Claude usage limits: $refresh — a fresh window is available. Work can continue normally, fan-out included; the earlier ⚠ warning no longer applies."
+    elif [ -n "$ptitle" ]; then
+      emit ""   # nothing to say about usage, but a peer name to set
     fi
     exit 0
   fi
