@@ -110,6 +110,7 @@ files/scheduled/health-check.sh|$ROOST_DIR/claude/scheduled/health-check.sh|plai
 files/scheduled/scheduled-task.sh|$ROOST_DIR/claude/scheduled/scheduled-task.sh|plain+x|
 files/scheduled/run-scheduled-task.sh|$ROOST_DIR/claude/scheduled/run-scheduled-task.sh|plain+x|
 files/scheduled/auto-update.sh|$ROOST_DIR/claude/scheduled/auto-update.sh|plain+x|
+files/scheduled/disk-cleanup.sh|$ROOST_DIR/claude/scheduled/disk-cleanup.sh|plain+x|
 files/scheduled/ram-monitor.sh|$ROOST_DIR/claude/scheduled/ram-monitor.sh|plain+x|
 files/scheduled/agents-cleanup.sh|$ROOST_DIR/claude/scheduled/agents-cleanup.sh|plain+x|
 files/scheduled/track-ssh-activity.sh|$ROOST_DIR/claude/scheduled/track-ssh-activity.sh|plain+x|
