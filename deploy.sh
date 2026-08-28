@@ -782,14 +782,6 @@ remote_script "setup/dev-tools.sh"
 ok "fnm + Node LTS, Go, uv, gitleaks installed"
 
 # ============================================
-# Ollama
-# ============================================
-
-section "Ollama"
-remote_script "setup/ollama.sh"
-ok "Ollama ready"
-
-# ============================================
 # Claude Code
 # ============================================
 
