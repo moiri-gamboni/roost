@@ -44,7 +44,35 @@ check_service "cloudflared"
 
 DISK_PCT=$(df / --output=pcent | tail -1 | tr -d ' %')
 logger -t "$_HOOK_TAG" "Disk: ${DISK_PCT}%"
-[ "$DISK_PCT" -gt 80 ] && FAILURES="$FAILURES\n- Disk usage at ${DISK_PCT}%"
+# Alert on the trend, not the level. A disk parked above 80% is a known state,
+# and re-reporting it every 5 minutes trains the alert to be ignored. Above
+# DISK_CRIT it is reported regardless: the growth rule alone would silently
+# swallow a jump straight from healthy to nearly full, which is the one case
+# that most needs a page.
+DISK_WARN=80
+DISK_CRIT=90
+DISK_STATE="$HOOK_RUNTIME_DIR/disk-alert-pct"
+if [ "$DISK_PCT" -ge "$DISK_CRIT" ]; then
+    FAILURES="$FAILURES\n- Disk usage at ${DISK_PCT}% (critical)"
+    echo "$DISK_PCT" > "$DISK_STATE"
+elif [ "$DISK_PCT" -gt "$DISK_WARN" ]; then
+    # Fire only once usage climbs 3 points past the level last reported, and
+    # track it back down as it recovers, so a genuine climb after a cleanup
+    # still alerts rather than hiding under a stale high-water mark.
+    DISK_LAST=""
+    [ -f "$DISK_STATE" ] && DISK_LAST=$(cat "$DISK_STATE" 2>/dev/null)
+    if [ -z "$DISK_LAST" ]; then
+        # First observation in the warn band: record it, do not alert.
+        echo "$DISK_PCT" > "$DISK_STATE"
+    elif [ "$DISK_PCT" -ge $((DISK_LAST + 3)) ]; then
+        FAILURES="$FAILURES\n- Disk usage at ${DISK_PCT}% (up from ${DISK_LAST}%)"
+        echo "$DISK_PCT" > "$DISK_STATE"
+    elif [ "$DISK_PCT" -lt "$DISK_LAST" ]; then
+        echo "$DISK_PCT" > "$DISK_STATE"
+    fi
+else
+    rm -f "$DISK_STATE"
+fi
 
 # Btrfs allocation headroom — the failure df can't see: once chunk allocation
 # reaches the device edge the metadata pool can't grow, and the next metadata
