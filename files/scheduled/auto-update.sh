@@ -259,6 +259,16 @@ track "rodney" bash -c "go install github.com/simonw/rodney@latest"
 # --- OS packages ---
 track "OS packages" bash -c "sudo DEBIAN_FRONTEND=noninteractive apt update -qq && sudo DEBIAN_FRONTEND=noninteractive apt -o Dpkg::Options::='--force-confold' upgrade -y"
 
+# --- Disk cleanup ---
+# Last, so it sees this run's leavings: the Node version the LTS bump just
+# superseded, the Claude Code version `claude update` replaced, the apt archives.
+# Runs as a subprocess (it ends in `exit 0`, so sourcing would cut this run short)
+# and reports its summary on stdout for the weekly message.
+CLEANUP_SUMMARY=""
+if [ -x "$(dirname "$0")/disk-cleanup.sh" ]; then
+    CLEANUP_SUMMARY=$(AUTO_UPDATE_PARENT=1 "$(dirname "$0")/disk-cleanup.sh")
+fi
+
 # --- Summary ---
 logger -t "$_HOOK_TAG" "=== Auto-update finished ==="
 
@@ -267,6 +277,7 @@ BODY=""
 [ -n "$FAILED" ] && BODY="$BODY\n\nFailed:$FAILED"
 [ -n "$MAJOR_UPGRADES" ] && BODY="$BODY\n\nNew major versions available:$MAJOR_UPGRADES"
 [ -z "$BODY" ] && BODY="Everything already up to date."
+[ -n "$CLEANUP_SUMMARY" ] && BODY="$BODY\n\n$CLEANUP_SUMMARY"
 
 ntfy_send \
     -t "Weekly update $(date +%Y-%m-%d)" \
