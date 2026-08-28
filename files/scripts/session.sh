@@ -173,15 +173,28 @@ resolve_sid() {
   [ -n "$sid" ] || return 1
   printf '%s\n' "$sid"
 }
-# Auto-title: the newest {"type":"ai-title","aiTitle":"..."} entry in the
-# session transcript under $CLAUDE_CONFIG_DIR/projects/<encoded-cwd>/<sid>.jsonl
-session_title() {  # $1=sid ; empty output if no title yet
-  local cfg jsonl line
+transcript_of() {  # $1=sid -> its transcript path (empty if none readable)
+  local cfg jsonl
   cfg="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
   [ -d "$cfg/projects" ] || return 0
   jsonl=$(find "$cfg/projects" -name "$1.jsonl" -print -quit)
-  { [ -n "$jsonl" ] && [ -r "$jsonl" ]; } || return 0
-  line=$(grep '"type":"ai-title"' "$jsonl" | tail -n1 || true)
+  { [ -n "$jsonl" ] && [ -r "$jsonl" ]; } && printf '%s' "$jsonl"
+}
+# A session's title, from its transcript under
+# $CLAUDE_CONFIG_DIR/projects/<encoded-cwd>/<sid>.jsonl. Two kinds of entry
+# carry one and the app prefers the custom over the auto-generated one, so this
+# does too: {"type":"custom-title","customTitle":".."} is what `/rename` (and a
+# hook-set sessionTitle) writes, {"type":"ai-title","aiTitle":".."} the app's
+# own summary, re-appended as the conversation moves. Precedence, not recency —
+# the auto-titler keeps writing after a rename, and the rename is what the user
+# sees in the prompt box and what peers address the session by.
+session_title() {  # $1=sid ; empty output if no title yet
+  local jsonl line
+  jsonl=$(transcript_of "$1")
+  [ -n "$jsonl" ] || return 0
+  line=$(grep -E '"type":"(custom-title|ai-title)"' "$jsonl" \
+    | awk '/"type":"custom-title"/ {c=$0} /"type":"ai-title"/ {a=$0}
+           END {print (c != "" ? c : a)}')
   [ -n "$line" ] || return 0
   printf '%s' "$line" | jq -r '.aiTitle // empty'
 }
@@ -232,10 +245,12 @@ snap_pairs() {  # "sid<TAB>name" for every usage snapshot
   jq -r '[input_filename, (.session_name // "")] | @tsv' "$@" 2>/dev/null \
     | awk -F'\t' '{ sub(/.*\//,"",$1); sub(/\.json$/,"",$1); print $1 "\t" $2 }'
 }
-title_of_file() {  # $1=transcript path -> its newest ai-title (empty if none)
-  local line
-  line=$(grep '"type":"ai-title"' "$1" 2>/dev/null | tail -n1 || true)
-  [ -n "$line" ] && printf '%s' "$line" | jq -r '.aiTitle // empty'
+title_of_file() {  # $1=transcript path -> its title (empty if none)
+  local line                                   # same custom-over-auto precedence as session_title
+  line=$(grep -E '"type":"(custom-title|ai-title)"' "$1" 2>/dev/null \
+    | awk '/"type":"custom-title"/ {c=$0} /"type":"ai-title"/ {a=$0}
+           END {print (c != "" ? c : a)}')
+  [ -n "$line" ] && printf '%s' "$line" | jq -r '.customTitle // .aiTitle // empty'
 }
 lk_filter() {  # $1=name|id  $2=query : keep matching "sid<TAB>name" rows
   if [ "$1" = name ]; then awk -F'\t' -v q="$2" 'index($1, q)==1'
