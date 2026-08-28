@@ -190,9 +190,11 @@ fi
 
 # --- Package manager caches -------------------------------------------------
 # All pure caches: worst case is a slower next install.
-# Deliberately NOT touched: ~/.cache/rod (rodney's Chromium, long-lived shared
-# browser) and ~/.cache/ms-playwright (roughdraft and podcast-studio depend on it).
-# Both are re-downloadable but expensive, and rod is typically running.
+# Deliberately NOT touched, because each is a browser some tool needs at runtime:
+# ~/.cache/rod (rodney's Chromium, long-lived shared browser, typically running),
+# ~/.cache/ms-playwright (roughdraft and podcast-studio), and ~/.cache/puppeteer
+# (mmdc renders through it; removing it returns mmdc to the "Could not find
+# Chrome" state it was in before 2026-08-28). All are re-downloadable but large.
 CACHE_BEFORE=$(du -sk "$HOME/.cache" 2>/dev/null | cut -f1)
 
 if [ "$DRY_RUN" = 1 ]; then
