@@ -749,6 +749,7 @@ while [ $# -gt 0 ]; do
     --all)   all=1 ;;
     --yesterday) yday=1 ;;
     --date)  shift; datearg="${1:?--date needs a date, e.g. 2026-08-28}" ;;
+    --spans) spansout=1 ;;   # machine-readable attended spans, for external analysis
     --file)  shift; cache="${1:?--file needs a path}" ;;
     -h|--help)
       cat <<'HELP'
@@ -787,6 +788,8 @@ Time tracking (hook-fed turn boundaries; gaps between turns never count):
   session time ... --yesterday     the same over yesterday's full day
   session time ... --date D        the same over any past day (YYYY-MM-DD, or
                                    anything `date -d` parses: "3 days ago")
+  session time ... --spans         the attended intervals themselves, as
+                                   "sid<TAB>start<TAB>end" epoch seconds
   session time --json              this session's figures as one JSON object
                                    (attended_s is what `tasks stint` reads)
 
@@ -1100,6 +1103,14 @@ if [ "${submode:-}" = time ]; then
           if (started) printf "%s\t%.3f\t%.3f\n", csid, cs2, ce2
         }
       }')
+  fi
+  # `--spans`: the attended intervals themselves, "sid<TAB>start<TAB>end" epoch
+  # seconds, so an external reconciliation (against a time tracker, say) can
+  # union them with other interval sets instead of reimplementing the idle-cap
+  # and clipping rules and drifting from them.
+  if [ "${spansout:-0}" = 1 ]; then
+    [ -n "$fspans" ] && printf '%s\n' "$fspans"
+    exit 0
   fi
   # attended total + last-focus ts per sid (from the focus spans)
   fatt=$(awk -F'\t' 'NF==3 { att[$1]+=$3-$2; if ($3+0>last[$1]) last[$1]=$3+0 }
