@@ -139,6 +139,18 @@ flog="${ROOST_USAGE_FLOG:-$HOME/roost/claude/usage/focus-log.tsv}"
 panedir="${ROOST_USAGE_PANEDIR:-$HOME/roost/claude/usage/panes}"
 slog="${ROOST_USAGE_SLOG:-$HOME/roost/claude/usage/session-log.tsv}"
 snapdir="${ROOST_USAGE_SNAPDIR:-$HOME/roost/claude/usage/sessions}"
+uarchive="${ROOST_USAGE_ARCHIVE:-$HOME/roost/claude/usage/archive}"
+# The pruner moves older rows out to usage/archive/<same basename>, which used to
+# put anything past the horizon out of reach — `session time --date` on such a day
+# reported "nothing logged" for a day that was in fact worked. Every reader sorts
+# by timestamp anyway, so covering all of history is just a matter of handing it
+# both halves. `log_srcs <live>` echoes the non-empty ones, oldest first.
+log_srcs() {
+  local live=$1 arch="$uarchive/${1##*/}"
+  [ -s "$arch" ] && printf '%s\n' "$arch"
+  [ -s "$live" ] && printf '%s\n' "$live"
+  return 0
+}
 ATTEND_GRACE="${ROOST_ATTEND_GRACE:-600}"   # attended idle-cap: seconds of credit past the last interaction
 FIVE_GUARD="${FIVE_GUARD:-linear}"
 WEEK_GUARD="${WEEK_GUARD:-linear}"
@@ -720,7 +732,7 @@ case "${1:-}" in
     exit 0 ;;
 esac
 
-mode=text; waitwin=five; submode=""; target_sid=""; all=0; yday=0
+mode=text; waitwin=five; submode=""; target_sid=""; all=0; yday=0; datearg=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --compact|--oneline) mode=compact ;;
@@ -736,6 +748,7 @@ while [ $# -gt 0 ]; do
     time)    submode='time' ;;
     --all)   all=1 ;;
     --yesterday) yday=1 ;;
+    --date)  shift; datearg="${1:?--date needs a date, e.g. 2026-08-28}" ;;
     --file)  shift; cache="${1:?--file needs a path}" ;;
     -h|--help)
       cat <<'HELP'
@@ -772,6 +785,8 @@ Time tracking (hook-fed turn boundaries; gaps between turns never count):
                                    attended (focus), waits (this session)
   session time --all               the same, one row per session
   session time ... --yesterday     the same over yesterday's full day
+  session time ... --date D        the same over any past day (YYYY-MM-DD, or
+                                   anything `date -d` parses: "3 days ago")
   session time --json              this session's figures as one JSON object
                                    (attended_s is what `tasks stint` reads)
 
@@ -903,9 +918,17 @@ emit() {  # $1 = the status line (may be empty when only $ptitle is being set)
 # actual interrupt stays uncounted, so active remains a floor — just no longer
 # one that zeroes a 29-minute stretch because its Stop never fired.
 if [ "${submode:-}" = time ]; then
-  [ -s "$tlog" ] || { echo "session: no turn log yet at $tlog (the per-turn hooks append it)" >&2; exit 1; }
+  mapfile -t tlogs < <(log_srcs "$tlog"); mapfile -t flogs < <(log_srcs "$flog")
+  mapfile -t slogs < <(log_srcs "$slog")
+  [ ${#tlogs[@]} -gt 0 ] || { echo "session: no turn log yet at $tlog (the per-turn hooks append it)" >&2; exit 1; }
   now=$(date +%s)
-  if [ "$yday" = 1 ]; then  # yesterday's full day; dangling spans clip at day end
+  if [ -n "$datearg" ]; then  # any past day, for auditing history
+    midnight=$(date -d "$datearg 00:00" +%s 2>/dev/null) \
+      || { echo "session time: --date '$datearg' is not a date I can parse (try 2026-08-28)" >&2; exit 2; }
+    dayend=$(date -d "$datearg +1 day" +%s)   # not midnight+86400: DST days are 23h/25h
+    [ "$dayend" -gt "$now" ] && dayend=$now
+    daylabel="$(date -d "@$midnight" +%F)"
+  elif [ "$yday" = 1 ]; then  # yesterday's full day; dangling spans clip at day end
     midnight=$(date -d 'yesterday 00:00' +%s); dayend=$(date -d 00:00 +%s)
     daylabel="yesterday $(date -d yesterday +%F)"
   else
@@ -922,14 +945,14 @@ if [ "${submode:-}" = time ]; then
   # across the whole log so the first in-window sample compares against
   # yesterday's tail instead of emitting a spurious flank.
   gevents=""
-  if [ -s "$slog" ]; then
-    gevents=$(LC_ALL=C sort -t$'\t' -k1,1n "$slog" | awk -F'\t' -v mid="$midnight" -v dend="$dayend" '
+  if [ ${#slogs[@]} -gt 0 ]; then
+    gevents=$(LC_ALL=C sort -t$'\t' -k1,1n "${slogs[@]}" | awk -F'\t' -v mid="$midnight" -v dend="$dayend" '
       NF>=8 && $2!="" {
         if (($2 in prev) && $8+0>prev[$2] && $1+0>=mid && $1+0<dend)
           printf "%s\t%s\tg\t-\t-\t-\n", $1, $2
         prev[$2]=$8+0 }')
   fi
-  tmerged=$({ cat "$tlog"; [ -n "$gevents" ] && printf '%s\n' "$gevents"; } \
+  tmerged=$({ cat "${tlogs[@]}"; [ -n "$gevents" ] && printf '%s\n' "$gevents"; } \
     | LC_ALL=C sort -t$'\t' -k1,1n)
   rows=$(awk -F'\t' -v mid="$midnight" -v dend="$dayend" '
     function credit(sid,   d) {         # an unclosed turn: count start→last evidence
@@ -993,18 +1016,26 @@ if [ "${submode:-}" = time ]; then
     }
     END { for (s in pend) flush(s) }' <<<"$tmerged")
   fspans=""
-  if [ -s "$flog" ]; then
+  if [ ${#flogs[@]} -gt 0 ]; then
     pmap=""
     if [ -d "$panedir" ]; then
       pmap=$(for f in "$panedir"/*; do [ -e "$f" ] || continue; printf '%%%s\t%s\n' "${f##*/}" "$(cat "$f")"; done)
     fi
-    sorted_flog=$(LC_ALL=C sort -t$'\t' -k1,1n "$flog")
+    sorted_flog=$(LC_ALL=C sort -t$'\t' -k1,1n "${flogs[@]}")
     # raw focus spans, per client: client \t sid \t start \t end
     rspans=$(awk -F'\t' -v mid="$midnight" -v dend="$dayend" -v pm="$pmap" '
       BEGIN { n=split(pm, L, "\n"); for (i=1;i<=n;i++) if (split(L[i], kv, "\t")==2) sid[kv[1]]=kv[2] }
+      # Panes get reused: pane %14 belongs to one session today and another next
+      # week, so resolving an unstamped old row through the LIVE pane map credits
+      # its span to whatever session occupies that pane now. Rows arrive
+      # ts-sorted, so seen[] carries the sid stamped at or before this row — the
+      # mapping as it was. The live map is the last resort, for rows that predate
+      # any stamped sid for their pane (a pane logs "-" only before its first
+      # render, so this is rare and always same-session).
+      NF>=6 { if ($6!="" && $6!="-") seen[$5]=$6 }
       NF>=6 && $1+0>=mid && $1+0<dend && ($2=="in" || $2=="out") {
         ts=$1+0; ev=$2; cl=$3; pn=$5; s=$6
-        if (s=="" || s=="-") s=sid[pn]
+        if (s=="" || s=="-") s=(pn in seen ? seen[pn] : sid[pn])
         # explicit %.3f: printf %s of a non-integral number goes through
         # CONVFMT (%.6g) — scientific notation, i.e. ±1000s of precision loss
         if (open[cl]) { if (osid[cl]!="") printf "%s\t%s\t%.3f\t%.3f\n", cl, osid[cl], open[cl], ts; open[cl]=0 }
@@ -1015,9 +1046,11 @@ if [ "${submode:-}" = time ]; then
     # A = activity mark (client, ts, sid — the act row's own log-time sid)
     fevents=$(awk -F'\t' -v mid="$midnight" -v dend="$dayend" -v pm="$pmap" '
       BEGIN { n=split(pm, L, "\n"); for (i=1;i<=n;i++) if (split(L[i], kv, "\t")==2) sid[kv[1]]=kv[2] }
+      NF>=6 { if ($6!="" && $6!="-") seen[$5]=$6 }   # contemporaneous pane→sid, as in rspans
       NF>=6 && $1+0>=mid && $1+0<dend {
         if ($2=="in" || $2=="out") printf "K\t%s\t%.3f\n", $3, $1+0
-        else if ($2=="act") { s=$6; if (s=="" || s=="-") s=sid[$5]; printf "A\t%s\t%.3f\t%s\n", $3, $1+0, s }
+        else if ($2=="act") { s=$6; if (s=="" || s=="-") s=($5 in seen ? seen[$5] : sid[$5])
+                              printf "A\t%s\t%.3f\t%s\n", $3, $1+0, s }
       }' <<<"$sorted_flog")
     # Idle-cap + standalone-act attention. In-span: attention accrues in merged
     # [interaction, +GRACE] windows inside each focus span (span start counts as
