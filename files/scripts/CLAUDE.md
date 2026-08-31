@@ -1,6 +1,6 @@
 # scripts/ — user CLIs
 
-Deployed to `~/roost/claude/scripts/` and symlinked into `~/bin`. `roost-apply.sh` (config deployment; usage in the root CLAUDE.md) and `roost-net.sh` (travel VPN; `files/travel/CLAUDE.md`) are documented elsewhere. This file is about `session.sh`, whose header already lists every mode and the guard config; what follows is the cross-file mechanism.
+Deployed to `~/roost/claude/scripts/` and symlinked into `~/bin`. `roost-apply.sh` (config deployment; usage in the root CLAUDE.md), `roost-net.sh` (travel VPN; `files/travel/CLAUDE.md`) and `agent-worktree.sh` (composite session worktrees; its header carries the full contract, `tests/agent-worktree.sh` the behavior spec — two facts it builds on: Claude Code removes a *clean* hook-created worktree itself on exit and never calls WorktreeRemove for git worktrees, and SessionEnd fires *after* that removal with cwd back at the launch repo, which is why sub-repo worktrees live outside the root in `<name>.repos/` and are only symlinked in) are documented elsewhere. This file is about `session.sh`, whose header already lists every mode and the guard config; what follows is the cross-file mechanism.
 
 ## Data flow
 

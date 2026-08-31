@@ -76,6 +76,15 @@
             "timeout": 2
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/scripts/agent-worktree.sh finish",
+            "timeout": 120
+          }
+        ]
       }
     ],
     "SubagentStart": [
@@ -181,6 +190,17 @@
             "type": "command",
             "command": "~/roost/claude/hooks/roughdraft-write-guard.sh",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/scripts/agent-worktree.sh create",
+            "timeout": 120
           }
         ]
       }
