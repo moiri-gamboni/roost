@@ -55,6 +55,18 @@ check deny 'head as the sole command after ;'           'true; head -3 x'
 check deny 'tail -n 20 -f: the follow flag does not launder a count'  'tail -n 20 -f app.log'
 
 # --- must allow: the CLAUDE.md floor and the non-truncating uses ---
+# --- the tasks rule: a tasksync verb piped into head/tail denies at any count
+check deny  'tasks push tailed above the floor'         'tasks push some-slug --apply | tail -n 200'
+check deny  'tasks push, stderr merged, tailed'         'tasks push some-slug 2>&1 | tail -n 100'
+check deny  'tasks gate to head'                        'tasks gate some-slug | head -200'
+check deny  'tasks ls through grep then tail'           'tasks ls | grep -v DRAFT | tail -n 150'
+check deny  'absolute tasks entry script'               '/home/x/apart-tools/tasksync/tasks push s | tail -n 500'
+check allow 'tasks redirected to a file'                'tasks push some-slug > /tmp/out.txt 2>&1'
+check allow 'tail >=100 on another producer'            'git log --oneline | tail -n 200'
+check allow 'tasks then && separates the tail'          'tasks push s && git log --oneline | tail -n 100'
+check allow 'tasks || tail is not a pipe'               'tasks push s || tail -n 100 /tmp/err.txt'
+check allow 'a path named tasks is not the verb'        'cat tasks/some-slug/task.md | tail -n 120'
+
 check allow 'head -n 100 (the floor)'                   'seq 1000 | head -n 100'
 check allow 'head -100'                                 'seq 1000 | head -100'
 check allow 'tail -n 500'                               'seq 1000 | tail -n 500'

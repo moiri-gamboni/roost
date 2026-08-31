@@ -48,10 +48,25 @@ stripped=$(printf '%s' "$cmd" \
 deny() {
     logger -t roost/truncation-guard "denied $1"
     jq -nc --arg r "BLOCKED by the truncation guard (~/roost/claude/hooks/truncation-guard.sh, a roost PreToolUse hook): $1
-No head/tail under 100 lines: the cut part is usually the part that mattered. Re-run it and read the whole output — volume is not a problem. -n 100 or more passes." \
+${2:-No head/tail under 100 lines: the cut part is usually the part that mattered. Re-run it and read the whole output — volume is not a problem. -n 100 or more passes.}" \
         '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $r}}'
     exit 0
 }
+
+# A `tasks` verb piped into head/tail denies at ANY count, not only under the
+# 100-line floor: every tasksync verb\'s output is sized to be read whole, and
+# the dropped lines are exactly the ones that decide the next step — the
+# consistency gate\'s findings on a push (each named in the refusal), the
+# standing-FAIL notice a beat prints, an advisory, a refusal\'s cited section.
+# Observed: a session tails `tasks push`, misses the finding, re-runs against
+# it. The match spans a whole pipeline (`2>&1 |` and intermediate filters
+# included) but stops at `;` and `&&`/`||`, so a head/tail whose producer is
+# something else on the same line falls through to the general floor below.
+tseg='([^;&|]|>&[0-9])'
+if grep -qE "(^|[[:space:]|;&(])([^[:space:]]*/)?tasks[[:space:]]+[a-z-]+$tseg*(\\|$tseg+)*\\|[[:space:]]*(head|tail)([[:space:]]|\$)" <<<"$stripped"; then
+    deny "a \`tasks\` verb piped into head or tail" \
+         "The tasksync CLI\'s output is read whole at any length — the cut lines are the gate\'s findings and the beat\'s notices. Re-run it unfiltered; to capture it, redirect to a file (tasks … > out.txt 2>&1) and read the entire file."
+fi
 
 # Split into simple commands: pipes, separators, subshells, command substitution, newlines.
 # A segment is ours when it starts with head/tail (an optional sudo in front), i.e. the word is
