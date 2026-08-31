@@ -1,6 +1,6 @@
 ---
 name: session
-description: The session CLI — this Claude Code session's identity and its usage of the plan's rate limits. Run `session` for the overview (id · name, the 5-hour and weekly rate-limit %s + reset times that actually gate the session, context fill, this session's share); `session whoami` for the id/title (pane-safe, e.g. to build a `claude --resume <id>` command or label output); `session usage [--all]` for per-session burn attribution; `session --guard` as a pacing gate for multi-agent fan-outs. Use when the user asks "how close are we to the limit", "how much is left", "when does it reset", "how full is the context", "how much has this/each session used", "which session is eating the budget", or "what's my session id / name" — and mid-task before/between waves of a big job to decide whether to keep spawning subagents. A per-turn hook (`session --hook`, transcript-suppressed) stays silent below `USAGE_WARN_PCT` (default 90) and injects the usage line + a ⚠ advisory only once a window crosses it — so absent a ⚠, usage is under 90%; run `session` when the actual numbers are needed.
+description: The session CLI — this Claude Code session's identity and its usage of the plan's rate limits. Run `session` for the overview (id · name, the 5-hour and weekly rate-limit %s + reset times that actually gate the session, context fill, this session's share); `session whoami` for the id/title (pane-safe, e.g. to build a `claude --resume <id>` command or label output); `session usage [--all]` for per-session burn attribution; `session --guard` as a pacing gate for multi-agent fan-outs. Use when the user asks "how close are we to the limit", "how much is left", "when does it reset", "how full is the context", "how much has this/each session used", "which session is eating the budget", or "what's my session id / name"; and for "reboot the box" / "get my sessions back after a reboot", which are `session reboot` and `session resume` — and mid-task before/between waves of a big job to decide whether to keep spawning subagents. A per-turn hook (`session --hook`, transcript-suppressed) stays silent below `USAGE_WARN_PCT` (default 90) and injects the usage line + a ⚠ advisory only once a window crosses it — so absent a ⚠, usage is under 90%; run `session` when the actual numbers are needed.
 ---
 
 # session — identity + usage limits for the invoking Claude Code session
@@ -30,6 +30,8 @@ $ session
 | `session name <id\|prefix>` · `session id <title-substring>` | cross-session lookup, both directions: any session's title from its id (the 8-char ids in tables/briefs work as prefixes), or its id from a case-insensitive title substring. One match prints the bare value (scriptable); several print `id<TAB>name` lines. Sessions active in the last 8 days resolve instantly; older ones fall back to the transcript store (id→name stays fast, title queries there grep GBs ~10s) |
 | `session peers [--json]` | live Claude Code sessions on this box, one row each: the cross-session address (the NAME ListAgents shows = SendMessage's `to:`) mapped to session id + title, with REACH = whether its messaging socket is live. REACH `no` = registered but invisible to ListAgents (restart that session to fix). `--json` carries full session ids |
 | `session usage [ID] [--json]` | one session's tracked burn + estimated share (default: the invoking session) |
+| `session reboot [-n] [-y]` | snapshot every live interactive session, then reboot the box; the sessions reopen by themselves at boot. `-n` writes the snapshot and prints it without rebooting, `-y` skips the confirmation prompt (required when stdin is not a terminal) |
+| `session resume [--scan [HOURS]] [-n]` | reopen sessions as tmux windows under `main`, one each. Bare: replays the snapshot `session reboot` left, then clears it. `--scan [H]` ignores the snapshot and takes every top-level session with transcript activity in the last H hours (default 48). `-n` prints without opening. Sessions already running are skipped |
 | `session usage --all [--json]` | breakdown across all tracked sessions, sorted by 5h spend, `←this` marks the caller |
 | `session time [--all] [--yesterday]` | per-turn time for today (or yesterday's full day): closed turns, active, WATCHED (active ∩ attended), ATTEND (focused-tab time), open/unclosed. `--all` = every session, attended-only ones included |
 | `session --compact` | one frugal line: date/time + 5h & weekly %s; always exits 0 |
@@ -39,6 +41,27 @@ $ session
 | `session --wait guard` | block until `--guard` would pass (same `FIVE_GUARD`/`WEEK_GUARD` config), then exit 0. Not a poll: it computes the earliest time the rising pace cap can reach the current used%, sleeps exactly to it, re-checks against a fresh cache, repeats. Run in the background; the exit is the wake-up |
 | `session --json` | raw overview fields |
 | `session account [list\|use <name>\|save\|rm <name>]` | switch subscription logins (see below) |
+
+## Surviving a reboot — `session reboot` + `session resume`
+
+A reboot destroys the tmux server and every Claude Code session in it. Claude Code's presence registry (`$CLAUDE_CONFIG_DIR/sessions/*.json`) is pruned at startup, so the set of sessions that were running cannot be recovered afterwards from it — it has to be captured first.
+
+```
+$ session reboot -n
+Snapshot -> /home/moiri/roost/claude/usage/resume-queue.tsv
+
+SESSION   DIRECTORY                        TITLE
+e935fd2b  /home/moiri/roost/code/server    Reboot from tmux
+df8806e3  /home/moiri/roost/apart-research Ad-hoc judges
+
+2 session(s) will be restored after the reboot.
+```
+
+`session reboot` writes that snapshot and reboots. At boot the systemd user unit `roost-session-resume.service` runs `session resume`, which reopens one tmux window per snapshotted session and clears the snapshot. Nothing else is needed; `session resume` by hand is for the case where the unit did not run.
+
+`session resume --scan [HOURS]` is the recovery path when no snapshot was taken. It reads the transcript store instead, so it also surfaces short-lived and deliberately closed sessions; `-n` lists them without opening anything.
+
+Each session reopens in the directory it was launched in, recovered from its transcript's project-dir slug. `claude --resume <id>` resolves a session id from any directory, so a session whose launch directory can no longer be determined still reopens — in the directory the registry last recorded for it.
 
 ## Switching subscription logins — `session account`
 When a cap is spent and another subscription is available, `session account` lists every saved login **with its rate-limit headroom and reset countdowns**, and `use` switches in place:

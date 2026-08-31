@@ -214,10 +214,20 @@ agent_stop <index>
 
 # Force stop (double Ctrl-C)
 agent_kill <index>
+
+# Reboot the box and get every running session back afterwards
+session reboot                   # snapshot, confirm, reboot; -n snapshots only
+session resume                   # replay the snapshot by hand
+session resume --scan 48         # no snapshot: offer sessions active in 48h
 ```
 
 Using `/rename` inside a session updates the tmux window name automatically.
 Sessions that aren't manually renamed get an auto-generated name on exit.
+
+A reboot destroys the tmux server and every session in it, and Claude Code prunes
+its presence registry at startup, so the running set must be captured beforehand.
+`session reboot` does that; the `roost-session-resume.service` user unit reopens
+the sessions at boot.
 
 #### Scheduled tasks
 
@@ -503,6 +513,7 @@ The repo is the canonical source for base infrastructure configs. Server-specifi
 | Full filesystem | btrfs snapshots (snapper) | Hourly | Seconds |
 | Off-site backup | btrfs send/receive to laptop (`files/laptop/btrfs-backup.sh`) | Daily | Minutes |
 | Disaster recovery | Hetzner backups | Daily | Minutes (reboot) |
+| Claude Code sessions | `session reboot` snapshot + `roost-session-resume.service` | Per reboot | Seconds |
 
 Snapper retention: 24 hourly, 7 daily, 4 weekly (no monthly or yearly).
 

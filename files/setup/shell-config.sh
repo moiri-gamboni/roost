@@ -68,7 +68,8 @@ for dir in \
     "$HOME_DIR/services" \
     "$HOME_DIR/bin" \
     "$ROOST_DIR/drop" \
-    "$HOME_DIR/.config/git/tokens"
+    "$HOME_DIR/.config/git/tokens" \
+    "$HOME_DIR/.config/systemd/user"
 do
     mkdir -p "$dir"
 done
@@ -90,6 +91,16 @@ chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-net"
 # per-session attribution (`session` / `session usage [--all]`), guard/wait
 ln -sf "$ROOST_DIR/claude/scripts/session.sh" "$HOME_DIR/bin/session"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/session"
+
+# Restore the sessions a `session reboot` snapshotted, at boot. Lingering is
+# what lets the user manager (and so this unit) run with nobody logged in;
+# without it the restore would wait for an SSH login that may never come.
+cp "$REMOTE_DIR/files/roost-session-resume.service" \
+   "$HOME_DIR/.config/systemd/user/roost-session-resume.service"
+chown -R "$USERNAME:$USERNAME" "$HOME_DIR/.config/systemd"
+loginctl enable-linger "$USERNAME"
+as_user "systemctl --user daemon-reload && systemctl --user enable roost-session-resume.service"
+echo "  [+] Session restore-after-reboot enabled"
 # granola-digest ships from files/private/, so skip when it isn't deployed
 # (public-repo-only checkouts won't have it). The granola mirror tooling itself
 # (granola/granola-transcripts/granola-refresh) lives in the apart-tools clone
