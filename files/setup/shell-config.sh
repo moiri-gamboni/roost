@@ -87,11 +87,10 @@ ln -sf "$ROOST_DIR/claude/scripts/roost-apply.sh" "$HOME_DIR/bin/roost-apply"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-apply"
 ln -sf "$ROOST_DIR/claude/scripts/roost-net.sh" "$HOME_DIR/bin/roost-net"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-net"
-# session: the session CLI — identity (`session whoami`), plan usage limits +
-# per-session attribution (`session` / `session usage [--all]`), guard/wait
-ln -sf "$ROOST_DIR/claude/scripts/session.sh" "$HOME_DIR/bin/session"
+# session: the session CLI lives in the apart-tools repo since 2026-08-31
+# (apart-research/apart-tools/session/); its install.sh owns the ~/bin/session
+# symlink, the settings.json hook entries and ~/roost/claude/session.conf.
 ln -sf "$ROOST_DIR/claude/scripts/agent-worktree.sh" "$HOME_DIR/bin/agent-worktree"
-chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/session"
 
 # Restore the sessions a `session reboot` snapshotted, at boot. Lingering is
 # what lets the user manager (and so this unit) run with nobody logged in;

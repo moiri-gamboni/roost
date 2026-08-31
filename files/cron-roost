@@ -14,7 +14,7 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 # Attention ticker (1/min): an activity mark for the focused tmux client, so
 # `session time` can idle-cap attended spans (tab left focused on an empty desk
 # stops accruing after the grace period; typing and scrolling both count).
-* * * * * $USERNAME $HOME_DIR/$ROOST_DIR_NAME/claude/scripts/session.sh --focus-mark tick
+* * * * * $USERNAME $HOME_DIR/bin/session --focus-mark tick
 
 # Daily brief of yesterday's Claude Code work (sessions, time, commits),
 # summarized by sonnet at max effort from day-sliced session-CLI logs; ntfy'd

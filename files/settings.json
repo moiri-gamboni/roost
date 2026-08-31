@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/roost/claude/scripts/session.sh --turn-end",
+            "command": "bash ~/roost/apart-research/apart-tools/session/session --turn-end || true",
             "timeout": 2
           }
         ]
@@ -53,12 +53,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/roost/claude/scripts/session.sh --turn-fail",
+            "command": "bash ~/roost/apart-research/apart-tools/session/session --turn-fail || true",
             "timeout": 2
           },
           {
             "type": "command",
-            "command": "~/roost/claude/scripts/session.sh --rewake-waiter",
+            "command": "bash ~/roost/apart-research/apart-tools/session/session --rewake-waiter",
             "timeout": 700000,
             "asyncRewake": true,
             "rewakeMessage": "Claude usage limits (auto-resume waiter):",
@@ -72,7 +72,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/roost/claude/scripts/session.sh --session-end",
+            "command": "bash ~/roost/apart-research/apart-tools/session/session --session-end || true",
             "timeout": 2
           }
         ]
@@ -92,7 +92,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/roost/claude/scripts/session.sh --subagent-start",
+            "command": "bash ~/roost/apart-research/apart-tools/session/session --subagent-start || true",
             "timeout": 2
           }
         ]
@@ -103,7 +103,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/roost/claude/scripts/session.sh --subagent-end",
+            "command": "bash ~/roost/apart-research/apart-tools/session/session --subagent-end || true",
             "timeout": 2
           }
         ]
@@ -114,7 +114,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/roost/claude/scripts/session.sh --compact-mark",
+            "command": "bash ~/roost/apart-research/apart-tools/session/session --compact-mark || true",
             "timeout": 2
           }
         ]
@@ -137,12 +137,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/roost/claude/scripts/session.sh --hook",
+            "command": "bash ~/roost/apart-research/apart-tools/session/session --hook || true",
             "timeout": 2
           },
           {
             "type": "command",
-            "command": "~/roost/claude/scripts/session.sh --rewake-waiter",
+            "command": "bash ~/roost/apart-research/apart-tools/session/session --rewake-waiter",
             "asyncRewake": true,
             "timeout": 700000,
             "rewakeMessage": "Claude usage limits (auto-resume waiter):",
@@ -161,7 +161,7 @@
           },
           {
             "type": "command",
-            "command": "~/roost/claude/scripts/session.sh --perm-mark",
+            "command": "bash ~/roost/apart-research/apart-tools/session/session --perm-mark || true",
             "timeout": 2
           }
         ]
@@ -212,7 +212,7 @@
   "workflowKeywordTriggerEnabled": false,
   "statusLine": {
     "type": "command",
-    "command": "~/roost/claude/hooks/statusline.sh",
+    "command": "bash ~/roost/apart-research/apart-tools/session/statusline.sh",
     "refreshInterval": 10
   },
   "enabledPlugins": {
