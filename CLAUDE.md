@@ -137,8 +137,9 @@ Defined in `files/shell/bashrc.sh` → `~/.bashrc.d/roost.sh` (idempotent: re-`s
 
 | Command | Usage |
 |---|---|
-| `agent [path] [claude-args...]` | Launch interactive Claude in a tmux window (path defaults to cwd) |
-| `agent -c` | Continue last session in cwd |
+| `agent [path] [claude-args...]` | Launch interactive Claude in a tmux window (path defaults to cwd; in a git repo the session gets its own worktree, `claude --worktree`) |
+| `agent -c` | Continue last session in cwd (skips the worktree flag; a worktree session resumes into its own) |
+| `agent -N` / `--no-worktree` | Launch directly in the directory, no worktree |
 | `agents` | Interactive tmux window picker |
 | `attach` | Grouped view on `main` (independent current-window per client) |
 

@@ -264,12 +264,14 @@ _ensure_tmux() {
     return 2  # new session created, need attach (shell window already exists)
 }
 
-# Launch an interactive Claude session in a tmux window.
+# Launch an interactive Claude session in a tmux window. In a git repo the
+# session gets its own worktree by default (claude --worktree: checkout under
+# .claude/worktrees/, auto-removed on clean exit when unchanged).
 # Usage: agent [path] [claude-args...]
-#   agent                           # cwd, interactive
+#   agent                           # cwd; own worktree if cwd is a git repo
 #   agent ~/roost/code/myapp        # that dir
-#   agent ~/roost/code/myapp -c     # continue last session
-#   agent -c                        # continue in cwd
+#   agent ~/roost/code/myapp -c     # continue last session (skips the worktree)
+#   agent -N|--no-worktree          # run directly in the directory
 agent() {
     local dir="$PWD"
     local -a claude_args=()
@@ -285,6 +287,36 @@ agent() {
         shift
     fi
     claude_args=("$@")
+
+    # Strip agent-level flags; everything else passes through to claude.
+    local no_worktree=0 arg
+    local -a _pass=()
+    for arg in "${claude_args[@]}"; do
+        case "$arg" in
+            -N|--no-worktree) no_worktree=1 ;;
+            *) _pass+=("$arg") ;;
+        esac
+    done
+    claude_args=("${_pass[@]}")
+
+    # Fresh sessions in a git repo get their own worktree. Skipped for
+    # continue/resume (a resumed worktree session returns to its worktree on
+    # its own) and when the caller passed -w/--worktree explicitly.
+    local use_worktree=0
+    if (( ! no_worktree )); then
+        use_worktree=1
+        for arg in "${claude_args[@]}"; do
+            case "$arg" in
+                -c|--continue|-r|--resume|-w|--worktree|--worktree=*)
+                    use_worktree=0; break ;;
+            esac
+        done
+        if (( use_worktree )); then
+            local in_repo
+            in_repo=$(git -C "$dir" rev-parse --is-inside-work-tree 2>&1) || true
+            [[ "$in_repo" == true ]] || use_worktree=0
+        fi
+    fi
 
     # Window name defaults to basename of the directory
     local base_name
@@ -312,6 +344,11 @@ agent() {
     for arg in "${claude_args[@]}"; do
         cmd_parts+=("$(printf '%q' "$arg")")
     done
+    # Appended last so a positional initial prompt can't be consumed as the
+    # optional worktree name.
+    if (( use_worktree )); then
+        cmd_parts+=(--worktree)
+    fi
 
     _ensure_tmux
     local state=$?
