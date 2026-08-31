@@ -99,12 +99,12 @@ define_manifest() {
     # Category A: User files under ~/roost/ (no root needed)
     cat <<'MANIFEST_A'
 files/settings.json|$ROOST_DIR/claude/settings.json|sed-roost|
+files/session.conf|$ROOST_DIR/claude/session.conf|plain|
 files/lib/_hook-env.sh|$ROOST_DIR/claude/lib/_hook-env.sh|plain+x|
 files/lib/cloudflare-assemble.sh|$ROOST_DIR/claude/lib/cloudflare-assemble.sh|plain+x|
 files/lib/tmux-main-guard.sh|$ROOST_DIR/claude/lib/tmux-main-guard.sh|plain+x|
 files/hooks/reflect.sh|$ROOST_DIR/claude/hooks/reflect.sh|plain+x|
 files/hooks/notify.sh|$ROOST_DIR/claude/hooks/notify.sh|plain+x|
-files/hooks/statusline.sh|$ROOST_DIR/claude/hooks/statusline.sh|plain+x|
 files/hooks/reflect.md|$ROOST_DIR/claude/hooks/reflect.md|sed-roost|
 files/scheduled/health-check.sh|$ROOST_DIR/claude/scheduled/health-check.sh|plain+x|
 files/scheduled/scheduled-task.sh|$ROOST_DIR/claude/scheduled/scheduled-task.sh|plain+x|
@@ -120,7 +120,6 @@ files/scheduled/roughdraft-watch.sh|$ROOST_DIR/claude/scheduled/roughdraft-watch
 files/scheduled/btrfs-balance.sh|$ROOST_DIR/claude/scheduled/btrfs-balance.sh|plain+x|
 files/scripts/roost-apply.sh|$ROOST_DIR/claude/scripts/roost-apply.sh|plain+x|
 files/scripts/roost-net.sh|$ROOST_DIR/claude/scripts/roost-net.sh|plain+x|
-files/scripts/session.sh|$ROOST_DIR/claude/scripts/session.sh|plain+x|
 files/scripts/agent-worktree.sh|$ROOST_DIR/claude/scripts/agent-worktree.sh|plain+x|
 files/roost-session-resume.service|$HOME_DIR/.config/systemd/user/roost-session-resume.service|plain|run:systemctl --user daemon-reload && systemctl --user enable roost-session-resume.service
 files/hooks/shellcheck-edit.sh|$ROOST_DIR/claude/hooks/shellcheck-edit.sh|plain+x|
@@ -145,7 +144,6 @@ files/skills/havelock-api/SKILL.md|$ROOST_DIR/claude/skills/havelock-api/SKILL.m
 files/skills/humanizer/SKILL.md|$ROOST_DIR/claude/skills/humanizer/SKILL.md|plain|
 files/skills/pastebin/SKILL.md|$ROOST_DIR/claude/skills/pastebin/SKILL.md|envsubst:DOMAIN|
 files/skills/roughdraft/SKILL.md|$ROOST_DIR/claude/skills/roughdraft/SKILL.md|plain|
-files/skills/session/SKILL.md|$ROOST_DIR/claude/skills/session/SKILL.md|plain|
 files/skills/zotero/SKILL.md|$ROOST_DIR/claude/skills/zotero/SKILL.md|plain|
 files/privatebin/privatebin-cloudflare.yml.tmpl|$ROOST_DIR/cloudflared/apps/privatebin.yml|envsubst:DOMAIN|run:~/roost/claude/lib/cloudflare-assemble.sh,restart:cloudflared
 MANIFEST_A

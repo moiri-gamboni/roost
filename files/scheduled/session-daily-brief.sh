@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/_hook-env.sh"   # ntfy_send, ROOST_DIR_NAME, logging
 
 U="$HOME/${ROOST_DIR_NAME}/claude/usage"
-CLI="$HOME/${ROOST_DIR_NAME}/claude/scripts/session.sh"
+CLI="$HOME/bin/session"
 day=$(date -d yesterday +%F)
 mid=$(date -d 'yesterday 00:00' +%s); dend=$(date -d 00:00 +%s)
 out_dir="$U/briefs"; mkdir -p "$out_dir"
