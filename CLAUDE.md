@@ -62,7 +62,7 @@ roost-apply --caddy|--cloudflare|--ntfy|--systemd|--cron|--xray|--proton|--all  
 │   ├── scheduled/          Cron + timer jobs (health-check, auto-update, ram-monitor, …)
 │   ├── lib/                Shared: _hook-env.sh, cloudflare-assemble.sh
 │   ├── skills/             Skills
-│   ├── usage/              session CLI data: per-login limit cache, sample/turn/focus logs, briefs
+│   ├── usage/              session CLI data: per-login limit cache, sample/turn/focus logs, briefs, resume queue
 │   ├── accounts/           login vault for `session account`
 │   └── projects/           Session transcripts (auto-managed)
 ├── cloudflared/apps/       Per-app Cloudflare Tunnel ingress fragments
@@ -91,7 +91,7 @@ Event hooks, and what they mean for a session (mechanism per hook: `files/hooks/
 
 Scheduled jobs (`scheduled/`, via `cron-roost` unless noted; detail: `files/scheduled/CLAUDE.md`): `health-check.sh` (every 5 min: services, disk, btrfs unallocated space, swap, pending reboot; sources `health-check-apps.sh`), `auto-update.sh` (Sunday 3am: snapshot, then tool + OS updates with a 7-day cooldown and major-version guard, ending in `disk-cleanup.sh`), `disk-cleanup.sh` (reclaims regenerable artifacts — superseded toolchain versions, caches, orphaned venvs, dangling Docker layers, oversized journal; `--dry-run` to preview), `btrfs-balance.sh` (Sunday 2:30am data-chunk balance), `agents-cleanup.sh` (3:30am: drop terminal-state agent jobs from the dashboard, transcripts untouched), `track-ssh-activity.sh` (per minute), `ram-monitor.sh` (timer, 30s, >3GB RSS alert), `vision-abuse-watch.sh`, `session-daily-brief.sh` (06:40: yesterday's sessions, time and usage via ntfy), `roughdraft-watch.sh` (07:10: upstream Roughdraft changes), `scheduled-task.sh` / `run-scheduled-task.sh` (headless `claude -p` tasks in a `cron` tmux session; none active).
 
-CLIs (`scripts/`, in `~/bin`): `roost-apply` (above), `roost-net` (travel VPN, below), and **`session`** — this session's identity and rate-limit position, per-session usage attribution, per-turn time tracking, and multi-login switching (`session account use <login>`: box-wide, one config dir swapped in place, effective on every running session's next request). The `session` skill documents the CLI; `files/scripts/CLAUDE.md` documents the internals.
+CLIs (`scripts/`, in `~/bin`): `roost-apply` (above), `roost-net` (travel VPN, below), and **`session`** — this session's identity and rate-limit position, per-session usage attribution, per-turn time tracking, multi-login switching (`session account use <login>`: box-wide, one config dir swapped in place, effective on every running session's next request), and reboot survival (`session reboot` snapshots the live sessions to `usage/resume-queue.tsv` and reboots; the `roost-session-resume.service` user unit replays it with `session resume` at boot, which needs `loginctl enable-linger`). The `session` skill documents the CLI; `files/scripts/CLAUDE.md` documents the internals.
 
 ## Native Services
 

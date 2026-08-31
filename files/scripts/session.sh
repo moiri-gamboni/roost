@@ -402,6 +402,218 @@ EOF
 }
 [ "${1:-}" = peers ] && { shift; peers_main "$@"; }
 
+# ── Reboot / resume (`session reboot`, `session resume`) ─────────
+# A reboot takes the tmux server and every Claude session in it, and the
+# presence registry ($CLAUDE_CONFIG_DIR/sessions/*.json) is pruned at startup:
+# afterwards only the new session's record is left, so the set to restore has to
+# be written down BEFORE going down. `session reboot` snapshots it to the queue
+# below; roost-session-resume.service replays it at boot with `session resume`.
+resumeq="${ROOST_RESUME_QUEUE:-${CLAUDE_CONFIG_DIR:-$HOME/roost/claude}/usage/resume-queue.tsv}"
+
+# Live interactive sessions -> "sid<TAB>cwd". One session id can hold several
+# registry records (one per process stream), so collapse to the newest per id
+# before testing the pid.
+live_sessions() {
+  local regdir f found=0
+  regdir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions"
+  for f in "$regdir"/*.json; do [ -e "$f" ] && { found=1; break; }; done
+  [ "$found" = 1 ] || return 0
+  jq -rs '[.[] | select(.kind == "interactive")]
+          | group_by(.sessionId) | map(max_by(.updatedAt))
+          | .[] | [.pid, .sessionId, (.cwd // "")] | @tsv' "$regdir"/*.json 2>/dev/null \
+    | while IFS=$'\t' read -r pid sid cwd; do
+        kill -0 "$pid" 2>/dev/null && printf '%s\t%s\n' "$sid" "$cwd"
+      done
+}
+
+# The directory a session was launched in — what restoring it has to reproduce.
+# Transcripts live under projects/<slug>/, the slug being that directory with
+# every `/` and `.` turned into `-`. A transcript entry's own "cwd" is only the
+# shell's cwd at that moment and wanders into subdirs and worktrees (the
+# registry's does too), so the launch dir is the recorded cwd that slugs back to
+# the transcript's own directory. $2, the registry cwd, covers a session that
+# recorded none; landing in the wrong directory only misplaces the session,
+# since `claude --resume <id>` resolves the id from anywhere.
+resume_dir() {  # $1=sid [$2=fallback] -> launch dir (empty if undecidable)
+  local jsonl slug c
+  jsonl=$(transcript_of "$1")
+  if [ -n "$jsonl" ]; then
+    slug=$(basename "$(dirname "$jsonl")")
+    while read -r c; do
+      [ "${c//[\/.]/-}" = "$slug" ] && { printf '%s' "$c"; return 0; }
+    done < <(grep -ao '"cwd":"[^"]*"' "$jsonl" | cut -d'"' -f4 | sort -u)
+  fi
+  { [ -n "${2:-}" ] && [ -d "$2" ]; } && printf '%s' "$2"
+  return 0
+}
+
+# Sessions with transcript activity in the last $1 hours, as queue rows. Only
+# top-level ones: subagents get "agent-*" ids rather than UUIDs.
+scan_sessions() {  # $1=hours
+  local f sid dir title
+  find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" -name '*.jsonl' \
+       -mmin "-$(( $1 * 60 ))" -printf '%T@ %p\n' 2>/dev/null \
+    | sort -rn | cut -d' ' -f2- \
+    | while read -r f; do
+        sid=$(basename "$f" .jsonl)
+        [[ $sid =~ ^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$ ]] || continue
+        dir=$(resume_dir "$sid"); [ -n "$dir" ] || continue
+        title=$(session_title "$sid")
+        printf '%s\t%s\t%s\n' "$sid" "$dir" "${title:-}"
+      done
+}
+
+ensure_main_session() {
+  [ -x "${_ROOST_DIR:-$HOME/roost}/claude/lib/tmux-main-guard.sh" ] \
+    && "${_ROOST_DIR:-$HOME/roost}/claude/lib/tmux-main-guard.sh" >/dev/null 2>&1
+  tmux has-session -t '=main' 2>/dev/null && return 0
+  tmux new-session -d -s main -n shell
+  tmux set-option -w -t '=main:shell' automatic-rename off
+  tmux select-pane -t '=main:shell' -T shell
+}
+
+# One tmux window per restored session. Deliberately not the `agent` shell
+# function: its outside-tmux branch ends in an attach, which neither a batch nor
+# a systemd unit can do. The window command runs under `bash -lc` so PATH,
+# CLAUDE_CONFIG_DIR and the rest come from roost.sh however the tmux server was
+# started — at boot the unit starts it, with none of a login shell's environment.
+spawn_resume_window() {  # $1=dir $2=sid -> window name
+  local base name existing i=2 inner
+  base=$(basename "$1"); name="$base"
+  existing=$(tmux list-windows -t '=main' -F '#{window_name}' 2>/dev/null || true)
+  while grep -Fqx "$name" <<<"$existing"; do name="$base-$i"; i=$((i + 1)); done
+  inner="cd $(printf '%q' "$1") && exec claude --resume $2"
+  tmux new-window -d -t '=main' -n "$name" "bash -lc $(printf '%q' "$inner")" || return 1
+  printf '%s' "$name"
+}
+
+reboot_main() {
+  local yes=0 dry=0 sid cwd dir title rows="" n=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -y|--yes) yes=1 ;;
+      -n|--dry-run) dry=1 ;;
+      -h|--help)
+        cat >&2 <<'EOF'
+Usage: session reboot [-n|--dry-run] [-y|--yes]
+Snapshot every live interactive session, then reboot the box. The sessions come
+back on their own at boot (roost-session-resume.service runs `session resume`).
+  -n  write the snapshot and print it, without rebooting
+  -y  skip the confirmation prompt (required when stdin is not a terminal)
+EOF
+        exit 0 ;;
+      *) echo "session reboot: unknown arg '$1' (-n, -y or -h)" >&2; exit 2 ;;
+    esac
+    shift
+  done
+  while IFS=$'\t' read -r sid cwd; do
+    dir=$(resume_dir "$sid" "$cwd")
+    if [ -z "$dir" ]; then
+      echo "session reboot: no launch directory for ${sid:0:8}, skipping" >&2
+      continue
+    fi
+    title=$(session_title "$sid")
+    rows+="$sid	$dir	${title:-<untitled>}"$'\n'
+    n=$((n + 1))
+  done < <(live_sessions)
+  if [ "$n" -eq 0 ]; then
+    echo "session reboot: no live interactive sessions to snapshot" >&2
+    exit 1
+  fi
+  mkdir -p "$(dirname "$resumeq")"
+  if ! printf '%s' "$rows" > "$resumeq"; then
+    echo "session reboot: could not write $resumeq — not rebooting" >&2
+    exit 1
+  fi
+  printf 'Snapshot -> %s\n\n' "$resumeq"
+  { printf 'SESSION\tDIRECTORY\tTITLE\n'
+    printf '%s' "$rows" | awk -F'\t' -v OFS='\t' '{ $1=substr($1,1,8); print }'
+  } | column -t -s'	'
+  printf '\n%s session(s) will be restored after the reboot.\n' "$n"
+  [ "$dry" = 1 ] && exit 0
+  if [ "$yes" != 1 ]; then
+    if [ ! -t 0 ]; then
+      echo "session reboot: refusing to reboot without a terminal; pass -y to confirm" >&2
+      exit 1
+    fi
+    read -r -p "Reboot now? [y/N] " reply
+    case "$reply" in y|Y|yes|YES) ;; *) echo "Aborted (snapshot kept)."; exit 1 ;; esac
+  fi
+  sudo systemctl reboot
+}
+
+resume_main() {
+  local dry=0 scan=0 hours=48 sid dir title rows="" live name n=0 skipped=0 kept=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -n|--dry-run) dry=1 ;;
+      --scan) scan=1
+              if [ $# -gt 1 ] && [ "${2#-}" = "${2:-}" ]; then hours="$2"; shift; fi ;;
+      -h|--help)
+        cat >&2 <<'EOF'
+Usage: session resume [--scan [HOURS]] [-n|--dry-run]
+Reopen sessions in tmux windows under `main`, one window each.
+  (no args)      replay the snapshot `session reboot` left, then clear it
+  --scan [H]     ignore the snapshot; offer every top-level session with
+                 transcript activity in the last H hours (default 48)
+  -n             print what would be reopened, change nothing
+Already-running sessions are skipped, so re-running this is safe.
+EOF
+        exit 0 ;;
+      *) echo "session resume: unknown arg '$1' (--scan, -n or -h)" >&2; exit 2 ;;
+    esac
+    shift
+  done
+  if [ "$scan" = 1 ]; then
+    rows=$(scan_sessions "$hours")
+  elif [ -s "$resumeq" ]; then
+    rows=$(cat "$resumeq")
+  else
+    echo "session resume: nothing queued ($resumeq)." >&2
+    echo "Use 'session resume --scan [HOURS]' to reopen recent sessions instead." >&2
+    exit 1
+  fi
+  live=$(live_sessions | cut -f1)
+  while IFS=$'\t' read -r sid dir title; do
+    [ -n "$sid" ] || continue
+    if grep -qx "$sid" <<<"$live"; then skipped=$((skipped + 1)); continue; fi
+    if [ ! -d "$dir" ]; then
+      echo "session resume: $dir is gone, cannot reopen ${sid:0:8} there" >&2
+      kept+="$sid	$dir	$title"$'\n'
+      continue
+    fi
+    if [ "$dry" = 1 ]; then
+      printf 'would reopen  %s  %s  %s\n' "${sid:0:8}" "$dir" "${title:-<untitled>}"
+    else
+      ensure_main_session
+      if ! name=$(spawn_resume_window "$dir" "$sid"); then
+        echo "session resume: tmux would not open a window for ${sid:0:8}" >&2
+        kept+="$sid	$dir	$title"$'\n'
+        continue
+      fi
+      printf 'reopened  %-10s  %s  %s\n' "$name" "${sid:0:8}" "${title:-<untitled>}"
+    fi
+    n=$((n + 1))
+  done <<< "$rows"
+  [ "$skipped" -gt 0 ] && printf '%s already running, skipped.\n' "$skipped"
+  # Consume only what reopened: an entry that failed stays queued, so a deleted
+  # worktree cannot quietly take a session's only record with it. Reopen one by
+  # hand with `agent <dir> -r <id>` from anywhere — the id resolves globally.
+  if [ "$dry" != 1 ] && [ "$scan" != 1 ]; then
+    if [ -n "$kept" ]; then
+      printf '%s' "$kept" > "$resumeq"
+      printf '%s session(s) left queued in %s\n' \
+        "$(printf '%s' "$kept" | grep -c '')" "$resumeq" >&2
+    else
+      rm -f "$resumeq"
+    fi
+  fi
+  [ "$n" -gt 0 ] || { echo "session resume: nothing to reopen." >&2; exit 1; }
+  exit 0
+}
+[ "${1:-}" = reboot ] && { shift; reboot_main "$@"; }
+[ "${1:-}" = resume ] && { shift; resume_main "$@"; }
+
 # ── Accounts (`session account …`) ───────────────────────────────
 # Several subscription logins, ONE config dir. The live login is
 # $CLAUDE_CONFIG_DIR/.credentials.json's `claudeAiOauth` (auth) plus
