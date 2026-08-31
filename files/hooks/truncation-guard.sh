@@ -21,7 +21,7 @@
 # This is friction, not a boundary. Its predecessor (`no-truncation.sh`, 53b2f9b) was reverted
 # by its own author a day later because the deny message identified neither its origin nor its
 # purpose, so the fastest read was "unexplained obstacle". The message below names origin,
-# rule and alternative — and nothing else: the long version got a "too long", and an off switch
+# rule and the one alternative (read it all; never "grep instead", that is a second truncation) — and nothing else: the long version got a "too long", and an off switch
 # in the message invites the blocked session to use it.
 #
 # Matching runs on the command with heredoc bodies and quoted spans STRIPPED, in that order —
@@ -48,7 +48,7 @@ stripped=$(printf '%s' "$cmd" \
 deny() {
     logger -t roost/truncation-guard "denied $1"
     jq -nc --arg r "BLOCKED by the truncation guard (~/roost/claude/hooks/truncation-guard.sh, a roost PreToolUse hook): $1
-Rule: no head/tail under 100 lines — the cut part is usually the part that mattered. Run it unfiltered, or narrow the command (grep/awk/range) rather than its output. -n 100+, -c and a bare tail -f pass." \
+No head/tail under 100 lines: the cut part is usually the part that mattered. Re-run it and read the whole output — volume is not a problem. -n 100 or more passes." \
         '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $r}}'
     exit 0
 }
