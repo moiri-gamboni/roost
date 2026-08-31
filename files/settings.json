@@ -166,6 +166,11 @@
             "type": "command",
             "command": "~/roost/claude/hooks/notion-write-guard.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/truncation-guard.sh",
+            "timeout": 5
           }
         ]
       },
