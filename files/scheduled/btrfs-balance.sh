@@ -1,5 +1,6 @@
 #!/bin/bash
-# Weekly btrfs data-chunk compaction (Sunday 2:30am via cron-roost).
+# btrfs data-chunk compaction: Sunday 2:30am via cron-roost, and from
+# health-check.sh (same flock) whenever unallocated drops below 5GiB.
 #
 # btrfs fills the device with chunk allocations df never shows: data chunks
 # part-emptied by deletions keep their allocation, and once allocation reaches

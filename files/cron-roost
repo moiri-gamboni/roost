@@ -29,7 +29,8 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 
 # Weekly btrfs data balance (Sunday 2:30am): return slack trapped in
 # part-empty data chunks to the unallocated pool so the metadata pool can keep
-# growing. Complement of the health-check unallocated alert (RO-flip prevention).
+# growing. health-check.sh also runs it, under the same lock, whenever
+# unallocated drops below 5GiB (RO-flip prevention).
 30 2 * * 0 $USERNAME flock -n $HOME_DIR/.locks/btrfs-balance $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/btrfs-balance.sh
 
 # Weekly auto-update (Sunday 3am)

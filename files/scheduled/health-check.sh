@@ -77,18 +77,44 @@ fi
 # Btrfs allocation headroom — the failure df can't see: once chunk allocation
 # reaches the device edge the metadata pool can't grow, and the next metadata
 # spike force-flips the fs read-only (2026-08-19: root went RO at df=75%).
-# The weekly btrfs-balance job keeps this high; an alert means it isn't enough.
+# Below 5GiB the balance runs from here (at most once a day; the Sunday job is
+# the steady-state pass) and the alert says what it reclaimed. A balance only
+# returns slack from part-empty data chunks; when it reclaims nothing the
+# chunks are full of live extents — in practice files that snapshots still
+# pin — and the remedy is pruning snapshots or moving data off the filesystem,
+# which is a policy call, so it is reported rather than done.
+unalloc_gib() {
+    sudo -n btrfs filesystem usage -b "$1" 2>/dev/null |
+        awk '/Device unallocated:/ {printf "%d", $3 / 1024^3}'
+}
+declare -A UNALLOC_LOW=()
 for mnt in / /mnt/roost-data; do
     mountpoint -q "$mnt" || continue
-    UNALLOC_GIB=$(sudo -n btrfs filesystem usage -b "$mnt" 2>/dev/null |
-        awk '/Device unallocated:/ {printf "%d", $3 / 1024^3}')
+    UNALLOC_GIB=$(unalloc_gib "$mnt")
     logger -t "$_HOOK_TAG" "Btrfs unallocated $mnt: ${UNALLOC_GIB:-?}GiB"
     if [ -z "$UNALLOC_GIB" ]; then
         FAILURES="$FAILURES\n- btrfs unallocated unreadable on $mnt"
     elif [ "$UNALLOC_GIB" -lt 5 ]; then
-        FAILURES="$FAILURES\n- btrfs unallocated ${UNALLOC_GIB}GiB on $mnt (read-only-flip risk; run btrfs-balance.sh)"
+        UNALLOC_LOW[$mnt]=$UNALLOC_GIB
     fi
 done
+if [ "${#UNALLOC_LOW[@]}" -gt 0 ]; then
+    BALANCE_NOTE="balance already ran within 24h"
+    if cooldown_ok "btrfs-balance-auto" 86400; then
+        # Same lock as the cron line, so this never overlaps the Sunday run.
+        if flock -n "$HOME/.locks/btrfs-balance" "$(dirname "$0")/btrfs-balance.sh"; then
+            BALANCE_NOTE="balance ran now"
+        else
+            BALANCE_NOTE="balance failed or already running"
+        fi
+    fi
+    for mnt in "${!UNALLOC_LOW[@]}"; do
+        AFTER=$(unalloc_gib "$mnt")
+        if [ "${AFTER:-0}" -lt 5 ]; then
+            FAILURES="$FAILURES\n- btrfs unallocated ${AFTER:-?}GiB on $mnt, was ${UNALLOC_LOW[$mnt]}GiB (read-only-flip risk; $BALANCE_NOTE; what remains is held by files snapshots still pin: prune with snapper or move data off)"
+        fi
+    done
+fi
 
 # Swap must exist: swap-swapfile.swap can fail silently at boot (2026-08-26: a
 # week at 0MB swap ended in an OOM kill of the whole user slice).
