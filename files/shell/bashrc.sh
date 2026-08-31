@@ -68,6 +68,10 @@ if [[ -r "$HOME/.config/roughdraft/token" ]]; then
 fi
 export ROUGHDRAFT_NO_OPEN=1  # headless: print the URL instead of calling xdg-open
 
+# ~/.cache is its own subvolume (setup/snapper.sh) and hardlinks cannot cross
+# subvolumes: without this uv warns on every install before falling back to copy.
+export UV_LINK_MODE=copy
+
 # --- VS Code Remote IPC ---
 
 # VS Code Remote-SSH creates a per-window unix socket under /run/user/$UID/ and

@@ -515,7 +515,7 @@ The repo is the canonical source for base infrastructure configs. Server-specifi
 | Disaster recovery | Hetzner backups | Daily | Minutes (reboot) |
 | Claude Code sessions | `session reboot` snapshot + `roost-session-resume.service` | Per reboot | Seconds |
 
-Snapper retention: 24 hourly, 7 daily, 4 weekly (no monthly or yearly).
+Snapper retention: 24 hourly, 7 daily, 2 weekly (no monthly or yearly). Regenerable trees (`~/.cache`, toolchains under `~/.local/share`, VS Code server builds, Codex packages, `~/roost/drop`) are nested subvolumes and are not in the snapshots or the off-site backup.
 
 Rollback a btrfs snapshot: `snapper list`, then `snapper rollback <number>`, then reboot.
 

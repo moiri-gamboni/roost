@@ -148,11 +148,13 @@ Defined in `files/shell/bashrc.sh` → `~/.bashrc.d/roost.sh` (idempotent: re-`s
 
 | Layer | Tool | Granularity |
 |---|---|---|
-| Full filesystem | btrfs snapshots (snapper; 24 hourly, 7 daily, 4 weekly) | Hourly |
+| Full filesystem | btrfs snapshots (snapper; 24 hourly, 7 daily, 2 weekly) | Hourly |
 | Off-site backup | btrfs send/receive to the laptop (`files/laptop/btrfs-backup.sh`) | Daily |
 | Disaster recovery | Hetzner backups | Daily |
 
 Rollback: `snapper list`, `snapper rollback <number>`, reboot.
+
+Not in any snapshot or backup: the regenerable trees `setup/snapper.sh` keeps as nested subvolumes (`~/.cache`, `~/.npm`, `~/.local/share/{fnm,uv,pnpm,virtualenvs,claude}`, `~/.vscode-server/cli`, `~/.codex/packages`, `~/roost/drop`). Their churn is what used to fill the root disk (`plans/snapshot-exclusions.md`); when unallocated space stays low after the balance, the health check prunes the oldest timeline snapshots itself.
 
 ## Security Model
 
