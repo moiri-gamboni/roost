@@ -68,6 +68,14 @@ if [[ -r "$HOME/.config/roughdraft/token" ]]; then
 fi
 export ROUGHDRAFT_NO_OPEN=1  # headless: print the URL instead of calling xdg-open
 
+# Work credentials (deployed from roost-private to ~/.config/work/env).
+# Kept in a sourced file rather than exported from a tracked one: the values are
+# live keys, and the sourcing line is the only part safe to publish. Absent on a
+# fresh server, in which case the tools that need them say so themselves.
+if [[ -r "$HOME/.config/work/env" ]]; then
+    . "$HOME/.config/work/env"
+fi
+
 # ~/.cache is its own subvolume (setup/snapper.sh) and hardlinks cannot cross
 # subvolumes: without this uv warns on every install before falling back to copy.
 export UV_LINK_MODE=copy
