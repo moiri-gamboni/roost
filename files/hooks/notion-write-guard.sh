@@ -9,8 +9,8 @@
 # This is friction, not a boundary, and nothing depends on it holding. A script on disk making
 # the same call internally passes cleanly, which is exactly how `tasks push` gets through.
 #
-# The deny message deliberately names this file, the wiring, the sanctioned path and the way to
-# switch it off. Its predecessor (`no-truncation.sh`, 53b2f9b) was reverted by its own author a
+# The deny message deliberately names this file, the wiring and the sanctioned path — not the way
+# to switch it off; that invites the blocked session to do so. Its predecessor (`no-truncation.sh`, 53b2f9b) was reverted by its own author a
 # day later — "someone added a hook, can you remove it" — because the deny message identified
 # neither its origin nor its purpose, so the fastest read was "unexplained obstacle".
 #
@@ -62,8 +62,6 @@ block of ~/roost/code/server/files/settings.json (deployed to ~/roost/claude/hoo
 Why it exists: ad-hoc REST writes to the Apart workspace bypass the sync tool'"'"'s per-field
 clobber guard and its dry-run, and Moïri owns whatever his integration writes there.
 Sanctioned path: tasks push <slug>   (dry-run by default)
-Deliberately disable: remove the PreToolUse entry from files/settings.json, then
-roost-apply push files/settings.json.
 Honest limit: this reads command strings, not a script'"'"'s internal calls — which is exactly how
 tasks push passes. It is friction, not a boundary.' \
     '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $r}}'
