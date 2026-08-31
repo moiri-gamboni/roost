@@ -18,7 +18,7 @@ After running the deploy script you will have:
 - Drop folder for quick laptop-to-server file transfer
 - PrivateBin: end-to-end encrypted pastebin; links are publicly readable via the tunnel (`paste.<domain>`), creation is server-side only (publish via the `pastebin` skill)
 - Scheduled Claude Code tasks via cron
-- Shell helpers for managing Claude Code agents (`agent`, `agents`, `agent_stop`, `agent_kill`)
+- Shell helpers for managing Claude Code agents (`agent`, `agents`, `attach`)
 
 ## Prerequisites
 
@@ -211,12 +211,6 @@ agent -N | --no-worktree         # run directly in the directory
 
 # Interactive tmux window picker
 agents
-
-# Gracefully stop (Ctrl-D, triggers SessionEnd hooks)
-agent_stop <index>
-
-# Force stop (double Ctrl-C)
-agent_kill <index>
 
 # Reboot the box and get every running session back afterwards
 session reboot                   # snapshot, confirm, reboot; -n snapshots only
