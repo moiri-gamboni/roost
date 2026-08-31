@@ -20,7 +20,8 @@
 #
 # This is friction, not a boundary. Its predecessor (`no-truncation.sh`, 53b2f9b) was reverted
 # by its own author a day later because the deny message identified neither its origin nor its
-# purpose, so the fastest read was "unexplained obstacle". The message below names all of it.
+# purpose, so the fastest read was "unexplained obstacle". The message below names origin,
+# rule, alternative and off switch — and nothing else: the long version got a "too long".
 #
 # Matching runs on the command with heredoc bodies and quoted spans STRIPPED, in that order —
 # stripping quotes first turns `<<'MSG'` into `<<`, which no longer reads as a heredoc opener,
@@ -45,19 +46,9 @@ stripped=$(printf '%s' "$cmd" \
 
 deny() {
     logger -t roost/truncation-guard "denied $1"
-    jq -nc --arg r "BLOCKED by the truncation guard — a roost PreToolUse hook. Offending stage: $1
-
-What it is: ~/roost/code/server/files/hooks/truncation-guard.sh, wired into the PreToolUse block of
-~/roost/code/server/files/settings.json (deployed to ~/roost/claude/hooks/).
-Why it exists: the CLAUDE.md rule against head/tail under 100 lines is broken by habit, not by
-intent, and the cut part of an output is usually the part that mattered.
-What to do instead: run the command unfiltered. If the volume is genuinely a problem, narrow the
-COMMAND (a tighter grep, a --query, a smaller range, awk), not its output; -n 100 or more passes.
-tail -f, -c/--bytes and --help pass too.
-Deliberately disable: remove this hook's PreToolUse entry from files/settings.json, then
-roost-apply push files/settings.json.
-Honest limit: it reads the command string with quotes and heredocs stripped, so a truncation inside
-bash -c '…' or a script on disk passes. Friction, not a boundary." \
+    jq -nc --arg r "BLOCKED by the truncation guard (~/roost/claude/hooks/truncation-guard.sh, a roost PreToolUse hook): $1
+Rule: no head/tail under 100 lines — the cut part is usually the part that mattered. Run it unfiltered, or narrow the command (grep/awk/range) rather than its output. -n 100+, -c and a bare tail -f pass.
+Disable: drop its PreToolUse entry from ~/roost/code/server/files/settings.json, roost-apply push files/settings.json." \
         '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $r}}'
     exit 0
 }
