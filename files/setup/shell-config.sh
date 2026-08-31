@@ -90,6 +90,7 @@ chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-net"
 # session: the session CLI — identity (`session whoami`), plan usage limits +
 # per-session attribution (`session` / `session usage [--all]`), guard/wait
 ln -sf "$ROOST_DIR/claude/scripts/session.sh" "$HOME_DIR/bin/session"
+ln -sf "$ROOST_DIR/claude/scripts/agent-worktree.sh" "$HOME_DIR/bin/agent-worktree"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/session"
 
 # Restore the sessions a `session reboot` snapshotted, at boot. Lingering is

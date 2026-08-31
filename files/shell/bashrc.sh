@@ -265,8 +265,9 @@ _ensure_tmux() {
 }
 
 # Launch an interactive Claude session in a tmux window. In a git repo the
-# session gets its own worktree by default (claude --worktree: checkout under
-# .claude/worktrees/, auto-removed on clean exit when unchanged).
+# session gets its own worktree by default (claude --worktree; the box-wide
+# WorktreeCreate hook builds a composite tree under ~/roost/worktrees/ —
+# nested repos included — and SessionEnd integrates it back; agent-worktree.sh).
 # Usage: agent [path] [claude-args...]
 #   agent                           # cwd; own worktree if cwd is a git repo
 #   agent ~/roost/code/myapp        # that dir
@@ -353,8 +354,10 @@ agent() {
         cmd_parts+=("$(printf '%q' "$arg")")
     done
     # Appended last so a positional initial prompt can't be consumed as the
-    # optional worktree name.
+    # optional worktree name. The echo covers the seconds the WorktreeCreate
+    # hook spends building the tree, during which claude shows nothing.
     if (( use_worktree )); then
+        cmd_parts=(cd "$(printf '%q' "$dir")" '&&' echo 'preparing worktree...' '&&' "${cmd_parts[@]:3}")
         cmd_parts+=(--worktree)
     fi
 
