@@ -208,6 +208,7 @@ agent                            # interactive claude in cwd
 agent ~/roost/code/myapp         # opens in that dir
 agent ~/roost/code/myapp -c      # continue last session (skips the worktree)
 agent -N | --no-worktree         # run directly in the directory
+# Opt a repo out permanently: git config agent.noWorktree true
 
 # Interactive tmux window picker
 agents

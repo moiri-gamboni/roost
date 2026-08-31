@@ -301,7 +301,10 @@ agent() {
 
     # Fresh sessions in a git repo get their own worktree. Skipped for
     # continue/resume (a resumed worktree session returns to its worktree on
-    # its own) and when the caller passed -w/--worktree explicitly.
+    # its own), when the caller passed -w/--worktree explicitly, and in repos
+    # opted out via `git config agent.noWorktree true` — workspace-style repos
+    # (gitignored sub-repos, chronically dirty) where a worktree of tracked
+    # HEAD is a stale skeleton, not an isolated copy.
     local use_worktree=0
     if (( ! no_worktree )); then
         use_worktree=1
@@ -315,6 +318,11 @@ agent() {
             local in_repo
             in_repo=$(git -C "$dir" rev-parse --is-inside-work-tree 2>&1) || true
             [[ "$in_repo" == true ]] || use_worktree=0
+        fi
+        if (( use_worktree )); then
+            local optout
+            optout=$(git -C "$dir" config --bool --get agent.noWorktree 2>&1) || true
+            [[ "$optout" == true ]] && use_worktree=0
         fi
     fi
 
