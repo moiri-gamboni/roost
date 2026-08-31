@@ -390,8 +390,12 @@ EOF
       '[inputs | split("\t") | {name: .[0], session_id: .[1], status: .[2],
         reachable: (.[3]=="yes"), tmux: .[4], title: (.[5]|sub(" ←this$";""))}]'
   else
+    # `column -t` squeezes repeated delimiters, so an empty field (a session
+    # that has not written `status` yet) would shift every later column left;
+    # fill the blanks first.
     { printf 'NAME\tSESSION\tSTATUS\tREACH\tTMUX\tTITLE\n'
-      printf '%s' "$rows" | awk -F'\t' -v OFS='\t' '{ $2=substr($2,1,8); print }'
+      printf '%s' "$rows" | awk -F'\t' -v OFS='\t' \
+        '{ $2=substr($2,1,8); for (i = 1; i <= NF; i++) if ($i == "") $i="-"; print }'
     } | column -t -s'	'
   fi
   exit 0
