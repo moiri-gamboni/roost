@@ -1541,12 +1541,15 @@ cdw()  { (( w_stale )) && { printf 'already reset — next reset in ~%s · stale
 # need them before the arg parse.)
 ws5=$(( fivereset - FIVE_WINDOW )); wsw=$(( weekreset - WEEK_WINDOW ))
 
+# LC_ALL=C on the awk as well as the sort: gawk in a UTF-8 locale walks every byte as a
+# multibyte char and takes 5x longer over the log (0.45s vs 0.09s at 33k rows), and the
+# hook runs both passes inside a 2s budget.
 # emit one "sid<TAB>in-window-5h$<TAB>in-window-wk$<TAB>last-sample-ts" per session, 5h$ desc
 # Only rows tagged with the invoking login count (col 21): another account's
 # sessions burn a different cap, so mixing them would corrupt both shares.
 est_sessions() {
   [ -s "$slog" ] || return 1
-  LC_ALL=C sort -t$'\t' -k1,1n "$slog" | awk -F'\t' -v ws5="$ws5" -v wsw="$wsw" -v acct="$acct" '
+  LC_ALL=C sort -t$'\t' -k1,1n "$slog" | LC_ALL=C awk -F'\t' -v ws5="$ws5" -v wsw="$wsw" -v acct="$acct" '
     $2 != "" && $21 == acct {
       ts=$1+0; sid=$2; c=$3+0; d=0
       if (sid in last) { d=c-last[sid]; if (d<0) d=0 }
@@ -1569,7 +1572,7 @@ base_pcts() {
   # baseline is ASSIGNED on the first match (a window can open at 0.000%, and
   # `0 > uninit` would never fire, leaking an empty field — which bash read
   # under IFS=tab would then swallow as leading whitespace, shifting b5/bw)
-  LC_ALL=C sort -t$'\t' -k1,1n "$slog" | awk -F'\t' \
+  LC_ALL=C sort -t$'\t' -k1,1n "$slog" | LC_ALL=C awk -F'\t' \
     -v ws5="$ws5" -v wsw="$wsw" -v fr="$fivereset" -v wr="$weekreset" -v acct="$acct" '
     $21==acct && $1+0>=ws5 && $6==fr && $4+0>=0 {
       if (!g5) { g5=1; t5=$1+0; b5=$4+0 } else if ($1+0<=t5+300 && $4+0>b5) b5=$4+0 }
