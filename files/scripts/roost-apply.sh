@@ -90,7 +90,7 @@ tunnel_id() {
 # ============================================
 
 # Each entry: repo_path|server_path|transform|service_action
-# Transforms: plain, plain+x, envsubst:<VARS>, sed-roost
+# Transforms: plain, plain+x, plain+600, envsubst:<VARS>, sed-roost
 # Service actions (comma-separated):
 #   reload-or-restart:<unit>  restart:<unit>  daemon-reload
 #   daemon-reload,restart:<unit>  run:<command>  (empty = none)
@@ -133,7 +133,7 @@ files/travel/travel-health.sh|$ROOST_DIR/claude/scheduled/health-check-apps.sh|p
 files/private/health-check-apps-private.sh|$ROOST_DIR/claude/scheduled/health-check-apps-private.sh|plain+x|
 files/shell/bashrc.sh|$HOME_DIR/.bashrc.d/roost.sh|plain|
 files/private/global-CLAUDE.md|$ROOST_DIR/claude/CLAUDE.md|plain|
-files/private/apart-env.sh|$HOME_DIR/.config/apart/env|plain|
+files/private/apart-env.sh|$HOME_DIR/.config/apart/env|plain+600|
 files/skills/codex/SKILL.md|$ROOST_DIR/claude/skills/codex/SKILL.md|plain|
 files/agents/effort-low.md|$ROOST_DIR/claude/agents/effort-low.md|plain|
 files/agents/effort-medium.md|$ROOST_DIR/claude/agents/effort-medium.md|plain|
@@ -238,7 +238,7 @@ render_file() {
     fi
 
     case "$transform" in
-        plain|plain+x)
+        plain|plain+x|plain+600)
             cat "$full_path"
             ;;
         sed-roost)
@@ -512,6 +512,9 @@ cmd_push() {
         local parent_dir tmp mode=644
         parent_dir=$(dirname "$sp")
         [[ "$transform" == *"+x"* ]] && mode=755
+        # Secrets: world-readable is the wrong default for a file whose whole
+        # content is credentials, even on a single-user box.
+        [[ "$transform" == *"+600"* ]] && mode=600
         if needs_root "$sp"; then
             sudo mkdir -p "$parent_dir"
             tmp=$(sudo mktemp "$parent_dir/.roost-apply.XXXXXX")
