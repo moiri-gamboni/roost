@@ -200,11 +200,14 @@ PrivateBin (`files/setup/privatebin.sh`) is a repo-managed worked example of thi
 The following functions are available for managing Claude Code agents in tmux:
 
 ```bash
-# Start an interactive Claude session in a tmux window
+# Start an interactive Claude session in a tmux window. In a git repo the
+# session gets its own worktree (claude --worktree, checkout under
+# .claude/worktrees/, auto-removed on clean exit when unchanged).
 agent [path] [claude-args...]    # path defaults to cwd, window named after dir
 agent                            # interactive claude in cwd
 agent ~/roost/code/myapp         # opens in that dir
-agent ~/roost/code/myapp -c      # continue last session in that dir
+agent ~/roost/code/myapp -c      # continue last session (skips the worktree)
+agent -N | --no-worktree         # run directly in the directory
 
 # Interactive tmux window picker
 agents
