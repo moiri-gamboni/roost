@@ -57,7 +57,7 @@ roost-apply --caddy|--cloudflare|--ntfy|--systemd|--cron|--xray|--proton|--all  
 ~/roost/                    Managed root directory (name from ROOST_DIR_NAME)
 ├── claude/                 Claude Code config (CLAUDE_CONFIG_DIR)
 │   ├── settings.json       Default model, hooks, cleanup policy
-│   ├── hooks/              Event hooks (notify, statusline, shellcheck-edit, notion-write-guard)
+│   ├── hooks/              Event hooks (notify, statusline, shellcheck-edit, notion-write-guard, truncation-guard)
 │   ├── scripts/            User CLIs → ~/bin (roost-apply, roost-net, session)
 │   ├── scheduled/          Cron + timer jobs (health-check, auto-update, ram-monitor, …)
 │   ├── lib/                Shared: _hook-env.sh, cloudflare-assemble.sh
@@ -86,6 +86,7 @@ Event hooks, and what they mean for a session (mechanism per hook: `files/hooks/
 | Stop / StopFailure / SessionEnd / Subagent* / PostCompact / Notification(permission_prompt) | `scripts/session.sh --turn-end` etc. | Lifecycle rows into `usage/turn-log.tsv` for `session time`; always exit 0 |
 | PostToolUse (Edit\|Write) | `hooks/shellcheck-edit.sh` | shellcheck findings on any edited `*.sh` come back as context |
 | PreToolUse (Bash) | `hooks/notion-write-guard.sh` | Denies ad-hoc REST writes to `api.notion.com` (write verb + host in the raw command); `apart-tools/tasksync/` and `apart-tools/notion-mirror/` invocations pass. Friction, not a boundary: the deny message names the sanctioned path and how to disable it |
+| PreToolUse (Bash) | `hooks/truncation-guard.sh` | Denies `head`/`tail` with a line count under 100 or no count at all (default 10); `-c`, `--help`, a bare `tail -f` and `-n ≥ 100` pass. Enforces the global CLAUDE.md rule by mechanism rather than recall. Friction, not a boundary: quoted `bash -c` bodies and scripts on disk pass; the deny message says what to run instead and how to disable it |
 | PreToolUse (Write\|Edit) | `hooks/roughdraft-write-guard.sh` | Snapshots the pre-write bytes of a CriticMarkup-bearing `.md` into its `.roughdraft-history/` sidecar before an agent overwrites it. Snapshot-only: always exit 0, never a decision — pure protection, recover with `roughdraft history <file>`. Config is read at session start, so wiring changes need a restart |
 | (statusline) | `hooks/statusline.sh` | TUI status line; also persists the per-login rate-limit cache + sample logs the `session` CLI reads |
 
@@ -166,4 +167,4 @@ Not in any snapshot or backup: the regenerable trees `setup/snapper.sh` keeps as
 ## Shell Conventions
 
 - `set -euo pipefail` everywhere, except `hetzner-watch.sh` (no `-e`, polling loop) and `_hook-env.sh` (`set -uo pipefail`, resilient hooks).
-- Hooks source `lib/_hook-env.sh` for `hook_input()`/`hook_json()`, `ntfy_send()` (journald fallback), `rate_limit_ok()`, `logger -t roost/<script>`. Exceptions: `reflect.sh` (just cats a prompt), `session.sh --hook` (the CLI reused as a hook), `notion-write-guard.sh` (fires on every Bash call; sourcing costs a `tailscale ip` subprocess it can't afford).
+- Hooks source `lib/_hook-env.sh` for `hook_input()`/`hook_json()`, `ntfy_send()` (journald fallback), `rate_limit_ok()`, `logger -t roost/<script>`. Exceptions: `reflect.sh` (just cats a prompt), `session.sh --hook` (the CLI reused as a hook), `notion-write-guard.sh` and `truncation-guard.sh` (fire on every Bash call; sourcing costs a `tailscale ip` subprocess they can't afford).
