@@ -288,5 +288,7 @@
     ]
   },
   "promptCacheTtl": "1h",
-  "subagentPromptCacheTtl": "1h"
+  "subagentPromptCacheTtl": "1h",
+  "awaySummaryEnabled": false,
+  "promptSuggestionEnabled": false
 }
