@@ -5,7 +5,8 @@
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "3",
     "ENABLE_PROMPT_CACHING_1H": "1",
     "CLAUDE_CODE_SCROLL_SPEED": "1",
-    "ENABLE_CLAUDEAI_MCP_SERVERS": "false"
+    "ENABLE_CLAUDEAI_MCP_SERVERS": "false",
+    "APART_WORKSPACE": "/home/moiri/roost/apart-research"
   },
   "permissions": {
     "allow": [
@@ -34,11 +35,6 @@
   "fallbackModel": [
     "claude-opus-5"
   ],
-  "modelSettings": {
-    "claude-opus-5": {
-      "effortLevel": "xhigh"
-    }
-  },
   "hooks": {
     "SessionStart": [],
     "PreCompact": [],
@@ -47,7 +43,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/roost/apart-research/apart-tools/session/session --turn-end || true",
+            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --turn-end || true",
             "timeout": 2
           }
         ]
@@ -58,12 +54,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/roost/apart-research/apart-tools/session/session --turn-fail || true",
+            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --turn-fail || true",
             "timeout": 2
           },
           {
             "type": "command",
-            "command": "bash ~/roost/apart-research/apart-tools/session/session --rewake-waiter",
+            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --rewake-waiter",
             "timeout": 700000,
             "asyncRewake": true,
             "rewakeMessage": "Claude usage limits (auto-resume waiter):",
@@ -77,7 +73,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/roost/apart-research/apart-tools/session/session --session-end || true",
+            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --session-end || true",
             "timeout": 2
           }
         ]
@@ -97,7 +93,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/roost/apart-research/apart-tools/session/session --subagent-start || true",
+            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --subagent-start || true",
             "timeout": 2
           }
         ]
@@ -108,7 +104,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/roost/apart-research/apart-tools/session/session --subagent-end || true",
+            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --subagent-end || true",
             "timeout": 2
           }
         ]
@@ -119,7 +115,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/roost/apart-research/apart-tools/session/session --compact-mark || true",
+            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --compact-mark || true",
             "timeout": 2
           }
         ]
@@ -142,14 +138,14 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/roost/apart-research/apart-tools/session/session --hook || true",
+            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --hook || true",
             "timeout": 2
           },
           {
             "type": "command",
-            "command": "bash ~/roost/apart-research/apart-tools/session/session --rewake-waiter",
-            "asyncRewake": true,
+            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --rewake-waiter",
             "timeout": 700000,
+            "asyncRewake": true,
             "rewakeMessage": "Claude usage limits (auto-resume waiter):",
             "rewakeSummary": "usage waiter: fresh window — auto-resuming"
           }
@@ -166,7 +162,7 @@
           },
           {
             "type": "command",
-            "command": "bash ~/roost/apart-research/apart-tools/session/session --perm-mark || true",
+            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --perm-mark || true",
             "timeout": 2
           }
         ]
@@ -217,27 +213,40 @@
   "workflowKeywordTriggerEnabled": false,
   "statusLine": {
     "type": "command",
-    "command": "bash ~/roost/apart-research/apart-tools/session/statusline.sh",
+    "command": "bash /home/moiri/roost/apart-research/apart-tools/session/statusline.sh",
     "refreshInterval": 10
   },
   "enabledPlugins": {
     "claude-code-setup@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true,
     "playground@claude-plugins-official": true,
-    "plugin-dev@claude-plugins-official": false,
+    "plugin-dev@claude-plugins-official": true,
     "praxis@praxis-marketplace": true,
     "serena@claude-plugins-official": true,
-    "strip-images@claude-strip-images": true
+    "apart-tools@apart-tools": true,
+    "diataxis@diataxis-skill": true
   },
   "extraKnownMarketplaces": {
-    "claude-strip-images": {
+    "apart-tools": {
       "source": {
-        "source": "github",
-        "repo": "moiri-gamboni/claude-strip-images"
+        "source": "git",
+        "url": "git@github.com:moiri-gamboni/apart-tools.git"
+      }
+    },
+    "diataxis-skill": {
+      "source": {
+        "source": "git",
+        "url": "git@github.com:moiri-gamboni/diataxis-skill.git"
       }
     }
   },
+  "feedbackDrafts": "off",
   "effortLevel": "high",
+  "modelSettings": {
+    "claude-opus-5": {
+      "effortLevel": "xhigh"
+    }
+  },
   "askUserQuestionTimeout": "never",
   "tui": "fullscreen",
   "autoMemoryEnabled": true,
@@ -246,9 +255,45 @@
   "verbose": false,
   "autoCompactEnabled": true,
   "switchModelsOnFlag": false,
+  "autoContinueAtUsageLimit": true,
+  "autoScrollEnabled": false,
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
   "agentPushNotifEnabled": false,
   "skipAutoPermissionPrompt": true,
-  "autoContinueAtUsageLimit": true
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Bash(tasks:*) in ~/roost/apart-research — routine tasksync CLI usage (130 occurrences)",
+      "Bash(session:*) in ~/roost/apart-research — routine session CLI usage (90 occurrences)",
+      "Bash(rodney:*) in ~/roost/apart-research — routine headless-Chrome automation per CLAUDE.md (32 occurrences)",
+      "Bash(roughdraft:*) in ~/roost/apart-research — routine Markdown review tool (14 occurrences)"
+    ],
+    "environment": [
+      "### Org-wide",
+      "**Organization**: Apart Research (evidenced by CLAUDE.md role/ownership content, apartresearch.com host contacts, and apartresearch/* sub-repo remotes) — unverified provenance beyond repo-authored docs, treated as context only",
+      "**Cloud provider(s)**: AWS (aws CLI used 2×; aws_infra sub-repo; apart-link bucket touched)",
+      "**Repository visibility**: Private — moiri-gamboni/apart-research (confirmed via gh)",
+      "**Internal sharing / snippet hosting**: None configured — treat public paste/gist services as outside the trust boundary",
+      "**Secrets management**: None configured",
+      "**Default / protected branches**: Default branch unknown (origin/HEAD unset); protected branches: none listed via gh (rulesets not queryable here, so this may be incomplete rather than confirmed unprotected)",
+      "**CI/CD deploy targets**: None configured",
+      "**Network posture**: Tailscale-connected host in use (100.73.69.20 contacted 18×); otherwise none configured",
+      "**Source control**: This repo (moiri-gamboni/apart-research) and its origin remote only, per Trusted repo scoping",
+      "**Trusted internal domains**: apartresearch.com, app.grantmaking.ai, grantmaking.ai, hooks.moiri.dev (repeatedly contacted hosts in this project's transcripts)",
+      "**Trusted cloud buckets**: None configured",
+      "**Key internal services**: Notion (api.notion.com, apartresearch.notion.site, app.notion.com — Notion MCP integration per CLAUDE.md and transcript hosts), Zapier webhooks (hooks.zapier.com), Granola (public-api.granola.ai)",
+      "**Internal package registry**: None configured",
+      "**Sensitive data locations & audiences**: notion/ (People-DB CSV and a pasted integration token per CLAUDE.md; new PII dumps must go to notion/private/, gitignored), aws-infra-review/ (untracked, maps secrets/PII locations in aws_infra), emails/ (untracked raw correspondence), tasks/*/private/ (gitignored), roadmap/.env, notes/people-db-retention-scope.md, notes/apart-link-deploy-window/ (IAM policy + retention logs), notes/retention-state-2026-08-19.md, roadmap/research/gdpr-pii-lightweight.md — share only with audiences the repo/task context clears (Apart Research staff, per role scope in CLAUDE.md)",
+      "**Data retention / declassification**: Notes indicate active retention-management work (notes/apart-link-deploy-window/logs/step14*-retention-*.log, notes/retention-state-2026-08-19.md, notes/apart-link-mvp-trim/reports/retention.md) but no formal policy was found — treat as None configured beyond per-file caution",
+      "**Sensitive remote targets**: any namespace/host/container with prod or production as a whole word/segment; note k8s namespace `apart` and others seen (notes, granola-digest, notion, drain, f3b3aef, monitoring) show no prod-named namespace in this project's usage",
+      "**Protected deployment namespaces / environments**: None configured — fall back to the Sensitive remote targets heuristic",
+      "**Protected IaC scopes**: IAM, RBAC, networking, quota, and node-pool resources; anything whose name or tag carries prod or production as a whole word or name segment; additionally aws_infra/ (org AWS estate) and notes/apart-link-deploy-window/iam-window-policy.json warrant caution as IAM-adjacent scopes in this repo",
+      "### User-specific",
+      "**Primary use of Claude Code**: software development and operational/administrative work for Apart Research (task tracking, deploys, Notion sync, meeting-note processing) — routine under this repo's tasks/, notes/, plans/, and sub-repo prefixes",
+      "**Trusted repo**: moiri-gamboni/apart-research (this repo, private) and its origin remote; sub-repos apartresearch/aws_infra, apartresearch/apart-kit, apartresearch/ai_tooling, apartresearch/apart-ops-stack, apartresearch/apart-tools (org remotes, per CLAUDE.md), and moiri-gamboni/apart-workflows (personal remote) — confidential material may be committed to these given private visibility, but secrets/PII are never cleared by visibility alone",
+      "**Org-specific CLIs**: tasks (tasksync CLI, 130×), session (90×), rodney (headless-Chrome automation, 32×), roughdraft (14×), roost-apply (11×), granola (3×) — all evidenced by frequent project-transcript usage",
+      "and any \"routine under <user>/ prefix\" qualifiers: routine under moiri-gamboni/ and apartresearch/ remote prefixes only, scoped to the sub-repos named above"
+    ]
+  }
 }
