@@ -89,7 +89,7 @@ check allow 'a path containing head'                    'cat /tmp/head/out.txt'
 check allow 'grep for the word head'                    'grep -rn "head -5" files/hooks/'
 check allow 'heredoc body mentioning a pipe to head'    "$(printf 'cat > doc.md <<%sMD%s\nDo not run: foo | head -5\nMD' "'" "'")"
 check allow 'heredoc with dashed opener'                "$(printf 'cat <<-EOF\n\tls | head -3\n\tEOF')"
-check allow 'sed with head in its script'               "sed -n '1,5p' file"
+check allow 'sed with head in its script'               "sed -n '/head -5/,/tail -3/p' file"
 check allow 'python -c mentioning head'                 'python3 -c "print(\"head -5\")"'
 check allow 'bash -c is opaque but the inner string is quoted' "bash -c 'seq 10 | head -2'"
 check allow 'git show a commit named like a hook'       'git show 53b2f9b:files/hooks/no-truncation.sh'
@@ -97,6 +97,76 @@ check allow 'head --help'                               'head --help'
 check allow 'head --version'                            'head --version'
 check allow 'empty command'                             ''
 check allow 'no head or tail at all'                    'ls -la /home'
+
+# --- sed: the same truncation with a different word on it ---
+check deny  'sed -n A,Bp under the floor'               "git remote -v | sed -n '1,2p'"
+check deny  'sed -n 1,120p is 120 lines... no: 1,99p'   "grep -rn foo . | sed -n '1,99p'"
+check deny  'sed -n Np (one line)'                      "sed -n 5p file"
+check deny  'sed -n $p (the last line)'                 "sed -n '\$p' file"
+check deny  'sed Nq is head -N'                         "sed 5q file"
+check deny  'piped sed 99q'                             "cat f | sed 99q"
+check deny  'sed -n A,+Kp'                              "sed -n '3,+4p' file"
+check deny  'sed -n N,$p is tail -n +N'                 "sed -n '5,\$p' file"
+check deny  'sed -ne (combined flag, separate script)'  "sed -ne '1,5p' file"
+check deny  'sed -n -e'                                 "sed -n -e '1,5p' file"
+check deny  'sed --quiet'                               "sed --quiet '1,5p' file"
+check deny  'sed --expression='                         "sed -n --expression='1,5p' file"
+check deny  'sudo sed'                                  "sudo sed -n '1,5p' file"
+check deny  'env assignment before sed'                 "LC_ALL=C sed -n '1,5p' file"
+check deny  'two ranges summing under the floor'        "sed -n '1,5p;10,20p' file"
+check deny  'q caps a range above the floor'            "sed -n '1,200p;5q' file"
+check deny  'double-quoted script without a $'          'sed -n "1,5p" file'
+check deny  'bare script'                               "sed -n 1,5p file"
+check deny  'block on one line: N{p;q}'                 "sed -n '5{p;q}' file"
+check deny  'sed -rn'                                   "sed -rn '1,5p' file"
+check deny  'sed -En'                                   "sed -En '1,5p' file"
+check deny  'sed on the far end of a pipeline'          "ps aux | grep node | sed -n '1,3p'"
+check deny  'sed after && on a second line'             "$(printf 'cd /tmp\nsed -n %s1,5p%s out.log' "'" "'")"
+check deny  'sed after ;'                               "true; sed -n '1,5p' x"
+check deny  'space before p'                            "sed -n '1,5 p' file"
+check allow 'sed -n 1,100p (the floor)'                 "seq 1000 | sed -n '1,100p'"
+check allow 'sed -n 1,200p'                             "seq 1000 | sed -n '1,200p'"
+check allow 'sed -n 1,$p is everything'                 "sed -n '1,\$p' file"
+check allow 'sed -n 100,$p is tail -n +100'             "sed -n '100,\$p' file"
+check allow 'two ranges summing over the floor'         "sed -n '1,50p;51,120p' file"
+check allow 'regex-addressed p is a filter'             "sed -n '/start/,/end/p' file"
+check allow 'a regex p beside a numeric range'          "sed -n '/x/p;1,50p' file"
+check allow 'bare p prints everything'                  "sed -n p file"
+check allow 'substitution without -n'                   "sed 's/a/b/' file"
+check allow 's///p flag is a filter'                    "sed -n 's/a/b/p' file"
+check allow 'sed -i edits a file'                       "sed -i '5d' file"
+check allow 'sed -i.bak with -n'                        "sed -i.bak -n '1,5p' file"
+check allow 'sed --in-place'                            "sed --in-place -n '1,5p' file"
+check allow 'delete a range prints the rest'            "sed '1,5d' file"
+check allow 'negated range prints the rest'             "sed -n '1,5!p' file"
+check allow 'sed 200q'                                  "sed 200q file"
+check allow 'a shell variable in the script'            'sed -n "${a},${b}p" file'
+check allow 'a substitution in the script'              'sed -n "$(cat n)p" file'
+check allow 'sed -f script file'                        "sed -f script.sed file"
+check allow 'sed -n $= counts lines'                    "sed -n '\$=' file"
+check allow 'sed -n l (list) without an address'        "sed -n l file"
+check allow 'sed inside a single-quoted string'         "echo 'sed -n 1,5p'"
+check allow 'sed in a commit message'                   'git commit -m "docs: sed -n 1,5p is banned"'
+check allow 'sed in a heredoc body'                     "$(printf 'cat > doc.md <<%sMD%s\nDo not run: sed -n %s1,5p%s\nMD' "'" "'" "'" "'")"
+check allow 'sed as an argument, not a command'         "grep -rn 'sed -n' files/hooks/"
+check allow 'sedated as a word'                         "echo sedated"
+check allow 'sed --version'                             "sed --version"
+check allow 'sed with no script at all'                 "sed"
+
+# --- cut: slicing every line ---
+check deny  'cut -c1-400'                               "cut -c1-400 file"
+check deny  'piped cut -c with a space'                 "grep -n foo file | cut -c 1-200"
+check deny  'cut -b'                                    "cut -b1-80 file"
+check deny  'cut --characters='                         "cut --characters=1-80 file"
+check deny  'cut --bytes='                              "cut --bytes=1-80 file"
+check deny  'cut -nc'                                   "cut -nc1-80 file"
+check deny  'sudo cut -c'                               "sudo cut -c1-80 file"
+check allow 'cut -d -f selects fields'                  "cut -d: -f1 /etc/passwd"
+check allow 'cut -f alone'                              "cut -f2-5 log.tsv"
+check allow 'cut -d with a quoted delimiter'            "cut -d' ' -f1 file"
+check allow 'cut -dc is a delimiter of c'               "cut -dc -f2 file"
+check allow 'cutover as a word'                         "echo cutover"
+check allow 'cut in a quoted string'                    "echo 'cut -c1-80'"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
