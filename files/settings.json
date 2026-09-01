@@ -3,7 +3,6 @@
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "3",
-    "ENABLE_PROMPT_CACHING_1H": "1",
     "CLAUDE_CODE_SCROLL_SPEED": "1",
     "ENABLE_CLAUDEAI_MCP_SERVERS": "false",
     "WORK_WORKSPACE": "/home/moiri/roost/work"
@@ -32,9 +31,6 @@
     "defaultMode": "auto"
   },
   "model": "claude-fable-5-1[1m]",
-  "fallbackModel": [
-    "claude-opus-5"
-  ],
   "hooks": {
     "SessionStart": [],
     "PreCompact": [],
@@ -241,12 +237,7 @@
     }
   },
   "feedbackDrafts": "off",
-  "effortLevel": "high",
-  "modelSettings": {
-    "claude-opus-5": {
-      "effortLevel": "xhigh"
-    }
-  },
+  "effortLevel": "xhigh",
   "askUserQuestionTimeout": "never",
   "tui": "fullscreen",
   "autoMemoryEnabled": true,
@@ -260,5 +251,7 @@
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
   "agentPushNotifEnabled": false,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "promptCacheTtl": "1h",
+  "subagentPromptCacheTtl": "1h"
 }
