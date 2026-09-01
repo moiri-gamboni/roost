@@ -6,7 +6,7 @@
 # API-equivalent $ is not real money (it stays the internal attribution weight,
 # available interactively via `session usage`).
 # Inputs are day-sliced — only yesterday's log rows are fed to
-# the model, never the full 8-day logs. Summarized by claude-sonnet-5 at max
+# the model, never the full 8-day logs. Summarized by claude-sonnet-5 at xhigh
 # effort (cheap against the caps), pushed as PLAIN TEXT via ntfy (phone apps
 # don't render markdown), archived to ~/roost/claude/usage/briefs/<date>.txt.
 # Cron: cron-roost, daily 06:40. Logs: journalctl -t roost/session-daily-brief.
@@ -141,7 +141,7 @@ $(cat "$tmp/events.txt")
 == commits ==
 $(cat "$tmp/commits.txt")"
 
-if ! brief=$(printf '%s' "$prompt" | timeout 900 claude -p --model claude-sonnet-5 --effort max 2>"$tmp/err"); then
+if ! brief=$(printf '%s' "$prompt" | timeout 900 claude -p --model claude-sonnet-5 --effort xhigh 2>"$tmp/err"); then
   logger -t roost/session-daily-brief "claude -p failed rc=$?: $(tail -c 300 "$tmp/err" 2>/dev/null || true)"
   exit 1
 fi
