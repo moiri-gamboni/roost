@@ -206,6 +206,7 @@
   "worktree": {
     "baseRef": "fresh"
   },
+  "enableArtifact": false,
   "workflowKeywordTriggerEnabled": false,
   "statusLine": {
     "type": "command",
@@ -237,8 +238,11 @@
     }
   },
   "feedbackDrafts": "off",
+  "promptCacheTtl": "1h",
+  "subagentPromptCacheTtl": "1h",
   "effortLevel": "xhigh",
   "askUserQuestionTimeout": "never",
+  "dialogExpiry": "never",
   "tui": "fullscreen",
   "autoMemoryEnabled": true,
   "autoDreamEnabled": true,
@@ -287,8 +291,7 @@
       "and any \"routine under <user>/ prefix\" qualifiers: routine under moiri-gamboni/ and apartresearch/ remote prefixes only, scoped to the sub-repos named above"
     ]
   },
-  "promptCacheTtl": "1h",
-  "subagentPromptCacheTtl": "1h",
+  "crossSessionInbound": "accept",
   "awaySummaryEnabled": false,
   "promptSuggestionEnabled": false
 }
