@@ -245,7 +245,7 @@
   "skipWorkflowUsageWarning": true,
   "verbose": false,
   "autoCompactEnabled": true,
-  "switchModelsOnFlag": false,
+  "switchModelsOnFlag": true,
   "autoContinueAtUsageLimit": true,
   "autoScrollEnabled": false,
   "teammateMode": "in-process",
