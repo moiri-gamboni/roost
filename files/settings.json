@@ -3,7 +3,6 @@
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "3",
-    "ENABLE_PROMPT_CACHING_1H": "1",
     "CLAUDE_CODE_SCROLL_SPEED": "1",
     "ENABLE_CLAUDEAI_MCP_SERVERS": "false",
     "APART_WORKSPACE": "/home/moiri/roost/apart-research"
@@ -32,9 +31,6 @@
     "defaultMode": "auto"
   },
   "model": "claude-fable-5-1[1m]",
-  "fallbackModel": [
-    "claude-opus-5"
-  ],
   "hooks": {
     "SessionStart": [],
     "PreCompact": [],
@@ -241,12 +237,7 @@
     }
   },
   "feedbackDrafts": "off",
-  "effortLevel": "high",
-  "modelSettings": {
-    "claude-opus-5": {
-      "effortLevel": "xhigh"
-    }
-  },
+  "effortLevel": "xhigh",
   "askUserQuestionTimeout": "never",
   "tui": "fullscreen",
   "autoMemoryEnabled": true,
@@ -295,5 +286,7 @@
       "**Org-specific CLIs**: tasks (tasksync CLI, 130×), session (90×), rodney (headless-Chrome automation, 32×), roughdraft (14×), roost-apply (11×), granola (3×) — all evidenced by frequent project-transcript usage",
       "and any \"routine under <user>/ prefix\" qualifiers: routine under moiri-gamboni/ and apartresearch/ remote prefixes only, scoped to the sub-repos named above"
     ]
-  }
+  },
+  "promptCacheTtl": "1h",
+  "subagentPromptCacheTtl": "1h"
 }
