@@ -227,7 +227,7 @@
     "apart-tools": {
       "source": {
         "source": "git",
-        "url": "git@github.com:moiri-gamboni/apart-tools.git"
+        "url": "git@github.com:apartresearch/apart-tools.git"
       }
     },
     "diataxis-skill": {
