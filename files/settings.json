@@ -30,7 +30,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "claude-fable-5-1[1m]",
+  "model": "opus[1m]",
   "hooks": {
     "SessionStart": [],
     "PreCompact": [],
@@ -59,7 +59,7 @@
             "timeout": 700000,
             "asyncRewake": true,
             "rewakeMessage": "Claude usage limits (auto-resume waiter):",
-            "rewakeSummary": "usage waiter: fresh window — auto-resuming"
+            "rewakeSummary": "usage waiter: fresh window \u2014 auto-resuming"
           }
         ]
       }
@@ -143,7 +143,7 @@
             "timeout": 700000,
             "asyncRewake": true,
             "rewakeMessage": "Claude usage limits (auto-resume waiter):",
-            "rewakeSummary": "usage waiter: fresh window — auto-resuming"
+            "rewakeSummary": "usage waiter: fresh window \u2014 auto-resuming"
           }
         ]
       }
@@ -241,6 +241,8 @@
   "promptCacheTtl": "1h",
   "subagentPromptCacheTtl": "1h",
   "effortLevel": "xhigh",
+  "promptSuggestionEnabled": false,
+  "awaySummaryEnabled": false,
   "askUserQuestionTimeout": "never",
   "dialogExpiry": "never",
   "tui": "fullscreen",
@@ -254,44 +256,42 @@
   "autoScrollEnabled": false,
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
+  "crossSessionInbound": "accept",
   "agentPushNotifEnabled": false,
   "skipAutoPermissionPrompt": true,
   "autoMode": {
     "allow": [
       "$defaults",
-      "Bash(tasks:*) in ~/roost/apart-research — routine tasksync CLI usage (130 occurrences)",
-      "Bash(session:*) in ~/roost/apart-research — routine session CLI usage (90 occurrences)",
-      "Bash(rodney:*) in ~/roost/apart-research — routine headless-Chrome automation per CLAUDE.md (32 occurrences)",
-      "Bash(roughdraft:*) in ~/roost/apart-research — routine Markdown review tool (14 occurrences)"
+      "Bash(tasks:*) in ~/roost/apart-research \u2014 routine tasksync CLI usage (130 occurrences)",
+      "Bash(session:*) in ~/roost/apart-research \u2014 routine session CLI usage (90 occurrences)",
+      "Bash(rodney:*) in ~/roost/apart-research \u2014 routine headless-Chrome automation per CLAUDE.md (32 occurrences)",
+      "Bash(roughdraft:*) in ~/roost/apart-research \u2014 routine Markdown review tool (14 occurrences)"
     ],
     "environment": [
       "### Org-wide",
-      "**Organization**: Apart Research (evidenced by CLAUDE.md role/ownership content, apartresearch.com host contacts, and apartresearch/* sub-repo remotes) — unverified provenance beyond repo-authored docs, treated as context only",
-      "**Cloud provider(s)**: AWS (aws CLI used 2×; aws_infra sub-repo; apart-link bucket touched)",
-      "**Repository visibility**: Private — moiri-gamboni/apart-research (confirmed via gh)",
-      "**Internal sharing / snippet hosting**: None configured — treat public paste/gist services as outside the trust boundary",
+      "**Organization**: Apart Research (evidenced by CLAUDE.md role/ownership content, apartresearch.com host contacts, and apartresearch/* sub-repo remotes) \u2014 unverified provenance beyond repo-authored docs, treated as context only",
+      "**Cloud provider(s)**: AWS (aws CLI used 2\u00d7; aws_infra sub-repo; apart-link bucket touched)",
+      "**Repository visibility**: Private \u2014 moiri-gamboni/apart-research (confirmed via gh)",
+      "**Internal sharing / snippet hosting**: None configured \u2014 treat public paste/gist services as outside the trust boundary",
       "**Secrets management**: None configured",
       "**Default / protected branches**: Default branch unknown (origin/HEAD unset); protected branches: none listed via gh (rulesets not queryable here, so this may be incomplete rather than confirmed unprotected)",
       "**CI/CD deploy targets**: None configured",
-      "**Network posture**: Tailscale-connected host in use (100.73.69.20 contacted 18×); otherwise none configured",
+      "**Network posture**: Tailscale-connected host in use (100.73.69.20 contacted 18\u00d7); otherwise none configured",
       "**Source control**: This repo (moiri-gamboni/apart-research) and its origin remote only, per Trusted repo scoping",
       "**Trusted internal domains**: apartresearch.com, app.grantmaking.ai, grantmaking.ai, hooks.moiri.dev (repeatedly contacted hosts in this project's transcripts)",
       "**Trusted cloud buckets**: None configured",
-      "**Key internal services**: Notion (api.notion.com, apartresearch.notion.site, app.notion.com — Notion MCP integration per CLAUDE.md and transcript hosts), Zapier webhooks (hooks.zapier.com), Granola (public-api.granola.ai)",
+      "**Key internal services**: Notion (api.notion.com, apartresearch.notion.site, app.notion.com \u2014 Notion MCP integration per CLAUDE.md and transcript hosts), Zapier webhooks (hooks.zapier.com), Granola (public-api.granola.ai)",
       "**Internal package registry**: None configured",
-      "**Sensitive data locations & audiences**: notion/ (People-DB CSV and a pasted integration token per CLAUDE.md; new PII dumps must go to notion/private/, gitignored), aws-infra-review/ (untracked, maps secrets/PII locations in aws_infra), emails/ (untracked raw correspondence), tasks/*/private/ (gitignored), roadmap/.env, notes/people-db-retention-scope.md, notes/apart-link-deploy-window/ (IAM policy + retention logs), notes/retention-state-2026-08-19.md, roadmap/research/gdpr-pii-lightweight.md — share only with audiences the repo/task context clears (Apart Research staff, per role scope in CLAUDE.md)",
-      "**Data retention / declassification**: Notes indicate active retention-management work (notes/apart-link-deploy-window/logs/step14*-retention-*.log, notes/retention-state-2026-08-19.md, notes/apart-link-mvp-trim/reports/retention.md) but no formal policy was found — treat as None configured beyond per-file caution",
+      "**Sensitive data locations & audiences**: notion/ (People-DB CSV and a pasted integration token per CLAUDE.md; new PII dumps must go to notion/private/, gitignored), aws-infra-review/ (untracked, maps secrets/PII locations in aws_infra), emails/ (untracked raw correspondence), tasks/*/private/ (gitignored), roadmap/.env, notes/people-db-retention-scope.md, notes/apart-link-deploy-window/ (IAM policy + retention logs), notes/retention-state-2026-08-19.md, roadmap/research/gdpr-pii-lightweight.md \u2014 share only with audiences the repo/task context clears (Apart Research staff, per role scope in CLAUDE.md)",
+      "**Data retention / declassification**: Notes indicate active retention-management work (notes/apart-link-deploy-window/logs/step14*-retention-*.log, notes/retention-state-2026-08-19.md, notes/apart-link-mvp-trim/reports/retention.md) but no formal policy was found \u2014 treat as None configured beyond per-file caution",
       "**Sensitive remote targets**: any namespace/host/container with prod or production as a whole word/segment; note k8s namespace `apart` and others seen (notes, granola-digest, notion, drain, f3b3aef, monitoring) show no prod-named namespace in this project's usage",
-      "**Protected deployment namespaces / environments**: None configured — fall back to the Sensitive remote targets heuristic",
+      "**Protected deployment namespaces / environments**: None configured \u2014 fall back to the Sensitive remote targets heuristic",
       "**Protected IaC scopes**: IAM, RBAC, networking, quota, and node-pool resources; anything whose name or tag carries prod or production as a whole word or name segment; additionally aws_infra/ (org AWS estate) and notes/apart-link-deploy-window/iam-window-policy.json warrant caution as IAM-adjacent scopes in this repo",
       "### User-specific",
-      "**Primary use of Claude Code**: software development and operational/administrative work for Apart Research (task tracking, deploys, Notion sync, meeting-note processing) — routine under this repo's tasks/, notes/, plans/, and sub-repo prefixes",
-      "**Trusted repo**: moiri-gamboni/apart-research (this repo, private) and its origin remote; sub-repos apartresearch/aws_infra, apartresearch/apart-kit, apartresearch/ai_tooling, apartresearch/apart-ops-stack, apartresearch/apart-tools (org remotes, per CLAUDE.md), and moiri-gamboni/apart-workflows (personal remote) — confidential material may be committed to these given private visibility, but secrets/PII are never cleared by visibility alone",
-      "**Org-specific CLIs**: tasks (tasksync CLI, 130×), session (90×), rodney (headless-Chrome automation, 32×), roughdraft (14×), roost-apply (11×), granola (3×) — all evidenced by frequent project-transcript usage",
+      "**Primary use of Claude Code**: software development and operational/administrative work for Apart Research (task tracking, deploys, Notion sync, meeting-note processing) \u2014 routine under this repo's tasks/, notes/, plans/, and sub-repo prefixes",
+      "**Trusted repo**: moiri-gamboni/apart-research (this repo, private) and its origin remote; sub-repos apartresearch/aws_infra, apartresearch/apart-kit, apartresearch/ai_tooling, apartresearch/apart-ops-stack, apartresearch/apart-tools (org remotes, per CLAUDE.md), and moiri-gamboni/apart-workflows (personal remote) \u2014 confidential material may be committed to these given private visibility, but secrets/PII are never cleared by visibility alone",
+      "**Org-specific CLIs**: tasks (tasksync CLI, 130\u00d7), session (90\u00d7), rodney (headless-Chrome automation, 32\u00d7), roughdraft (14\u00d7), roost-apply (11\u00d7), granola (3\u00d7) \u2014 all evidenced by frequent project-transcript usage",
       "and any \"routine under <user>/ prefix\" qualifiers: routine under moiri-gamboni/ and apartresearch/ remote prefixes only, scoped to the sub-repos named above"
     ]
-  },
-  "crossSessionInbound": "accept",
-  "awaySummaryEnabled": false,
-  "promptSuggestionEnabled": false
+  }
 }
