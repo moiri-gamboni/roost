@@ -30,7 +30,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "claude-fable-5-1[1m]",
+  "model": "opus[1m]",
   "hooks": {
     "SessionStart": [],
     "PreCompact": [],
@@ -59,7 +59,7 @@
             "timeout": 700000,
             "asyncRewake": true,
             "rewakeMessage": "Claude usage limits (auto-resume waiter):",
-            "rewakeSummary": "usage waiter: fresh window — auto-resuming"
+            "rewakeSummary": "usage waiter: fresh window \u2014 auto-resuming"
           }
         ]
       }
@@ -143,7 +143,7 @@
             "timeout": 700000,
             "asyncRewake": true,
             "rewakeMessage": "Claude usage limits (auto-resume waiter):",
-            "rewakeSummary": "usage waiter: fresh window — auto-resuming"
+            "rewakeSummary": "usage waiter: fresh window \u2014 auto-resuming"
           }
         ]
       }
@@ -241,6 +241,8 @@
   "promptCacheTtl": "1h",
   "subagentPromptCacheTtl": "1h",
   "effortLevel": "xhigh",
+  "promptSuggestionEnabled": false,
+  "awaySummaryEnabled": false,
   "askUserQuestionTimeout": "never",
   "dialogExpiry": "never",
   "tui": "fullscreen",
@@ -254,9 +256,7 @@
   "autoScrollEnabled": false,
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
-  "agentPushNotifEnabled": false,
-  "skipAutoPermissionPrompt": true,
   "crossSessionInbound": "accept",
-  "awaySummaryEnabled": false,
-  "promptSuggestionEnabled": false
+  "agentPushNotifEnabled": false,
+  "skipAutoPermissionPrompt": true
 }
