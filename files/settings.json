@@ -227,7 +227,7 @@
     "work-tools": {
       "source": {
         "source": "git",
-        "url": "git@github.com:moiri-gamboni/work-tools.git"
+        "url": "git@github.com:example-org/work-tools.git"
       }
     },
     "diataxis-skill": {
