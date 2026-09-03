@@ -68,6 +68,7 @@ Why it exists: ad-hoc REST writes to the Apart workspace always need explicit us
 Sanctioned path if editing a task: tasksync Skill (e.g. tasks push)
 For a small fix: the Notion MCP write tools, which prompt the user to approve it.
 Limit: this reads command strings, not a script'"'"'s internal calls. You may write a script,
-explain what it does, then ask the user to run it for convenience.' \
+explain what it does, then ask the user to run it for convenience, especially for
+large changes.' \
     '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $r}}'
 exit 0
