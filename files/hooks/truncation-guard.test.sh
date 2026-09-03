@@ -12,8 +12,9 @@ pass=0
 fail=0
 
 check() {
-    local expect="$1" label="$2" cmd="$3" out got
-    out=$(jq -nc --arg c "$cmd" '{tool_name: "Bash", tool_input: {command: $c}}' | bash "$hook")
+    local expect="$1" label="$2" cmd="$3" cwd="${4:-}" out got
+    out=$(jq -nc --arg c "$cmd" --arg d "$cwd" \
+        '{tool_name: "Bash", tool_input: {command: $c}} + (if $d != "" then {cwd: $d} else {} end)' | bash "$hook")
     if grep -q '"permissionDecision":"deny"' <<<"$out"; then got=deny; else got=allow; fi
     if [ "$got" = "$expect" ]; then
         pass=$((pass + 1))
@@ -167,6 +168,33 @@ check allow 'cut -d with a quoted delimiter'            "cut -d' ' -f1 file"
 check allow 'cut -dc is a delimiter of c'               "cut -dc -f2 file"
 check allow 'cutover as a word'                         "echo cutover"
 check allow 'cut in a quoted string'                    "echo 'cut -c1-80'"
+
+# --- grep: a context window on an existing file is a windowed read ---
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+printf 'def f():\n    pass\n' > "$tmp/mod.py"
+check deny  'grep -A14 on a ^def anchor, existing file'  'grep -n -A14 "^def should_process_row" mod.py' "$tmp"
+check deny  'grep -B2 -A18 call-site window'             'grep -n -B2 -A18 "framer_event_id = resolve_sprint" mod.py' "$tmp"
+check deny  'rg -A20, absolute path'                     "rg -A20 '^def f' $tmp/mod.py"
+check deny  '--after-context=14'                         'grep --after-context=14 "^def f" mod.py' "$tmp"
+check deny  'clustered -nA14'                            'grep -nA14 "^def f" mod.py' "$tmp"
+check deny  '-C10 window'                                'grep -C10 "pass" mod.py' "$tmp"
+check deny  'windowed read via stdin redirect'           'grep -A14 "^def f" < mod.py' "$tmp"
+check deny  'window at the end of a pipeline into wc'    'grep -A14 "^def f" mod.py | wc -l' "$tmp"
+check allow 'window on a file that does not exist'       'grep -A14 "^def f" ghost.py' "$tmp"
+check allow 'recursive grep with context'                'grep -rn -A5 "TODO" .' "$tmp"
+check allow 'piped grep with context, quoted pattern'    'journalctl -u caddy | grep -A5 "error"' "$tmp"
+check allow 'context window of 200'                      'grep -A 200 "^def f" mod.py' "$tmp"
+check allow '-A50 -B50 reaches the floor'                'grep -A50 -B50 "pass" mod.py' "$tmp"
+check allow '-C50 reaches the floor'                     'grep -C50 "pass" mod.py' "$tmp"
+check allow 'plain grep of the file is a search'         'grep -n "^def" mod.py' "$tmp"
+check allow 'capture to an existing file is not a read'  'journalctl | grep -A5 "x" > mod.py' "$tmp"
+check allow 'grep window in a quoted string'             'echo "grep -A14 pat mod.py"' "$tmp"
+mkdir -p "$tmp/sub"
+printf 'def g():\n    pass\n' > "$tmp/sub/inner.py"
+check deny  'cd (absolute) && windowed grep'             "cd $tmp/sub && grep -n -A14 '^def g' inner.py" "/somewhere/else"
+check deny  'cd (relative) && windowed grep'             'cd sub && grep -A10 "^def g" inner.py' "$tmp"
+check allow 'cd somewhere the file is not'               'cd /etc && grep -A10 "^def g" inner.py' "$tmp/other"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
