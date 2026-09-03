@@ -9,10 +9,9 @@
 # This is friction, not a boundary, and nothing depends on it holding. A script on disk making
 # the same call internally passes cleanly, which is exactly how `tasks push` gets through.
 #
-# The deny message deliberately names this file, the wiring and the sanctioned path — not the way
-# to switch it off; that invites the blocked session to do so. Its predecessor (`no-truncation.sh`, 53b2f9b) was reverted by its own author a
-# day later — "someone added a hook, can you remove it" — because the deny message identified
-# neither its origin nor its purpose, so the fastest read was "unexplained obstacle".
+# The deny message names the guard, why it exists, the sanctioned path and the honest limit —
+# never the way to switch it off; that invites the blocked session to do so. It stays short: a
+# session that hits this needs to know what to do next, not where the hook file lives.
 #
 # Matching is deliberately done on the RAW command string, with no heredoc or quote stripping.
 # That inverts `no-truncation.sh`, which stripped both, and the inversion is the point: there,
@@ -52,17 +51,22 @@ write_intent+='|(requests|httpx|session|client|http)\.(post|patch|put|delete)[[:
 write_intent+='|\.(post|patch|delete)[[:space:]]*\('
 grep -qiE "$write_intent" <<<"$cmd" || exit 0
 
+# Three Notion endpoints read over POST: `/v1/search`, and the `/query` on a data source or a
+# database. A paginated dump of the workspace is all POST and all read, so the verb alone cannot
+# decide. Pass only when EVERY Notion path in the command is one of those — a command that also
+# touches a write endpoint still denies, and a URL assembled from variables leaves no extractable
+# path, so the deny stands.
+notion_paths=$(grep -oE 'api\.notion\.com/v1/[A-Za-z0-9_./{}$%:-]*' <<<"$cmd")
+[ -n "$notion_paths" ] && ! grep -qvE '/(query|search)$' <<<"$notion_paths" && exit 0
+
 # Never log the command itself: these carry `Authorization: Bearer <integration token>`.
 logger -t roost/notion-write-guard "denied an ad-hoc Notion write command"
 
-jq -nc --arg r 'BLOCKED by the Notion write guard — a roost PreToolUse hook.
+jq -nc --arg r 'BLOCKED by the Notion write guard.
 
-What it is: ~/roost/code/server/files/hooks/notion-write-guard.sh, wired into the PreToolUse
-block of ~/roost/code/server/files/settings.json (deployed to ~/roost/claude/hooks/).
-Why it exists: ad-hoc REST writes to the Apart workspace bypass the sync tool'"'"'s per-field
-clobber guard and its dry-run, and Moïri owns whatever his integration writes there.
-Sanctioned path: tasks push <slug>   (dry-run by default)
-Honest limit: this reads command strings, not a script'"'"'s internal calls — which is exactly how
-tasks push passes. It is friction, not a boundary.' \
+Why it exists: ad-hoc REST writes to the Apart workspace always need explicit user approval.
+Sanctioned path if editing a task: tasksync Skill (e.g. tasks push)
+Limit: this reads command strings, not a script'"'"'s internal calls. You may write a script,
+explain what it does, then ask the user to run it for convenience.' \
     '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $r}}'
 exit 0

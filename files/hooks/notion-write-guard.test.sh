@@ -51,6 +51,20 @@ check allow 'explicit -X GET' \
 check allow 'requests.get' \
     'python3 -c '\''import requests; requests.get("https://api.notion.com/v1/pages/x")'\'''
 
+# --- must allow: the POST-shaped reads (search, and query on a data source or database) ---
+check allow 'curl -X POST /v1/search' \
+    'curl -s -X POST https://api.notion.com/v1/search -d "{}"'
+check allow 'requests.post on a data source query' \
+    'python3 -c '\''requests.post("https://api.notion.com/v1/data_sources/9dd10ae5/query", json=b)'\'''
+check allow 'legacy database query, url in a variable path' \
+    'curl -s -X POST "https://api.notion.com/v1/databases/$db/query" -d @body.json'
+check allow 'f-string path with a placeholder segment' \
+    'python3 dump.py # urllib.request.Request(f"https://api.notion.com/v1/data_sources/{ds}/query", method="POST")'
+check deny 'a query alongside a page write still denies' \
+    'curl -X POST https://api.notion.com/v1/data_sources/x/query && curl -X PATCH https://api.notion.com/v1/pages/y'
+check deny 'host present but no extractable /v1/ path' \
+    'curl -X POST "$NOTION_BASE/pages" -H "Host: api.notion.com"'
+
 # --- must allow: false-positive candidates ---
 check allow 'filename containing the host' \
     'cat /tmp/api.notion.com.log'
