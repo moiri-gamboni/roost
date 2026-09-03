@@ -23,10 +23,17 @@
 #   sed without -n, sed -i, sed -f, sed whose script holds a shell `$`, regex-addressed and
 #   unaddressed `p` (a filter, like grep), `1,$p` (everything), `N,$p` with N >= 100
 #   cut -d/-f                field selection is a projection, not a truncation
+#   grep/rg without context flags, with -r, piped, on globs or on files that do not exist —
+#   searching is what grep is FOR; only the windowed READ below is denied
 # Denied on purpose: a bare `head`/`tail` with no count — the default is 10 lines, under the
 # floor; `sed -n` with numeric `p` ranges summing under 100 (`A,Bp`, `Np`, `$p`, `A,+Kp`,
 # `N,$p` with N < 100 — the tail -n +N rule), `sed Nq` with N < 100 (head by another name;
-# `q` caps whatever the ranges say); `cut -c`/`-b`/`--characters`/`--bytes` at any width.
+# `q` caps whatever the ranges say); `cut -c`/`-b`/`--characters`/`--bytes` at any width; and a
+# grep-family command (grep/egrep/fgrep/rg/ugrep/ug) whose -A/-B/-C window totals under 100
+# lines (C counts twice) aimed at a file that EXISTS (checked against the payload cwd) — that
+# is not a search but a windowed read of a known file, `head -N` anchored at a match: observed
+# cutting a function's fail-closed tail with `-A14` on a `^def` anchor. The existence check is
+# what keeps piped greps (pattern never a file) and speculative greps out of scope.
 #
 # This is friction, not a boundary. Its predecessor (`no-truncation.sh`, 53b2f9b) was reverted
 # by its own author a day later because the deny message identified neither its origin nor its
@@ -51,12 +58,34 @@ set -uo pipefail
 
 # `|| true` and not `2>/dev/null`: a malformed payload should still leave a visible parse error
 # for whoever is debugging, it just must not take the turn down with it.
-cmd=$(jq -r '.tool_input.command // empty' || true)
+input=$(cat || true)
+cmd=$(jq -r '.tool_input.command // empty' <<<"$input" || true)
 [ -n "$cmd" ] || exit 0
 
 # Cheapest gate first: none of the words at all -> not ours (`tailscale`, `HEAD`, `headless`,
 # `sedated`, `cutover` pass).
-grep -qwE 'head|tail|sed|cut' <<<"$cmd" || exit 0
+grep -qwE 'head|tail|sed|cut|grep|egrep|fgrep|rg|ugrep|ug' <<<"$cmd" || exit 0
+
+# The grep rule needs the session's cwd (file-existence check); one extra jq, only when a
+# grep-family word occurs at all.
+hcwd=
+bases=()
+if grep -qwE 'grep|egrep|fgrep|rg|ugrep|ug' <<<"$cmd"; then
+    hcwd=$(jq -r '.cwd // empty' <<<"$input" || true)
+    [ -n "$hcwd" ] && bases+=("$hcwd")
+    # Every `cd` target in the command is a candidate base too: `cd repo && grep -A14 … f.py`
+    # is the common cross-repo form, and the payload cwd alone would miss it. Relative cd
+    # targets resolve against the payload cwd; deeper chains (cd a && cd b) are out of scope.
+    # shellcheck disable=SC2016  # the grep pattern below is literal; $ and backtick are regex chars
+    while IFS= read -r cdt; do
+        cdt="${cdt/#\~\//$HOME/}"
+        case $cdt in
+            /*) bases+=("$cdt") ;;
+            ?*) [ -n "$hcwd" ] && bases+=("$hcwd/$cdt") ;;
+        esac
+    done < <(grep -oE '(^|[|;&(`])[[:space:]]*cd[[:space:]]+[^|;&()`[:space:]]+' <<<"$cmd" \
+        | sed -E 's/^[|;&(`]?[[:space:]]*cd[[:space:]]+//')
+fi
 
 unheredoc=$(printf '%s' "$cmd" \
     | sed -E "/<<-?[\"']?[A-Za-z_][A-Za-z_0-9]*[\"']?$/,/^[[:space:]]*[A-Za-z_][A-Za-z_0-9]*$/d")
@@ -195,13 +224,45 @@ AWK
     sedhit=$(UNHEREDOC="$unheredoc" LC_ALL=C awk "$sedprog") || deny "$sedhit"
 fi
 
+# Sum of the numbers one grep context option takes in a segment ($2 = the option's regex).
+ctx_sum() { grep -oE "$2" <<<"$1" | grep -oE '[0-9]+$' | LC_ALL=C awk '{t+=$1} END{print t+0}'; }
+
 # Split into simple commands: pipes, separators, subshells, command substitution, newlines.
 # A segment is ours when it starts with head/tail/cut (an optional sudo in front), i.e. the
 # word is in command position — `git log HEAD` and `cat /tmp/head/x` never get here.
 while IFS= read -r seg; do
     seg="${seg#"${seg%%[![:space:]]*}"}"
     seg=$(sed -E 's/^sudo[[:space:]]+//' <<<"$seg")
-    grep -qE '^(head|tail|cut)([[:space:]]|$)' <<<"$seg" || continue
+    grep -qE '^(head|tail|cut|grep|egrep|fgrep|rg|ugrep|ug)([[:space:]]|$)' <<<"$seg" || continue
+    if grep -qE '^(grep|egrep|fgrep|rg|ugrep|ug)([[:space:]]|$)' <<<"$seg"; then
+        # Windowed read of a known file. Searches pass untouched: no context flags, -r, a
+        # window of 100+, or no existing file as the target.
+        grep -qE '(^|[[:space:]])(-[a-zA-Z]*[rR]|--recursive|--dereference-recursive)' <<<"$seg" && continue
+        a=$(ctx_sum "$seg" '(^|[[:space:]])(-[a-zA-Z]*A[[:space:]]*|--after-context(=|[[:space:]]+))[0-9]+')
+        b=$(ctx_sum "$seg" '(^|[[:space:]])(-[a-zA-Z]*B[[:space:]]*|--before-context(=|[[:space:]]+))[0-9]+')
+        c=$(ctx_sum "$seg" '(^|[[:space:]])(-[a-zA-Z]*C[[:space:]]*|--context(=|[[:space:]]+))[0-9]+')
+        win=$((a + b + 2 * c))
+        { [ "$win" -eq 0 ] || [ "$win" -ge 100 ]; } && continue
+        # The candidate target: the last token, output redirections dropped first (`> f` is a
+        # capture, not a read). A quoted pattern left with its quotes, so what lands here is a
+        # file argument — and it only counts when it actually exists (absolute, or against the
+        # session's cwd from the payload). A pattern that happens to name a real file is the
+        # accepted false positive; quoting the pattern avoids it.
+        t=$(sed -E 's/[0-9]*>{1,2}[[:space:]]*[^[:space:]]+//g' <<<"$seg")
+        t="${t%"${t##*[![:space:]]}"}"; t="${t##*[[:space:]]}"
+        case $t in ''|-*) continue ;; esac
+        t="${t/#\~\//$HOME/}"
+        hit=
+        if [ -f "$t" ]; then hit=1; else
+            for base in ${bases[@]+"${bases[@]}"}; do
+                [ -f "$base/$t" ] && { hit=1; break; }
+            done
+        fi
+        if [ -n "$hit" ]; then
+            deny "$seg" "A grep -A/-B/-C window under 100 lines on an existing file is a windowed read of a known file, not a search — it cuts whatever sits past the window (observed: -A14 on a ^def anchor cut the function's fail-closed tail). Read the whole file; 100+ lines of context, -r, and pattern-only/piped greps pass."
+        fi
+        continue
+    fi
     if grep -qE '^cut' <<<"$seg"; then
         # -c/-b/--characters/--bytes slice every line; -d/-f select fields (a projection). The
         # cluster letters are cut's argument-less flags only, so `-dc` (a delimiter of c) passes.
