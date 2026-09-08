@@ -57,7 +57,7 @@ roost-apply --caddy|--cloudflare|--ntfy|--systemd|--cron|--xray|--proton|--all  
 ~/roost/                    Managed root directory (name from ROOST_DIR_NAME)
 ├── claude/                 Claude Code config (CLAUDE_CONFIG_DIR)
 │   ├── settings.json       Default model, hooks, cleanup policy
-│   ├── hooks/              Event hooks (notify, statusline, shellcheck-edit, notion-write-guard, truncation-guard)
+│   ├── hooks/              Event hooks (notify, statusline, shellcheck-edit, notion-write-guard, truncation-guard, fork-context-guard)
 │   ├── scripts/            User CLIs → ~/bin (roost-apply, roost-net, session)
 │   ├── scheduled/          Cron + timer jobs (health-check, auto-update, ram-monitor, …)
 │   ├── lib/                Shared: _hook-env.sh, cloudflare-assemble.sh
@@ -88,6 +88,7 @@ Event hooks, and what they mean for a session (mechanism per hook: `files/hooks/
 | PostToolUse (Edit\|Write) | `hooks/shellcheck-edit.sh` | shellcheck findings on any edited `*.sh` come back as context |
 | PreToolUse (Bash) | `hooks/notion-write-guard.sh` | Denies ad-hoc REST writes to `api.notion.com` (write verb + host in the raw command); `apart-tools/tasksync/` and `apart-tools/notion-mirror/` invocations pass, as do the POST-shaped reads (`/query`, `/v1/search`) when they are the only Notion paths in the command. Friction, not a boundary: the deny message names the sanctioned path |
 | PreToolUse (Bash) | `hooks/truncation-guard.sh` | Denies `head`/`tail` with a line count under 100 or no count at all (default 10), `sed -n` with numeric `p` ranges summing under 100 lines and `sed Nq` with N < 100 (the same cut by another word), `cut -c`/`-b` at any width, and a grep-family `-A`/`-B`/`-C` window under 100 lines aimed at a file that exists (a windowed read of a known file, not a search); head/tail `-c`, `--help`, a bare `tail -f`, `-n ≥ 100`, regex-addressed or unaddressed sed `p`, `sed -i`, `cut -d/-f`, and recursive/piped/pattern-only greps pass — except a `tasks` (tasksync) verb piped into head/tail, which denies at any count (that CLI's output is read whole). Enforces the global CLAUDE.md rule by mechanism rather than recall. Friction, not a boundary: quoted `bash -c` bodies and scripts on disk pass; the deny message says what to run instead |
+| PreToolUse (Agent) | `hooks/fork-context-guard.sh` | Turns a `subagent_type: "fork"` into a permission prompt once this session's context passes 500k tokens, figure included (read from the transcript, so no session has to check). Approve to fork anyway; decline and the session spawns a fresh subagent. Where nothing can prompt, ask is a deny |
 | PreToolUse (Write\|Edit) | `hooks/roughdraft-write-guard.sh` | Snapshots the pre-write bytes of a CriticMarkup-bearing `.md` into its `.roughdraft-history/` sidecar before an agent overwrites it. Snapshot-only: always exit 0, never a decision — pure protection, recover with `roughdraft history <file>`. Config is read at session start, so wiring changes need a restart |
 | (statusline) | apart-tools’ `session/statusline.sh` | TUI status line: model, context, rate-limit windows, and the tasksync task the session is on linked to its Notion row (clickable under tmux because `files/tmux.conf` declares `xterm*:hyperlinks`); also persists the per-login rate-limit cache + sample logs the `session` CLI reads |
 
@@ -168,4 +169,4 @@ Not in any snapshot or backup: the regenerable trees `setup/snapper.sh` keeps as
 ## Shell Conventions
 
 - `set -euo pipefail` everywhere, except `hetzner-watch.sh` (no `-e`, polling loop) and `_hook-env.sh` (`set -uo pipefail`, resilient hooks).
-- Hooks source `lib/_hook-env.sh` for `hook_input()`/`hook_json()`, `ntfy_send()` (journald fallback), `rate_limit_ok()`, `logger -t roost/<script>`. Exceptions: `reflect.sh` (just cats a prompt), `session --hook` (the apart-tools CLI reused as a hook), `notion-write-guard.sh` and `truncation-guard.sh` (fire on every Bash call; sourcing costs a `tailscale ip` subprocess they can't afford).
+- Hooks source `lib/_hook-env.sh` for `hook_input()`/`hook_json()`, `ntfy_send()` (journald fallback), `rate_limit_ok()`, `logger -t roost/<script>`. Exceptions: `reflect.sh` (just cats a prompt), `session --hook` (the apart-tools CLI reused as a hook), `notion-write-guard.sh`, `truncation-guard.sh` and `fork-context-guard.sh` (fire on every Bash or Agent call; sourcing costs a `tailscale ip` subprocess they can't afford).
