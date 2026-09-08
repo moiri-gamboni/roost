@@ -2,6 +2,7 @@
 logs/
 repomix-output.xml
 *.vsix
+# separate nested repo (moiri-gamboni/roost-private) — commit its changes there, not here
 files/private/
 plans/
 .claude/
