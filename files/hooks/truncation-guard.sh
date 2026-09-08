@@ -17,11 +17,13 @@
 #
 # Allowed on purpose:
 #   -n / --lines >= 100      the CLAUDE.md floor (head/tail); the same floor for sed ranges
+#   tail -n +N / head -n -N  keep-through-EOF: drops a known-size end, keeps the unbounded rest —
+#                            not a windowed read (the awk `NR>=N` / sed `N,$p` analogue), any N
 #   head/tail -c / --bytes   byte slicing, used to redact rather than to shorten
 #   tail -f / -F / --follow  following a live log is not truncation (a count beside it still is)
 #   --help / --version
 #   sed without -n, sed -i, sed -f, sed whose script holds a shell `$`, regex-addressed and
-#   unaddressed `p` (a filter, like grep), `1,$p` (everything), `N,$p` with N >= 100
+#   unaddressed `p` (a filter, like grep), `1,$p` and any `N,$p` (line N through the end)
 #   cut -d/-f                field selection is a projection, not a truncation
 #   grep/rg without context flags, with -r, piped, on globs or on files that do not exist —
 #   searching is what grep is FOR; only the windowed READ below is denied
@@ -30,12 +32,11 @@
 #   (`END{print NR}`) or sampling (`NR%10==0`) program, `-f progfile`, a `$`-interpolated program,
 #   and any window whose action is not a plain print all pass
 # Denied on purpose: a bare `head`/`tail` with no count — the default is 10 lines, under the
-# floor; `sed -n` with numeric `p` ranges summing under 100 (`A,Bp`, `Np`, `$p`, `A,+Kp`,
-# `N,$p` with N < 100 — the tail -n +N rule), `sed Nq` with N < 100 (head by another name;
+# floor; `head -N` (first N) and `tail -N` (last N) under 100; `sed -n` with numeric `p` ranges
+# summing under 100 (`A,Bp`, `Np`, `$p`, `A,+Kp`), `sed Nq` with N < 100 (head by another name;
 # `q` caps whatever the ranges say); an `awk 'NR>=A && NR<=B'` (and `NR<=B`, `NR==N`, the FNR
 # and reversed-operand spellings) whose window is under 100 and whose action is default/plain
-# print — the awk spelling of `sed -n 'A,Bp'`, deliberately asymmetric with the sed `N,$p` rule
-# in that a lower bound alone passes (see below); `cut -c`/`-b`/`--characters`/`--bytes` at any width; and a
+# print — the awk spelling of `sed -n 'A,Bp'`; `cut -c`/`-b`/`--characters`/`--bytes` at any width; and a
 # grep-family command (grep/egrep/fgrep/rg/ugrep/ug) whose -A/-B/-C window totals under 100
 # lines (C counts twice) aimed at a file that EXISTS (checked against the payload cwd) — that
 # is not a search but a windowed read of a known file, `head -N` anchored at a match: observed
@@ -143,7 +144,7 @@ function range_count(addr,   q) {   # lines a numeric `p` address prints; -1 = u
     split(addr, q, ",")
     if (q[2] ~ /^[0-9]+$/) return (q[2] + 0 >= q[1] + 0) ? q[2] - q[1] + 1 : 1
     if (q[2] ~ /^\+[0-9]+$/) return substr(q[2], 2) + 1
-    if (q[2] == "$") return (q[1] + 0 <= 1) ? -1 : q[1] + 0      # 1,$ is everything; N,$ is tail -n +N
+    if (q[2] == "$") return -1                                   # N,$ is line N through EOF: keeps the end, unbounded
     return -1
 }
 function analyze(args, na, seg,   k, a, flags, c, quiet, inplace, expect, fileflag, i2, s, m, cmds, j, cm, addr, cnt, bounded, unb, qcap, total, lim) {
@@ -211,7 +212,7 @@ function analyze(args, na, seg,   k, a, flags, c, quiet, inplace, expect, filefl
 # `{print $0}`; anything that computes or projects a field is not a windowed read. The condition
 # must be one or two `NR`/`FNR`-vs-integer comparisons ANDed, and a FINITE UPPER BOUND is
 # required: a lower bound alone (`NR>1`, `NR>=40`) keeps the rest of the file — the header/prefix
-# skip — and passes. This is the deliberate asymmetry with sed's `N,$p` rule.
+# skip — and passes, the same keep-through-EOF rule as `tail -n +N` and sed `N,$p`.
 function analyze_awk(args, na, seg,   k, a, prog, gotprog, expectarg, cond, action, br,
                                       ncmp, parts, p, c, mm, v, lb, ub, first, last, lo, hi, win) {
     prog = ""; gotprog = 0; expectarg = 0
@@ -341,16 +342,28 @@ while IFS= read -r seg; do
             && deny "$seg" "cut -c/-b hides the rest of every line, and the end of a long line is usually where the caveat is. Read whole lines; to pick fields, use -d/-f, awk or jq."
         continue
     fi
+    # head or tail? the offset sign means opposite things for each (below), so keep the word.
+    if grep -qE '^tail' <<<"$seg"; then cmd0='tail'; else cmd0='head'; fi
     args="${seg#head}"; args="${args#tail}"
 
     grep -qE '(^|[[:space:]])--(help|version)([[:space:]]|$)' <<<"$args" && continue
     grep -qE '(^|[[:space:]])(-[a-zA-Z]*c|--bytes)' <<<"$args" && continue
 
-    # The line count: -n N, -nN, -qn N, --lines=N, --lines N, legacy -N. Sign (+N / -N) ignored:
-    # `tail -n +5` and `head -n -5` still discard lines, and the floor is about magnitude.
-    n=$(grep -oE '(^|[[:space:]])(-[a-zA-Z]*n[[:space:]]*|--lines(=|[[:space:]]+)|-)[+-]?[0-9]+' <<<"$args" \
-        | grep -oE '[0-9]+$' | awk 'NR == 1')
-    if [ -n "$n" ]; then
+    # The first count token: -n N, -nN, -qn N, --lines=N, --lines N, legacy -N. A keep-through-EOF
+    # form drops a known-size end and keeps the unbounded remainder — not a windowed read, so it
+    # passes at any count, the analogue of awk `NR>=N` and sed `N,$p`. The offset sign says which:
+    # `tail -n +N` starts at line N (keeps the tail through EOF); `head -n -N` prints all but the
+    # last N (keeps the head). That sign only ever follows an -n/--lines flag; the legacy `-N` dash
+    # is the option lead, never a sign (so `head -5`/`tail -5` are unsigned). Everything else —
+    # `head -N` (first N), `tail -N` (last N), either with no count — is a bounded window: deny
+    # under the 100 floor. The awk sub-pass strips its leading anchor space so the sign is unambiguous.
+    tok=$(grep -oE '(^|[[:space:]])(-[a-zA-Z]*n[[:space:]]*|--lines(=|[[:space:]]+)|-)[+-]?[0-9]+' <<<"$args" \
+        | awk 'NR == 1 { sub(/^[[:space:]]+/, ""); print; exit }')
+    if [ -n "$tok" ]; then
+        n=$(grep -oE '[0-9]+$' <<<"$tok")
+        sign=$(grep -oE '(n[[:space:]]*|=|[[:space:]])[+-][0-9]+$' <<<"$tok" | grep -oE '[+-]' | awk 'NR == 1')
+        { [ "$cmd0" = tail ] && [ "$sign" = "+" ]; } && continue
+        { [ "$cmd0" = head ] && [ "$sign" = "-" ]; } && continue
         [ "$n" -lt 100 ] && deny "$seg"
         continue
     fi
