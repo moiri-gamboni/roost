@@ -28,14 +28,21 @@ IFS=$'\t' read -r kind transcript < <(jq -r '[(.tool_input.subagent_type // ""),
 
 # Newest assistant row with a usage block, read from the end: `sed '$a\'` supplies the newline
 # a torn last line (a write in flight) lacks — without it tac glues that line to the row
-# before and both are lost — tac + grep -m stop early on a multi-MB transcript, and
-# `fromjson?` skips the torn line instead of aborting the whole read.
+# before and both are lost — tac + grep -m stop early on a multi-MB transcript (0.3s on a
+# 78 MB one), and `fromjson?` skips the torn line instead of aborting the whole read. The
+# scan depth is a correctness bound, not just a speed one: a usage row behind that many
+# usage-less assistant rows is invisible and the guard falls open. Real transcripts carry
+# usage on every assistant row (0 of 16,137 sampled lacked it), so 40 is slack, and the
+# test table pins the boundary.
 # shellcheck disable=SC1003  # `$a\` is sed's append-nothing idiom, not an escaped quote
-ctx=$(sed '$a\' "$transcript" | tac | grep -a -m 10 '"type":"assistant"' \
+ctx=$(sed '$a\' "$transcript" | tac | grep -a -m 40 '"type":"assistant"' \
     | jq -rR 'fromjson? | select(.type == "assistant" and .message.usage) | .message.usage
               | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0)' \
     | head -n 1)
-[[ ${ctx:-} =~ ^[0-9]+$ ]] || exit 0
+# A readable transcript with no usable row is the one allow worth a trace: it is what a
+# transcript-format change would look like, and silence here is indistinguishable from
+# "nobody is over the cap".
+[[ ${ctx:-} =~ ^[0-9]+$ ]] || { logger -t roost/fork-context-guard "allowed a fork: no usable assistant usage row in $transcript"; exit 0; }
 [ "$ctx" -gt "$cap" ] || exit 0
 
 pretty=$(sed -E ':a;s/([0-9])([0-9]{3})($|,)/\1,\2\3/;ta' <<<"$ctx")
