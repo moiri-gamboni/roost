@@ -65,6 +65,42 @@ check ask  'a query alongside a page write still asks' \
 check ask  'host present but no extractable /v1/ path' \
     'curl -X POST "$NOTION_BASE/pages" -H "Host: api.notion.com"'
 
+# --- the verb is attributed per line: a GET beside a POST-shaped read passes ---
+check allow 'httpx.get schema + httpx.post query, one heredoc' \
+    "$(printf 'uv run python - <<%sEOF%s\nimport httpx\ndb = httpx.get(f"https://api.notion.com/v1/databases/{ROSTER}", headers=H).json()\nr = httpx.post(f"https://api.notion.com/v1/databases/{ROSTER}/query", headers=H, json=body)\nEOF' "'" "'")"
+check allow 'bare curl GET, then curl -X POST /query' \
+    'curl -s -H "Authorization: Bearer $T" https://api.notion.com/v1/databases/$db | jq .properties; curl -s -X POST "https://api.notion.com/v1/databases/$db/query" -d "{}"'
+check allow 'explicit -X GET beside a /v1/search' \
+    "$(printf 'curl -X GET https://api.notion.com/v1/pages/abc\ncurl -X POST https://api.notion.com/v1/search -d "{}"')"
+check allow 'requests.get page + requests.post search' \
+    "$(printf 'python3 - <<%sPY%s\nrequests.get("https://api.notion.com/v1/pages/x")\nrequests.post("https://api.notion.com/v1/search", json={})\nPY' "'" "'")"
+check allow 'a /query call split across lines, nothing else' \
+    "$(printf 'python3 - <<%sPY%s\nr = httpx.post(\n    "https://api.notion.com/v1/databases/x/query", json=q)\nPY' "'" "'")"
+
+# --- a write line that cannot be paired with its URL falls back to every path in the command ---
+check ask  'query line, then a patch whose URL sits on the next line' \
+    "$(printf 'python3 - <<%sPY%s\nhttpx.post("https://api.notion.com/v1/databases/x/query", json=q)\nhttpx.patch(\n    f"https://api.notion.com/v1/pages/{pid}", json=p)\nPY' "'" "'")"
+check ask  'query line, then curl -X PATCH with the URL on a continuation line' \
+    "$(printf 'curl -X POST https://api.notion.com/v1/data_sources/x/query -d "{}"\ncurl -X PATCH \\\n  "https://api.notion.com/v1/pages/$id" -d @b.json')"
+check ask  'GET and PATCH on the same line' \
+    'curl -s https://api.notion.com/v1/databases/x && curl -X PATCH https://api.notion.com/v1/pages/y -d @b.json'
+check ask  'URL literal on the get line, reused by a patch through a variable' \
+    "$(printf 'python3 - <<%sPY%s\nrows = httpx.post("https://api.notion.com/v1/databases/x/query", json=q)\ncur = httpx.get(url := f"https://api.notion.com/v1/pages/{pid}")\nhttpx.patch(url, json=p)\nPY' "'" "'")"
+check ask  'a literal query and a variable-URL patch on one line' \
+    'python3 -c '\''requests.post("https://api.notion.com/v1/databases/x/query", json=q); requests.patch(url, json=p)'\'''
+check allow 'a /query call split across lines beside a GET' \
+    "$(printf 'python3 - <<%sPY%s\ndb = httpx.get("https://api.notion.com/v1/databases/x")\nr = httpx.post(\n    "https://api.notion.com/v1/databases/x/query", json=q)\nPY' "'" "'")"
+check allow 'URL assigned to a variable on the line before its post' \
+    "$(printf 'python3 - <<%sPY%s\nurl = f"https://api.notion.com/v1/databases/{db}/query"\nr = httpx.post(url, json=q)\nPY' "'" "'")"
+check ask  'two URL variables, one a page, then a patch through one of them' \
+    "$(printf 'python3 - <<%sPY%s\np_url = f"https://api.notion.com/v1/pages/{pid}"\nq_url = "https://api.notion.com/v1/databases/x/query"\nhttpx.patch(p_url, json=p)\nPY' "'" "'")"
+check ask  'two calls in one segment sharing one literal' \
+    'python3 -c '\''x = [requests.post("https://api.notion.com/v1/databases/x/query"), requests.patch(url)]'\'''
+# The URL is gathered from the neighbouring lines only up to the next HTTP call, so an intervening
+# `.get(` cuts a variable URL off from the call that uses it. One bounce.
+check ask  'KNOWN FALSE POSITIVE: a variable /query URL behind an intervening .get( call' \
+    "$(printf 'python3 - <<%sPY%s\nurl = "https://api.notion.com/v1/databases/x/query"\nk = cfg.get("k")\nr = httpx.post(url, json=q)\nPY' "'" "'")"
+
 # --- must allow: false-positive candidates ---
 check allow 'filename containing the host' \
     'cat /tmp/api.notion.com.log'

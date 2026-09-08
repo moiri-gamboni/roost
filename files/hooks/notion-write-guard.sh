@@ -55,17 +55,51 @@ grep -qiE "$write_intent" <<<"$cmd" || exit 0
 
 # Three Notion endpoints read over POST: `/v1/search`, and the `/query` on a data source or a
 # database. A paginated dump of the workspace is all POST and all read, so the verb alone cannot
-# decide. Pass only when EVERY Notion path in the command is one of those — a command that also
-# touches a write endpoint still denies, and a URL assembled from variables leaves no extractable
-# path, so the deny stands.
-notion_paths=$(grep -oE 'api\.notion\.com/v1/[A-Za-z0-9_./{}$%:-]*' <<<"$cmd")
-[ -n "$notion_paths" ] && ! grep -qvE '/(query|search)$' <<<"$notion_paths" && exit 0
+# decide, and neither does the set of URLs in the command: the schema GET that precedes a row
+# query is a read too. So the verb is paired with its URL per statement. The command is cut into
+# segments at newlines and the shell separators (`;`, `|`, `&&`, `||`), and every segment that
+# carries a write verb must account for it: one Notion path per write call on the segment, every
+# one a read endpoint. A segment whose write call names no path — the URL on the next line of a
+# call split across lines, or in a variable assigned just before — gathers paths from up to three
+# neighbouring segments on each side, stopping at any other HTTP call so nothing is borrowed from
+# a different request; a variable URL whose literal sits behind another call, or is not there at
+# all, is therefore a prompt, which is the conservative side. Segments without a write verb
+# (GETs, assignments, pipes) are never a reason to ask on their own.
+path_re='api\.notion\.com/v1/[A-Za-z0-9_./{}$%:-]*'
+call_re='\.(get|post|patch|put|delete|request)[[:space:]]*\(|(^|[^A-Za-z0-9_-])(curl|fetch|wget)([^A-Za-z0-9_-]|$)'
+segtext=$(sed -E 's/\|\||&&|[;|]/\n/g' <<<"$cmd")
+mapfile -t segs <<<"$segtext"
+n=${#segs[@]}
+read_only=1
+mapfile -t hits < <(grep -niE "$write_intent" <<<"$segtext" | cut -d: -f1)
+for i in "${hits[@]}"; do
+    i=$((i - 1))
+    calls=$(grep -oiE "$write_intent" <<<"${segs[$i]}" | wc -l)
+    paths=$(grep -oE "$path_re" <<<"${segs[$i]}")
+    if [ -z "$paths" ]; then
+        for ((j = i - 1; j >= 0 && j >= i - 3; j--)); do
+            grep -qiE "$call_re|$write_intent" <<<"${segs[$j]}" && break
+            paths=$(printf '%s\n%s' "$paths" "$(grep -oE "$path_re" <<<"${segs[$j]}")")
+        done
+        for ((j = i + 1; j < n && j <= i + 3; j++)); do
+            grep -qiE "$call_re|$write_intent" <<<"${segs[$j]}" && break
+            paths=$(printf '%s\n%s' "$paths" "$(grep -oE "$path_re" <<<"${segs[$j]}")")
+        done
+        paths=$(grep . <<<"$paths")
+        [ -n "$paths" ] || { read_only=0; break; }
+    elif [ "$(wc -l <<<"$paths")" -ne "$calls" ]; then
+        read_only=0
+        break
+    fi
+    grep -qvE '/(query|search)$' <<<"$paths" && { read_only=0; break; }
+done
+[ "$read_only" -eq 1 ] && exit 0
 
 # Never log the command itself: these carry `Authorization: Bearer <integration token>`.
 logger -t roost/notion-write-guard "asked before an ad-hoc Notion write command"
 
 jq -nc \
-    --arg r 'Notion write guard: this command sends a write (POST/PATCH/PUT/DELETE) to api.notion.com outside tasksync, with none of its clobber guard or dry-run. Approve to run it as is; decline and Claude routes the change through tasksync or the Notion MCP write tools.' \
-    --arg c 'Notion write guard: this command is an ad-hoc REST write to api.notion.com, so the user was asked to approve it. If it was declined: edit a task through the tasksync skill (tasks push); for a small fix use the Notion MCP write tools, which prompt the user themselves; for a large change write a script, explain what it does, and ask the user to run it. The guard reads command strings only, so a script'"'"'s internal calls pass.' \
+    --arg r 'Notion write guard: this command may send a write (POST/PATCH/PUT/DELETE) to api.notion.com outside tasksync, with none of its clobber guard or dry-run; a read-only command lands here when the URL of a write-verb call is not on its line or the lines beside it. Approve to run it as is; decline and Claude routes the change through tasksync or the Notion MCP write tools.' \
+    --arg c 'Notion write guard: this command carries a write verb aimed at api.notion.com that could not be paired with a read endpoint, so the user was asked to approve it as an ad-hoc REST write. If it was declined: edit a task through the tasksync skill (tasks push); for a small fix use the Notion MCP write tools, which prompt the user themselves; for a large change write a script, explain what it does, and ask the user to run it. If the command only reads, put each write-verb call and its URL literal on one line and it passes. The guard reads command strings only, so a script'"'"'s internal calls pass.' \
     '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "ask", permissionDecisionReason: $r, additionalContext: $c}}'
 exit 0
