@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PreToolUse hook (matcher: Bash): deny ad-hoc REST writes to the Notion API.
+# PreToolUse hook (matcher: Bash): ask before an ad-hoc REST write to the Notion API.
 #
 # Why: writes to the Apart | Seldon workspace are supposed to go through the tasks sync tool,
 # which holds a per-field clobber guard and a dry-run. A hand-rolled `curl -X PATCH` has
@@ -9,9 +9,11 @@
 # This is friction, not a boundary, and nothing depends on it holding. A script on disk making
 # the same call internally passes cleanly, which is exactly how `tasks push` gets through.
 #
-# The deny message names the guard, why it exists, the sanctioned path and the honest limit —
-# never the way to switch it off; that invites the blocked session to do so. It stays short: a
-# session that hits this needs to know what to do next, not where the hook file lives.
+# The decision is "ask", not "deny": the user sees what the command is about to write and can
+# approve it as is. In auto mode a hook's ask still forces the prompt; where nothing can prompt
+# (`claude -p`, a background subagent with no surface) ask is a deny. The prompt text reaches
+# the user only, so the sanctioned path goes to the model as additionalContext — short, naming
+# what to do next and the honest limit, never the way to switch the guard off.
 #
 # Matching is deliberately done on the RAW command string, with no heredoc or quote stripping.
 # That inverts `no-truncation.sh`, which stripped both, and the inversion is the point: there,
@@ -60,15 +62,10 @@ notion_paths=$(grep -oE 'api\.notion\.com/v1/[A-Za-z0-9_./{}$%:-]*' <<<"$cmd")
 [ -n "$notion_paths" ] && ! grep -qvE '/(query|search)$' <<<"$notion_paths" && exit 0
 
 # Never log the command itself: these carry `Authorization: Bearer <integration token>`.
-logger -t roost/notion-write-guard "denied an ad-hoc Notion write command"
+logger -t roost/notion-write-guard "asked before an ad-hoc Notion write command"
 
-jq -nc --arg r 'BLOCKED by the Notion write guard.
-
-Why it exists: ad-hoc REST writes to the Apart workspace always need explicit user approval.
-Sanctioned path if editing a task: tasksync Skill (e.g. tasks push)
-For a small fix: the Notion MCP write tools, which prompt the user to approve it.
-Limit: this reads command strings, not a script'"'"'s internal calls. You may write a script,
-explain what it does, then ask the user to run it for convenience, especially for
-large changes.' \
-    '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $r}}'
+jq -nc \
+    --arg r 'Notion write guard: this command sends a write (POST/PATCH/PUT/DELETE) to api.notion.com outside tasksync, with none of its clobber guard or dry-run. Approve to run it as is; decline and Claude routes the change through tasksync or the Notion MCP write tools.' \
+    --arg c 'Notion write guard: this command is an ad-hoc REST write to api.notion.com, so the user was asked to approve it. If it was declined: edit a task through the tasksync skill (tasks push); for a small fix use the Notion MCP write tools, which prompt the user themselves; for a large change write a script, explain what it does, and ask the user to run it. The guard reads command strings only, so a script'"'"'s internal calls pass.' \
+    '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "ask", permissionDecisionReason: $r, additionalContext: $c}}'
 exit 0
