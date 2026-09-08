@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PreToolUse hook (matcher: Bash): deny the slicing of output to under 100 lines — head/tail,
-# their sed equivalents — and the slicing of lines themselves with cut -c/-b.
+# their sed and awk equivalents — and the slicing of lines themselves with cut -c/-b.
 #
 # Why: the CLAUDE.md rule ("NEVER use head -N or tail -N with N < 100. Run commands unfiltered
 # first") keeps being violated across sessions and rewordings. That is a mechanism problem, not
@@ -25,10 +25,17 @@
 #   cut -d/-f                field selection is a projection, not a truncation
 #   grep/rg without context flags, with -r, piped, on globs or on files that do not exist —
 #   searching is what grep is FOR; only the windowed READ below is denied
+#   awk/gawk/mawk unless its program is a bounded NR/FNR line window: a lower bound alone
+#   (`NR>1`, `NR>=40` — the header/prefix skip), `NR==FNR` (a two-file join), an aggregate
+#   (`END{print NR}`) or sampling (`NR%10==0`) program, `-f progfile`, a `$`-interpolated program,
+#   and any window whose action is not a plain print all pass
 # Denied on purpose: a bare `head`/`tail` with no count — the default is 10 lines, under the
 # floor; `sed -n` with numeric `p` ranges summing under 100 (`A,Bp`, `Np`, `$p`, `A,+Kp`,
 # `N,$p` with N < 100 — the tail -n +N rule), `sed Nq` with N < 100 (head by another name;
-# `q` caps whatever the ranges say); `cut -c`/`-b`/`--characters`/`--bytes` at any width; and a
+# `q` caps whatever the ranges say); an `awk 'NR>=A && NR<=B'` (and `NR<=B`, `NR==N`, the FNR
+# and reversed-operand spellings) whose window is under 100 and whose action is default/plain
+# print — the awk spelling of `sed -n 'A,Bp'`, deliberately asymmetric with the sed `N,$p` rule
+# in that a lower bound alone passes (see below); `cut -c`/`-b`/`--characters`/`--bytes` at any width; and a
 # grep-family command (grep/egrep/fgrep/rg/ugrep/ug) whose -A/-B/-C window totals under 100
 # lines (C counts twice) aimed at a file that EXISTS (checked against the payload cwd) — that
 # is not a search but a windowed read of a known file, `head -N` anchored at a match: observed
@@ -49,11 +56,13 @@
 # holding a `$` survive, because `echo "$(ls | head -5)"` is code and the common idiom for it.
 # Consequence: the body of `bash -c '… | head -3'` passes. Accepted.
 #
-# The sed pass is the exception: its script IS the quoted span (`sed -n '1,5p'`), so it runs
-# on the heredoc-stripped command with quotes intact, tokenised the way the shell would — a
-# quoted string is one token, so `echo 'sed -n 1,5p'` and a commit message are never a `sed`
-# in command position. One awk (LC_ALL=C: gawk under a UTF-8 locale is several times slower),
-# and only when the word `sed` occurs at all.
+# The sed/awk pass is the exception: the program IS the quoted span (`sed -n '1,5p'`,
+# `awk 'NR<=20'`), so it runs on the heredoc-stripped command with quotes intact, tokenised the
+# way the shell would — a quoted string is one token, so `echo 'sed -n 1,5p'` and a commit
+# message are never a `sed`/`awk` in command position. sed and awk share this one harness (one
+# tokeniser, one command-position rule); it dispatches on the command word. One gawk spawn
+# (LC_ALL=C: gawk under a UTF-8 locale is several times slower), and only when one of the words
+# `sed`/`awk`/`gawk`/`mawk` occurs at all.
 set -uo pipefail
 
 # `|| true` and not `2>/dev/null`: a malformed payload should still leave a visible parse error
@@ -63,8 +72,8 @@ cmd=$(jq -r '.tool_input.command // empty' <<<"$input" || true)
 [ -n "$cmd" ] || exit 0
 
 # Cheapest gate first: none of the words at all -> not ours (`tailscale`, `HEAD`, `headless`,
-# `sedated`, `cutover` pass).
-grep -qwE 'head|tail|sed|cut|grep|egrep|fgrep|rg|ugrep|ug' <<<"$cmd" || exit 0
+# `sedated`, `cutover`, `gawkeries` pass — the `w` word-boundary keeps `awk` off `gawkward`).
+grep -qwE 'head|tail|sed|awk|gawk|mawk|cut|grep|egrep|fgrep|rg|ugrep|ug' <<<"$cmd" || exit 0
 
 # The grep rule needs the session's cwd (file-existence check); one extra jq, only when a
 # grep-family word occurs at all.
@@ -94,7 +103,7 @@ stripped=$(printf '%s' "$unheredoc" | sed -E "s/'[^']*'//g; s/\"[^\"$]*\"//g")
 deny() {
     logger -t roost/truncation-guard "denied $1"
     jq -nc --arg r "BLOCKED by the truncation guard (~/roost/claude/hooks/truncation-guard.sh, a roost PreToolUse hook): $1
-${2:-No slicing to under 100 lines (head, tail, sed -n 'A,Bp', sed Nq): the cut part is usually the part that mattered. Re-run it and read the whole output — volume is not a problem. 100 lines or more pass.}" \
+${2:-No slicing to under 100 lines (head, tail, sed -n 'A,Bp', sed Nq, awk 'NR>=A && NR<=B'): the cut part is usually the part that mattered. Re-run it and read the whole output — volume is not a problem. 100 lines or more pass.}" \
         '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $r}}'
     exit 0
 }
@@ -114,10 +123,11 @@ if grep -qE "(^|[[:space:]|;&(])([^[:space:]]*/)?tasks[[:space:]]+[a-z-]+$tseg*(
          "The tasksync CLI\'s output is read whole at any length — the cut lines are the gate\'s findings and the beat\'s notices. Re-run it unfiltered; to capture it, redirect to a file (tasks … > out.txt 2>&1) and read the entire file."
 fi
 
-# sed: the script is read out of its quotes and its numeric `p` ranges and `q` counted. The
-# program prints the offending segment and the count when a sed prints under 100 lines.
-if grep -qw sed <<<"$unheredoc"; then
-    read -r -d '' sedprog <<'AWK' || true
+# sed/awk: the program is read out of its quotes; sed's numeric `p` ranges and `q` are counted,
+# awk's bounded NR/FNR window is measured. The harness prints the offending segment and the line
+# count when either prints under 100 lines.
+if grep -qwE 'sed|awk|gawk|mawk' <<<"$unheredoc"; then
+    read -r -d '' slicerprog <<'AWK' || true
 function unquote(t) {
     if (t ~ /^\$?'.*'$/) { sub(/^\$?'/, "", t); sub(/'$/, "", t) }
     else if (t ~ /^".*"$/) t = substr(t, 2, length(t) - 2)
@@ -194,6 +204,65 @@ function analyze(args, na, seg,   k, a, flags, c, quiet, inplace, expect, filefl
     if (qcap >= 0 && (lim < 0 || qcap < lim)) lim = qcap
     if (lim >= 0 && lim < 100) { printf "%s (prints %d line%s)\n", seg, lim, (lim == 1 ? "" : "s"); exit 1 }
 }
+# awk/gawk/mawk: deny only when the program is a bounded NR/FNR line window printing under 100
+# lines. The program is the first bare operand (after -F/-v values and skipping -f/-E, which put
+# the program in a file — unknowable). A double-quoted program carrying a `$` is a shell
+# expansion, unknowable. The action must be the default (print the record) or a plain `{print}` /
+# `{print $0}`; anything that computes or projects a field is not a windowed read. The condition
+# must be one or two `NR`/`FNR`-vs-integer comparisons ANDed, and a FINITE UPPER BOUND is
+# required: a lower bound alone (`NR>1`, `NR>=40`) keeps the rest of the file — the header/prefix
+# skip — and passes. This is the deliberate asymmetry with sed's `N,$p` rule.
+function analyze_awk(args, na, seg,   k, a, prog, gotprog, expectarg, cond, action, br,
+                                      ncmp, parts, p, c, mm, v, lb, ub, first, last, lo, hi, win) {
+    prog = ""; gotprog = 0; expectarg = 0
+    for (k = 1; k <= na; k++) {
+        a = args[k]
+        if (expectarg) { expectarg = 0; continue }              # the value of a -F/-v/long option
+        if (a == "--") { if (!gotprog && k < na) { prog = args[k + 1]; gotprog = 1 } ; break }
+        if (a ~ /^--/) {
+            if (a ~ /^--(file|exec)(=|$)/) return                # program comes from a file: unknowable
+            if (a ~ /^--source=/) { prog = substr(a, 10); gotprog = 1; break }
+            if (a == "--source") { if (k < na) { prog = args[k + 1]; gotprog = 1 } ; break }
+            if (a ~ /^--(field-separator|assign|characters)$/) { expectarg = 1; continue }
+            continue                                             # long option with = or valueless: ignore
+        }
+        if (a ~ /^-/ && a != "-") {
+            if (a ~ /^-[fE]/) return                             # -f progfile / -E execfile: unknowable
+            if (a ~ /^-[Fvil]/ && length(a) == 2) expectarg = 1  # value is the next token (-F :, -v x=1)
+            continue                                             # attached value or a valueless flag
+        }
+        prog = a; gotprog = 1; break                             # first bare operand is the program
+    }
+    if (!gotprog) return
+    if (prog ~ /^"/ && prog ~ /\$/) return                       # double-quoted program with a shell $: dynamic
+    prog = unquote(prog)
+    br = index(prog, "{")
+    if (br > 0) { cond = substr(prog, 1, br - 1); action = substr(prog, br) }
+    else { cond = prog; action = "" }
+    sub(/^[ \t]+/, "", cond); sub(/[ \t]+$/, "", cond)
+    sub(/^[ \t]+/, "", action); sub(/[ \t]+$/, "", action)
+    if (action != "" && action !~ /^\{[ \t]*print([ \t]+\$0)?[ \t]*\}$/) return   # not a plain print
+    ncmp = split(cond, parts, /&&/)
+    if (ncmp > 2) return
+    first = 1; last = 0; lo = 0; hi = 0
+    for (p = 1; p <= ncmp; p++) {
+        c = parts[p]; sub(/^[ \t]+/, "", c); sub(/[ \t]+$/, "", c)
+        if (match(c, /^(NR|FNR)[ \t]*==[ \t]*([0-9]+)$/, mm)) {
+            v = mm[2] + 0; if (!lo || v > first) first = v; if (!hi || v < last) last = v; lo = 1; hi = 1
+        } else if (match(c, /^(NR|FNR)[ \t]*(<=?)[ \t]*([0-9]+)$/, mm)) {
+            v = mm[3] + 0; ub = (mm[2] == "<") ? v - 1 : v; if (!hi || ub < last) last = ub; hi = 1
+        } else if (match(c, /^(NR|FNR)[ \t]*(>=?)[ \t]*([0-9]+)$/, mm)) {
+            v = mm[3] + 0; lb = (mm[2] == ">") ? v + 1 : v; if (!lo || lb > first) first = lb; lo = 1
+        } else if (match(c, /^([0-9]+)[ \t]*(<=?)[ \t]*(NR|FNR)$/, mm)) {
+            v = mm[1] + 0; lb = (mm[2] == "<") ? v + 1 : v; if (!lo || lb > first) first = lb; lo = 1
+        } else if (match(c, /^([0-9]+)[ \t]*(>=?)[ \t]*(NR|FNR)$/, mm)) {
+            v = mm[1] + 0; ub = (mm[2] == ">") ? v - 1 : v; if (!hi || ub < last) last = ub; hi = 1
+        } else return                                            # a conjunct that is not NR/FNR-vs-int
+    }
+    if (!hi || last < first) return                              # unbounded above, or an empty window
+    win = last - first + 1
+    if (win < 100) { printf "%s (prints %d line%s)\n", seg, win, (win == 1 ? "" : "s"); exit 1 }
+}
 BEGIN {
     nl = split(ENVIRON["UNHEREDOC"], lines, "\n")
     for (li = 1; li <= nl; li++) {
@@ -209,11 +278,13 @@ BEGIN {
         while (i <= n) {
             t = tok[i]
             # command position: first on the line, after a separator, after sudo, after an env assignment
-            if (t == "sed" && (i == 1 || tok[i - 1] ~ /^(\|\||&&|[|;&()`]|sudo|[A-Za-z_][A-Za-z_0-9]*=.*)$/)) {
+            if ((t == "sed" || t == "awk" || t == "gawk" || t == "mawk") \
+                && (i == 1 || tok[i - 1] ~ /^(\|\||&&|[|;&()`]|sudo|[A-Za-z_][A-Za-z_0-9]*=.*)$/)) {
+                cw = t
                 i++; na = 0; delete args
                 while (i <= n && tok[i] !~ /^(\|\||&&|[|;&()`])$/) args[++na] = tok[i++]
-                seg = "sed"; for (k = 1; k <= na; k++) seg = seg " " args[k]
-                analyze(args, na, seg)
+                seg = cw; for (k = 1; k <= na; k++) seg = seg " " args[k]
+                if (cw == "sed") analyze(args, na, seg); else analyze_awk(args, na, seg)
             } else i++
         }
         delete tok
@@ -221,7 +292,7 @@ BEGIN {
     exit 0
 }
 AWK
-    sedhit=$(UNHEREDOC="$unheredoc" LC_ALL=C awk "$sedprog") || deny "$sedhit"
+    slicerhit=$(UNHEREDOC="$unheredoc" LC_ALL=C awk "$slicerprog") || deny "$slicerhit"
 fi
 
 # Sum of the numbers one grep context option takes in a segment ($2 = the option's regex).
