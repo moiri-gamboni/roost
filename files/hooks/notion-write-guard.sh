@@ -62,10 +62,13 @@ grep -qiE "$write_intent" <<<"$cmd" || exit 0
 # one a read endpoint. A segment whose write call names no path — the URL on the next line of a
 # call split across lines, or in a variable assigned just before — gathers paths from up to three
 # neighbouring segments on each side, stopping at any other HTTP call so nothing is borrowed from
-# a different request; a variable URL whose literal sits behind another call, or is not there at
-# all, is therefore a prompt, which is the conservative side. Segments without a write verb
-# (GETs, assignments, pipes) are never a reason to ask on their own.
+# a different request, and taking only a literal that stands as a value (quoted, after `=` or `(`,
+# or first on its line), never a URL mentioned inside a longer string such as a progress print of
+# the endpoint just queried; a variable URL whose literal sits behind another call, or is not
+# there at all, is therefore a prompt, which is the conservative side. Segments without a write
+# verb (GETs, assignments, pipes) are never a reason to ask on their own.
 path_re='api\.notion\.com/v1/[A-Za-z0-9_./{}$%:-]*'
+value_re="(^[[:space:]]*|[\"'\`(=,])https?://$path_re"
 call_re='\.(get|post|patch|put|delete|request)[[:space:]]*\(|(^|[^A-Za-z0-9_-])(curl|fetch|wget)([^A-Za-z0-9_-]|$)'
 segtext=$(sed -E 's/\|\||&&|[;|]/\n/g' <<<"$cmd")
 mapfile -t segs <<<"$segtext"
@@ -79,11 +82,11 @@ for i in "${hits[@]}"; do
     if [ -z "$paths" ]; then
         for ((j = i - 1; j >= 0 && j >= i - 3; j--)); do
             grep -qiE "$call_re|$write_intent" <<<"${segs[$j]}" && break
-            paths=$(printf '%s\n%s' "$paths" "$(grep -oE "$path_re" <<<"${segs[$j]}")")
+            paths=$(printf '%s\n%s' "$paths" "$(grep -oE "$value_re" <<<"${segs[$j]}" | grep -oE "$path_re")")
         done
         for ((j = i + 1; j < n && j <= i + 3; j++)); do
             grep -qiE "$call_re|$write_intent" <<<"${segs[$j]}" && break
-            paths=$(printf '%s\n%s' "$paths" "$(grep -oE "$path_re" <<<"${segs[$j]}")")
+            paths=$(printf '%s\n%s' "$paths" "$(grep -oE "$value_re" <<<"${segs[$j]}" | grep -oE "$path_re")")
         done
         paths=$(grep . <<<"$paths")
         [ -n "$paths" ] || { read_only=0; break; }
