@@ -100,6 +100,18 @@ check ask  'two calls in one segment sharing one literal' \
 # `.get(` cuts a variable URL off from the call that uses it. One bounce.
 check ask  'KNOWN FALSE POSITIVE: a variable /query URL behind an intervening .get( call' \
     "$(printf 'python3 - <<%sPY%s\nurl = "https://api.notion.com/v1/databases/x/query"\nk = cfg.get("k")\nr = httpx.post(url, json=q)\nPY' "'" "'")"
+# A URL mentioned inside a longer string on a neighbouring line (a progress print, a log line) is
+# not the write's URL; only a literal standing as a value (quoted, or first on the line) is borrowed.
+check ask  'variable-URL patch beside a print that mentions the query URL in prose' \
+    "$(printf 'python3 - <<%sPY%s\nprint(f"resuming pagination from https://api.notion.com/v1/databases/x/query")\nhttpx.patch(row_url, json={"archived": True})\nPY' "'" "'")"
+check ask  'variable-URL delete beside a logging line that mentions the query URL' \
+    "$(printf 'python3 - <<%sPY%s\nlogging.info("queried %%d rows from https://api.notion.com/v1/databases/x/query", len(rows))\nhttpx.delete(row_url)\nPY' "'" "'")"
+check ask  'query, progress print with the URL, then a loop patching helper-built URLs' \
+    "$(printf 'python3 - <<%sPY%s\nresp = httpx.post("https://api.notion.com/v1/databases/x/query", json=q)\nrows = resp.json()["results"]\nprint(f"queried {len(rows)} rows from https://api.notion.com/v1/databases/x/query")\nfor row in rows:\n    httpx.patch(make_patch_url(row["id"]), json={"archived": True})\nPY' "'" "'")"
+check ask  'query then a loop patching helper-built URLs, no print' \
+    "$(printf 'python3 - <<%sPY%s\nresp = httpx.post("https://api.notion.com/v1/databases/x/query", json=q)\nrows = resp.json()["results"]\nfor row in rows:\n    httpx.patch(make_patch_url(row["id"]), json={"archived": True})\nPY' "'" "'")"
+check allow 'continuation line starting with an unquoted URL after curl -X POST' \
+    "$(printf 'curl -s -X POST -H "Authorization: Bearer $T" \\\\\n  https://api.notion.com/v1/databases/x/query -d "{}"')"
 
 # --- must allow: false-positive candidates ---
 check allow 'filename containing the host' \
