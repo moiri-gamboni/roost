@@ -169,6 +169,47 @@ check allow 'cut -dc is a delimiter of c'               "cut -dc -f2 file"
 check allow 'cutover as a word'                         "echo cutover"
 check allow 'cut in a quoted string'                    "echo 'cut -c1-80'"
 
+# --- awk: the awk spelling of sed -n 'A,Bp' — a bounded NR/FNR line window ---
+check deny  'awk NR range under the floor'             "awk 'NR>=40 && NR<=75' file"
+check deny  'awk NR range, piped'                      "seq 1000 | awk 'NR>=40 && NR<=75'"
+check deny  'awk NR range, reversed operands'          "awk '40<=NR && NR<=75' file"
+check deny  'awk NR range, no spaces'                  "awk 'NR>=40&&NR<=75' file"
+check deny  'awk NR<=50 (upper bound only, head -50)'  "awk 'NR<=50' file"
+check deny  'awk NR<50 is 49 lines'                    "awk 'NR<50' file"
+check deny  'awk NR==5 is one line (sed -n 5p)'        "awk 'NR==5' file"
+check deny  'awk NR window with explicit print'        "awk 'NR>=40 && NR<=75{print}' file"
+check deny  'awk NR window with print \$0'             "awk 'NR<=20 {print \$0}' file"
+check deny  'awk NR range at the end of a pipeline'    "ps aux | awk 'NR>=2 && NR<=40'"
+check deny  'gawk NR window'                           "gawk 'NR<=20' file"
+check deny  'mawk NR window'                           "mawk 'NR<=20' file"
+check deny  'awk -F: before the program'               "awk -F: 'NR<=20' /etc/passwd"
+check deny  'awk -v before the program'                "awk -v x=1 'NR<=20' file"
+check deny  'awk -F : (separate arg) before program'   "awk -F : 'NR<=20' file"
+check deny  'sudo awk NR window'                       "sudo awk 'NR<=20' file"
+check deny  'awk FNR window (per-file)'                "awk 'FNR<=20' file"
+check deny  'awk double-quoted static NR window'       'awk "NR<=20" file'
+
+check allow 'awk NR<=100 is the floor'                 "awk 'NR<=100' file"
+check allow 'awk 1..100 window reaches the floor'      "awk 'NR>=1 && NR<=100' file"
+check allow 'awk 1..200 window'                        "awk 'NR>=1 && NR<=200' file"
+check allow 'awk NR==FNR two-file join'                "awk 'NR==FNR{a[\$1]=1; next} \$1 in a' f1 f2"
+check allow 'awk NR>1 header skip is unbounded'        "awk 'NR>1' file"
+check allow 'awk NR>1 print a field'                   "awk 'NR>1 {print \$2}' file"
+check allow 'awk NR>=40 lower bound only (tail-like)'  "awk 'NR>=40' file"
+check allow 'awk END{print NR} counts lines'           "awk 'END{print NR}' file"
+check allow 'awk aggregate over all lines'             "awk '{sum+=\$1} END{print sum}' file"
+check allow 'awk sampling every 10th line'             "awk 'NR%10==0' file"
+check allow 'awk -f external program is unknowable'    "awk -f prog.awk file"
+check allow 'awk dynamic program (shell var)'          'awk "NR<=$n" file'
+check allow 'awk regex filter'                         "awk '/error/' file"
+check allow 'awk field projection, no NR'              "awk '{print \$1}' file"
+check allow 'awk NR window but non-print action'       "awk 'NR<=20 {sum+=\$2}' file"
+check allow 'awk NR range OR a regex is not pure'      "awk 'NR>=40 && NR<=75 || /x/' file"
+check allow 'NR as a string literal, not the counter'  "awk '\$1==\"NR\"' file"
+check allow 'awk in a single-quoted string'            "echo 'awk NR<=20'"
+check allow 'awk NR<=20 in a commit message'           'git commit -m "awk NR<=20 is banned"'
+check allow 'awk --version'                            "awk --version"
+
 # --- grep: a context window on an existing file is a windowed read ---
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
