@@ -37,8 +37,6 @@ check deny 'pipe to head --lines=30'                    'seq 1000 | head --lines
 check deny 'pipe to head --lines 30'                    'seq 1000 | head --lines 30'
 check deny 'pipe without spaces'                        'seq 1000|head -3'
 check deny 'pipe to head with extra flags before -n'    'seq 1000 | head -q -n 10'
-check deny 'pipe to tail -n +5 is not a floor'          'seq 1000 | tail -n +5'
-check deny 'pipe to tail --lines=-5 (negative offset)'  'seq 1000 | head --lines=-5'
 check deny 'head on the far end of a long pipeline'     'ps aux | grep node | sort -k3 | head -3'
 check deny 'newline-separated commands, second truncates' "$(printf 'echo a\ngrep -rn foo . | head -5')"
 check deny 'sudo prefix'                                'seq 100 | sudo head -5'
@@ -81,6 +79,23 @@ check allow 'tail -c (bytes)'                           'cat x | tail -c 4096'
 check allow 'head --bytes='                             'head --bytes=64 x'
 check allow 'tail -n +100 keeps everything from line 100 on' 'seq 1000 | tail -n +100'
 
+# --- keep-through-EOF: drop a known-size end, keep the unbounded rest — passes at any count ---
+# The sign is the discriminator (opposite for head vs tail): tail -n +N starts at line N (keeps
+# the tail through EOF); head -n -N prints all but the last N (keeps the head). The unsigned/legacy
+# forms are bounded windows and stay denied: head -N (first N), tail -N (last N).
+check allow 'tail -n +5 starts at line 5 (drops 4 known head lines)' 'seq 1000 | tail -n +5'
+check allow 'tail -n +20 keeps through EOF'             'tail -n +20 file'
+check allow 'tail -n +100000 huge offset still keeps EOF'    'seq 10 | tail -n +100000'
+check allow 'head -n -5 prints all but the last 5'      'seq 1000 | head -n -5'
+check allow 'head --lines=-5 keeps the head'            'seq 1000 | head --lines=-5'
+check allow 'head -n -20 keeps the head'                'head -n -20 file'
+check allow 'sed -n 5,$p is line 5 through the end'     "sed -n '5,\$p' file"
+check deny  'tail -5 is the last 5 (bounded window)'    'seq 1000 | tail -5'
+check deny  'tail -n 5 is the last 5'                   'tail -n 5 file'
+check deny  'tail -n -5 is the last 5'                  'seq 1000 | tail -n -5'
+check deny  'head -n 5 is the first 5'                  'head -n 5 file'
+check deny  'head -n +5 is bounded (degenerate)'        'head -n +5 file'
+
 # --- must allow: false-positive candidates ---
 check allow 'word in a quoted string'                   'git commit -m "docs: head of the table"'
 check allow 'git HEAD'                                  'git log HEAD -1'
@@ -107,7 +122,6 @@ check deny  'sed -n $p (the last line)'                 "sed -n '\$p' file"
 check deny  'sed Nq is head -N'                         "sed 5q file"
 check deny  'piped sed 99q'                             "cat f | sed 99q"
 check deny  'sed -n A,+Kp'                              "sed -n '3,+4p' file"
-check deny  'sed -n N,$p is tail -n +N'                 "sed -n '5,\$p' file"
 check deny  'sed -ne (combined flag, separate script)'  "sed -ne '1,5p' file"
 check deny  'sed -n -e'                                 "sed -n -e '1,5p' file"
 check deny  'sed --quiet'                               "sed --quiet '1,5p' file"
