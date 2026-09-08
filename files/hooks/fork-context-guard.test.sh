@@ -52,6 +52,11 @@ check() {
 { user_line; user_line; } > "$tmp/empty.jsonl"
 # the newest assistant row is a truncated line (a write in flight)
 { assistant_line 32 900000 2000; printf '{"type":"assistant","message":{"usage":{"cache_read_input_tokens":9' ; } > "$tmp/torn.jsonl"
+# the scan-depth boundary: the hook reads the newest 40 assistant rows, so a usage row behind
+# 39 usage-less ones still resolves, behind 40 it is invisible and the guard falls open
+nousage_row() { jq -nc '{type: "assistant", message: {role: "assistant", content: []}}'; }
+{ assistant_line 32 900000 2000; for _ in $(seq 39); do nousage_row; done; } > "$tmp/depth39.jsonl"
+{ assistant_line 32 900000 2000; for _ in $(seq 40); do nousage_row; done; } > "$tmp/depth40.jsonl"
 
 # --- the cap ---
 check allow 'fork under the cap' fork "$tmp/low.jsonl"
@@ -72,6 +77,9 @@ check allow 'no assistant rows' fork "$tmp/empty.jsonl"
 check allow 'transcript path missing from the payload' fork ''
 check allow 'transcript file does not exist' fork "$tmp/nope.jsonl"
 check ask   'torn newest row is skipped, previous row wins' fork "$tmp/torn.jsonl" '902,032'
+check allow 'transcript path is a directory' fork "$tmp"
+check ask   'usage row behind 39 usage-less assistant rows still resolves' fork "$tmp/depth39.jsonl" '902,032'
+check allow 'usage row behind 40 usage-less assistant rows is out of reach: falls open' fork "$tmp/depth40.jsonl"
 out=$(printf '' | bash "$hook")
 if [ -z "$out" ]; then pass=$((pass + 1)); printf 'ok    allow empty stdin\n'; else fail=$((fail + 1)); printf 'FAIL  want=allow got=ask   empty stdin\n'; fi
 
