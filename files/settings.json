@@ -190,6 +190,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/fork-context-guard.sh",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "WorktreeCreate": [
