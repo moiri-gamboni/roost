@@ -32,3 +32,14 @@ if ! grep -qx 'net.ipv4.tcp_congestion_control = bbr' /etc/sysctl.d/99-bbr.conf 
 else
     skip "TCP BBR already enabled"
 fi
+
+# inotify watches: VS Code Remote-SSH's file watcher takes ~70k per window
+# on this tree, and the Ubuntu default (~120k) trips its ENOSPC warning
+# with two windows open. 524288 is the value VS Code's docs recommend.
+if ! grep -qx 'fs.inotify.max_user_watches = 524288' /etc/sysctl.d/99-inotify.conf 2>/dev/null; then
+    echo 'fs.inotify.max_user_watches = 524288' > /etc/sysctl.d/99-inotify.conf
+    sysctl -p /etc/sysctl.d/99-inotify.conf >/dev/null
+    ok "inotify watch limit raised"
+else
+    skip "inotify watch limit already raised"
+fi
