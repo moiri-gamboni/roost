@@ -187,11 +187,44 @@ fi
 
 # --- Cooldown-gated notifications ---
 
-# Swap: alert only on sustained pressure, at most once per hour.
-read -r SWAP_TOTAL SWAP_USED < <(free -m | awk '/Swap:/ {print $2, $3; exit}')
-logger -t "$_HOOK_TAG" "Swap: ${SWAP_USED}MB / ${SWAP_TOTAL}MB"
-if [ "${SWAP_TOTAL:-0}" -gt 0 ] && [ "$SWAP_USED" -gt 3072 ] && cooldown_ok "swap-high" 3600; then
-    ntfy_send -t "High swap usage" -p "high" "Swap: ${SWAP_USED}MB / ${SWAP_TOTAL}MB"
+# Memory: alert on headroom and on stall, never on swap used. With swappiness
+# 10 the kernel parks the idle pages of long-lived sessions in swap and leaves
+# them there, so several GB of swap in use with most of RAM available and no
+# stall is this box's steady state, and a fixed "swap > N" rule pages on it
+# hourly. Headroom is what is left before the OOM killer: MemAvailable (page
+# cache included, the kernel reclaims it) plus free swap, as a share of RAM +
+# swap, so the rule follows the swap file's size. Reported once under
+# MEM_WARN, then only every further 5 points down; the baseline clears 5
+# points above the line so a value hovering at it does not flap.
+MEM_WARN=20
+MEM_STATE="$HOOK_RUNTIME_DIR/mem-alert-pct"
+read -r MEM_TOTAL MEM_AVAIL SWAP_TOTAL SWAP_FREE < <(awk '
+    /^MemTotal:/ {t = $2} /^MemAvailable:/ {a = $2}
+    /^SwapTotal:/ {st = $2} /^SwapFree:/ {sf = $2}
+    END {printf "%d %d %d %d", t / 1024, a / 1024, st / 1024, sf / 1024}' /proc/meminfo)
+HEADROOM_PCT=$(( (MEM_AVAIL + SWAP_FREE) * 100 / (MEM_TOTAL + SWAP_TOTAL) ))
+# PSI "full": share of the last 5 minutes during which every runnable task was
+# stalled on memory, the kernel's own thrash measure. A working set larger than
+# RAM but smaller than RAM + swap thrashes with headroom still on paper.
+PSI_FULL=$(awk '/^full/ {sub("avg300=", "", $4); printf "%d", $4}' /proc/pressure/memory)
+MEM_SUMMARY="RAM ${MEM_AVAIL}MB available of ${MEM_TOTAL}MB, swap ${SWAP_FREE}MB free of ${SWAP_TOTAL}MB, stall ${PSI_FULL:-0}%"
+logger -t "$_HOOK_TAG" "Memory: headroom ${HEADROOM_PCT}% ($MEM_SUMMARY)"
+if [ "$HEADROOM_PCT" -lt "$MEM_WARN" ]; then
+    MEM_LAST=""
+    [ -f "$MEM_STATE" ] && read -r MEM_LAST < "$MEM_STATE"
+    if [ -z "$MEM_LAST" ] || [ "$HEADROOM_PCT" -le $((MEM_LAST - 5)) ]; then
+        # RSS summed per command name, so a dozen 400MB sessions read as one line.
+        TOP=$(ps -eo rss,comm --no-headers | awk '{rss[$2] += $1; n[$2]++}
+            END {for (c in rss) printf "%d %s %d\n", rss[c], c, n[c]}' | sort -rn |
+            awk 'NR <= 3 {printf "%s%s x%d %dMB", sep, $2, $3, $1 / 1024; sep = ", "}')
+        ntfy_send -t "Memory headroom ${HEADROOM_PCT}%" -p "high" "$MEM_SUMMARY. Largest: $TOP"
+        echo "$HEADROOM_PCT" > "$MEM_STATE"
+    fi
+elif [ "$HEADROOM_PCT" -ge $((MEM_WARN + 5)) ]; then
+    rm -f "$MEM_STATE"
+fi
+if [ "${PSI_FULL:-0}" -ge 10 ] && cooldown_ok "mem-thrash" 3600; then
+    ntfy_send -t "Memory thrashing" -p "high" "Every task stalled on memory ${PSI_FULL}% of the last 5 min. $MEM_SUMMARY"
 fi
 
 # Pending reboot: notify once per distinct event (keyed by mtime), remind every 7d.
