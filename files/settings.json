@@ -1,6 +1,12 @@
 {
   "cleanupPeriodDays": 99999,
   "env": {
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "DO_NOT_TRACK": "1",
+    "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1",
+    "DISABLE_FEEDBACK_COMMAND": "1",
+    "DISABLE_BUG_COMMAND": "1",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "0",
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "3",
     "CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP": "1",
@@ -249,6 +255,7 @@
     }
   },
   "feedbackDrafts": "off",
+  "feedbackSurveyRate": 0,
   "promptCacheTtl": "1h",
   "subagentPromptCacheTtl": "1h",
   "effortLevel": "xhigh",
@@ -265,6 +272,7 @@
   "switchModelsOnFlag": true,
   "autoContinueAtUsageLimit": true,
   "autoScrollEnabled": false,
+  "autoUploadSessions": false,
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
   "crossSessionInbound": "accept",
