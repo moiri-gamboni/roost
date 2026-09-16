@@ -39,6 +39,9 @@ B0="$T/brepo"; mkdir -p "$B0"; git -C "$B0" init -q -b main; echo b > "$B0/b"; c
 git -C "$B0" worktree add -q "$P/subB" -b topic
 # nested repo two levels down, like files/private
 N="$P/files/private"; mkdir -p "$N"; git -C "$N" init -q -b main; echo n > "$N/n"; commit_all "$N" init
+# sub-repo C opts out of per-session worktrees (a live mirror: shared, never copied)
+C="$P/subC"; mkdir -p "$C"; git -C "$C" init -q -b main; echo c > "$C/c"; commit_all "$C" init
+git -C "$C" config agent.noWorktree true
 
 create() {  # $1=name → prints root
     printf '{"name":"%s","cwd":"%s","session_id":"sid-%s"}' "$1" "$P/docs" "$1" | "$AW" create 2>"$T/create.err"
@@ -56,6 +59,7 @@ check "subA is a symlink into the store" [ "$(readlink "$ROOT/subA")" = "$AGENT_
 check "subA store is a worktree of A on worktree-one from feat" bash -c "[ \"\$(git -C '$ROOT/subA' branch --show-current)\" = worktree-one ] && [ \"\$(git -C '$ROOT/subA' rev-parse HEAD)\" = \"\$(git -C '$A' rev-parse feat)\" ]"
 check "subA/.venv symlinked, .env copied, WIP a-wip absent" bash -c "[ -L '$ROOT/subA/.venv' ] && [ -f '$ROOT/subA/.env' ] && [ ! -L '$ROOT/subA/.env' ] && [ ! -e '$ROOT/subA/a-wip' ]"
 check "subB (linked worktree) is a symlink to the live dir" [ "$(readlink "$ROOT/subB")" = "$P/subB" ]
+check "subC (agent.noWorktree) is a symlink to the live dir, no store worktree" bash -c "[ \"\$(readlink '$ROOT/subC')\" = '$P/subC' ] && [ ! -e '$AGENT_WORKTREES_DIR/ws/one.repos/subC' ] && ! git -C '$C' show-ref -q refs/heads/worktree-one"
 check "files/private is a symlink to its own store worktree" bash -c "[ -L '$ROOT/files/private' ] && [ \"\$(git -C '$ROOT/files/private' branch --show-current)\" = worktree-one ]"
 check "files/x.txt still a checked-out file" [ -f "$ROOT/files/x.txt" ]
 check ".claude/settings.local.json generated with env and permissions kept" bash -c "[ -f '$ROOT/.claude/settings.local.json' ] && [ ! -L '$ROOT/.claude/settings.local.json' ] && [ \"\$(jq -r .env.APART_WORKSPACE '$ROOT/.claude/settings.local.json')\" = '$ROOT' ] && [ \"\$(jq -r '.permissions.allow[0]' '$ROOT/.claude/settings.local.json')\" = 'Bash(ls:*)' ]"

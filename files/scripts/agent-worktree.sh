@@ -10,8 +10,10 @@
 #     worktree on worktree-<name>, kept beside the root in <name>.repos/ and
 #     symlinked at its usual path — so Claude deleting the root on exit can never
 #     take uncommitted sub-repo work with it;
-#   - nested repos that are themselves linked worktrees (`.git` is a file) →
-#     symlinks to the live dir (shared);
+#   - nested repos that are themselves linked worktrees (`.git` is a file), and
+#     nested repos whose own config sets `agent.noWorktree true` (a live mirror
+#     with a six-figure file count, refreshed by cron, that no session may copy
+#     or stall) → symlinks to the live dir (shared);
 #   - every ignored directory (venvs, caches, data, mirrors) → symlink to the live
 #     one; every ignored file (.env) → reflink copy; `git config --add
 #     agent.worktreeCopy <glob>` names ignored dirs to copy instead (per-session
@@ -72,6 +74,9 @@ add_worktree() {
     git -C "$1" worktree add -q -b "$3" "$2" >&2
 }
 
+# shared REPO — a nested repo that asks to be shared live rather than checked out per session.
+shared() { [ "$(git -C "$1" config --bool --get agent.noWorktree 2>/dev/null || true)" = true ]; }
+
 # copy_or_link REL SRC DST — an ignored directory: symlink, or reflink copy when a
 # copy-glob matches (state the session must own, e.g. tasks/.sync).
 copy_globs=()
@@ -105,13 +110,13 @@ populate() {
     for rel in "${nested[@]}"; do
         src="$repo/$rel"; dst="$wt/$rel"
         mkdir -p "$(dirname "$dst")"
-        if [ "$depth" -eq 0 ] && [ -d "$src/.git" ]; then
+        if [ "$depth" -eq 0 ] && [ -d "$src/.git" ] && ! shared "$src"; then
             mkdir -p "$(dirname "$SUBSTORE/$rel")"
             ln -s "$SUBSTORE/$rel" "$dst"        # before backgrounding: the ignored-entry pass must see it
             ( sub_worktree "$src" "$rel" "$SUBSTORE/$rel" "$name" ) &
             pids+=($!)
         else
-            ln -s "$src" "$dst"      # a linked worktree, or a repo nested too deep: share it
+            ln -s "$src" "$dst"      # a linked worktree, an opted-out repo, or one nested too deep: share it
         fi
         made+=("$rel")
     done
