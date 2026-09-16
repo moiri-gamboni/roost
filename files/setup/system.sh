@@ -17,7 +17,7 @@ fi
 apt update
 ok "Package list updated"
 
-apt install -y tmux build-essential jq unzip btrfs-progs snapper glances util-linux bash-completion
+apt install -y tmux build-essential jq unzip btrfs-progs snapper glances util-linux bash-completion acl
 ok "Base packages installed"
 
 # TCP BBR: better throughput than the cubic default on lossy/congested
