@@ -226,14 +226,47 @@ if [ "$DRY_RUN" = 0 ] && [ -n "$CACHE_BEFORE" ] && [ -n "$CACHE_AFTER" ] && [ "$
 fi
 
 # --- Docker ------------------------------------------------------------------
-# Dangling (untagged) layers and build cache only. Tagged images are left alone:
-# they are what the ECR push workflows rebuild from. `sg docker` because shells
-# under the long-lived tmux server predate the docker group add.
+# Dangling (untagged) layers, the engine's build cache, and leaked buildx
+# builders. Tagged images are left alone: they are what the ECR push workflows
+# rebuild from. `sg docker` because shells under the long-lived tmux server
+# predate the docker group add.
+#
+# The aws_infra deploy scripts run `docker buildx create --use` on every deploy
+# and never remove the builder, so each deploy leaves a running buildkit
+# container with a ~1 GB state volume on the data volume (23 of them, 18 GB,
+# took /mnt/roost-data under 5GiB unallocated on 2026-09-16). `buildx prune`
+# reaches only the current builder, which after a deploy is that deploy's leaked
+# one, so the engine's own cache needs `--builder default`. A builder is reaped when
+# it is not the current one and its container is over a day old: a deploy in
+# flight runs on the builder it just created and selected.
+BUILDER_MIN_AGE_S=86400
+dk() { sg docker -c "$1" 2>&1; }
 if command -v docker >/dev/null; then
+    CURRENT_BUILDER=$(dk 'docker buildx inspect' | awk '/^Name:/ {print $2; exit}')
+    NOW=$(date +%s)
+    REAPED=0
+    while IFS=$'\t' read -r cname created; do
+        [ -n "$cname" ] || continue
+        builder=${cname#buildx_buildkit_}; builder=${builder%0}
+        [ "$builder" = "$CURRENT_BUILDER" ] && continue
+        born=$(date -d "${created% UTC}" +%s 2>/dev/null) || continue
+        [ $((NOW - born)) -lt "$BUILDER_MIN_AGE_S" ] && continue
+        if [ "$DRY_RUN" = 1 ]; then
+            log "WOULD remove leaked buildx builder $builder ($(((NOW - born) / 86400))d old)"
+            REAPED=$((REAPED + 1))
+        elif dk "docker buildx rm $builder" >/dev/null; then
+            log "removed leaked buildx builder $builder"
+            REAPED=$((REAPED + 1))
+        else
+            log "failed to remove buildx builder $builder"
+        fi
+    done < <(dk "docker ps -a --filter name=^buildx_buildkit_ --format '{{.Names}}\t{{.CreatedAt}}'")
+    [ "$REAPED" -gt 0 ] && [ "$DRY_RUN" = 0 ] && note "docker: $REAPED leaked buildx builders removed"
+
     if [ "$DRY_RUN" = 1 ]; then
-        log "WOULD prune dangling Docker images and build cache"
+        log "WOULD prune dangling Docker images and the engine build cache"
     else
-        DOCKER_OUT=$(sg docker -c 'docker image prune -f; docker buildx prune -f' 2>&1 | grep -i 'Total.*:' | tr '\n' ' ')
+        DOCKER_OUT=$(dk 'docker image prune -f; docker buildx prune -f --builder default' | grep -i 'Total.*:' | tr '\n' ' ')
         [ -n "$DOCKER_OUT" ] && note "docker: ${DOCKER_OUT}" && log "docker pruned: $DOCKER_OUT"
     fi
 fi
@@ -256,8 +289,12 @@ CLEANUP_SUMMARY="Reclaimed $(human "$FREED_KB")"
 [ -n "$KEPT" ] && CLEANUP_SUMMARY="$CLEANUP_SUMMARY\n\nKept deliberately:$KEPT"
 
 # btrfs snapshots pin the freed extents until they age out, so df moves later.
-UNALLOC=$(sudo btrfs filesystem usage / 2>/dev/null | awk '/Device unallocated/ { print $3 }')
-[ -n "$UNALLOC" ] && CLEANUP_SUMMARY="$CLEANUP_SUMMARY\n\nUnallocated on /: $UNALLOC (df lags: snapshots still pin freed extents)"
+# Docker lives on the data volume, so its reclaim shows up there, not on /.
+for fs in / /mnt/roost-data; do
+    UNALLOC=$(sudo btrfs filesystem usage "$fs" 2>/dev/null | awk '/Device unallocated/ { print $3 }')
+    [ -n "$UNALLOC" ] && CLEANUP_SUMMARY="$CLEANUP_SUMMARY\nUnallocated on $fs: $UNALLOC"
+done
+CLEANUP_SUMMARY="$CLEANUP_SUMMARY\n(df lags: snapshots still pin freed extents)"
 
 # Under auto-update.sh the parent captures this on stdout and folds it into the
 # weekly message. A standalone run sends its own ntfy. Never both.
