@@ -136,7 +136,7 @@ Base configs stay generic; server-specific app configs go where the base configs
 
 ## Shell Helpers
 
-Defined in `files/shell/bashrc.sh` → `~/.bashrc.d/roost.sh` (idempotent: re-`source` it after a deploy to pick up changes).
+Defined in `files/shell/bashrc.sh` → `~/.bashrc.d/roost.sh`. A running shell re-sources it at its next prompt once a deploy has changed the file (the file is idempotent by design), so long-lived shells such as the tmux `shell` window never keep running stale helpers.
 
 | Command | Usage |
 |---|---|

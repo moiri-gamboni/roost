@@ -166,6 +166,33 @@ if [[ -n "${TMUX:-}" ]]; then
     unset _v
 fi
 
+# --- Deploy pickup ---
+
+# `roost-apply push` replaces this file under shells that are already running,
+# and a shell only ever runs the definitions it loaded: the tmux `shell` window
+# lives for weeks and is where most `agent` launches are typed, so a helper
+# fixed in a deploy would keep misbehaving there until someone re-sources by
+# hand. Before each prompt, re-source once the file on disk is no longer the one
+# this shell loaded; the idempotency contract at the top of the file is what
+# makes that safe. The entry is appended with a `; ` joiner, so the guard is a
+# plain substring match rather than the boundary-anchored form the VS Code block
+# above uses for its prepended entry. VS Code's shell integration later swaps
+# PROMPT_COMMAND for its own wrapper function with this entry tucked inside a
+# variable; the first reload after that appends a second entry, and a second
+# stat per prompt is the whole cost.
+_ROOST_SH_FILE=${BASH_SOURCE[0]}
+_ROOST_SH_MTIME=$(stat -Lc %Y "$_ROOST_SH_FILE")
+_roost_reload_if_stale() {
+    local mtime
+    mtime=$(stat -Lc %Y "$_ROOST_SH_FILE" 2>&1) || return 0
+    # shellcheck source=/dev/null
+    [[ "$mtime" == "$_ROOST_SH_MTIME" ]] || . "$_ROOST_SH_FILE"
+}
+case "${PROMPT_COMMAND:-}" in
+    *_roost_reload_if_stale*) ;;
+    *) PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND; }_roost_reload_if_stale" ;;
+esac
+
 # --- Agent management helpers ---
 
 # Name for this connection's grouped tmux session. $ROOST_CLIENT (set by the
