@@ -19,6 +19,16 @@ else
     ok "Caddy installed"
 fi
 
+# --- Traverse-only access to the home directory ---
+# App roots (`root *` in apps-enabled/*.caddy and the personal sites) live under
+# $HOME_DIR, which setup/create-user.sh keeps at 0750. A named-user ACL carrying
+# only `x` lets the caddy user pass through the home directory to those roots
+# without being able to list it; below that, the usual other-readable modes
+# apply ("files must be readable by the caddy user" still holds). Idempotent,
+# and chmod 750 on the directory leaves the entry's effective bits at --x.
+setfacl -m "u:caddy:--x" "$HOME_DIR"
+ok "caddy can traverse $HOME_DIR (ACL u:caddy:--x)"
+
 # --- Render Caddyfile ---
 mkdir -p /etc/caddy/sites-enabled /etc/caddy/apps-enabled
 export DOMAIN
