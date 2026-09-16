@@ -142,7 +142,7 @@ Defined in `files/shell/bashrc.sh` → `~/.bashrc.d/roost.sh`. A running shell r
 |---|---|
 | `agent [path] [claude-args...]` | Launch interactive Claude in a tmux window (path defaults to cwd; in a git repo the session gets its own composite worktree — see `agent-worktree` below) |
 | `agent -c` | Continue last session in cwd (skips the worktree flag; a worktree session resumes into its own) |
-| `agent -N` / `--no-worktree` | Launch directly in the directory, no worktree. Per-repo: `git config agent.noWorktree true` (currently set on `~/roost/apart-research` until its `notion/` mirror is split out of the parent repo — `plans/agent-composite-worktrees.md`) |
+| `agent -N` / `--no-worktree` | Launch directly in the directory, no worktree. Per-repo: `git config agent.noWorktree true`; set on a *nested* repo it means "share me live into every session tree" instead of a per-session checkout (the `notion/` mirror inside `~/roost/apart-research`) |
 | `agents` | Interactive tmux window picker |
 | `attach` | Grouped view on `main` (independent current-window per client) |
 
