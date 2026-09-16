@@ -43,20 +43,24 @@ die() { log "error: $*"; exit 1; }
 
 # --- discovery -------------------------------------------------------------
 
-# Nearest ancestor process whose command is claude (the session owning this hook).
+# pid_is_claude PID — a live process that is the claude binary itself. Matched on
+# the process name, not the command line: Claude runs hooks through a shell
+# wrapper whose command line names this script under ~/roost/claude/, so a
+# "claude" substring picks the wrapper, which is gone the moment the hook
+# returns, and every live session then reads as ended.
+pid_is_claude() {
+    local comm
+    [ -n "${1:-}" ] && [ -r "/proc/$1/comm" ] && read -r comm < "/proc/$1/comm" && [ "$comm" = claude ]
+}
+
+# Nearest ancestor process that is claude (the session owning this hook).
 claude_pid() {
-    local pid=$PPID cmd
+    local pid=$PPID
     while [ "${pid:-1}" -gt 1 ]; do
-        cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
-        case "$cmd" in *claude*) echo "$pid"; return 0 ;; esac
+        if pid_is_claude "$pid"; then echo "$pid"; return 0; fi
         pid=$(awk '/^PPid:/{print $2}' "/proc/$pid/status" 2>/dev/null || echo 1)
     done
     echo ""
-}
-
-pid_is_claude() {  # $1=pid
-    [ -n "$1" ] && kill -0 "$1" 2>/dev/null \
-        && tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null | grep -q claude
 }
 
 same_fs() { [ "$(stat -c %d "$1")" = "$(stat -c %d "$2")" ]; }

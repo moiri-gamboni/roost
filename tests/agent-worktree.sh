@@ -106,6 +106,18 @@ git -C "$P" worktree remove --force "$ROOT"; git -C "$P" branch -q -D worktree-f
 "$AW" gc 2>"$T/gc.err" || bad "gc exited $?"
 check "gc removed the session's store and record" bash -c "[ ! -e '$AGENT_WORKTREES_DIR/ws/five.repos' ] && [ ! -e '$AGENT_WORKTREES_DIR/.sessions/sid-five' ]"
 
+echo "== create: recorded owner pid is claude itself, not the hook's shell wrapper"
+# Claude runs hooks through a shell wrapper whose command line names the script
+# under ~/roost/claude/, and that wrapper is gone the moment the hook returns.
+# Same shape here: a wrapper with "claude" in its command line (two commands, so
+# the shell cannot exec the script in its place).
+mkdir -p "$T/roost/claude/scripts"; cp "$AW" "$T/roost/claude/scripts/agent-worktree.sh"
+printf '{"name":"seven","cwd":"%s","session_id":"sid-seven"}' "$P/docs" \
+    | sh -c "$T/roost/claude/scripts/agent-worktree.sh create; :" >/dev/null 2>"$T/create.err"
+pid=$(sed -n 's/^pid=//p' "$AGENT_WORKTREES_DIR/.sessions/sid-seven")
+check "recorded pid is empty (no claude ancestor) or a live process named claude" \
+    bash -c "[ -z '$pid' ] || [ \"\$(cat /proc/$pid/comm)\" = claude ]"
+
 echo "== list runs"
 ROOT=$(create six); "$AW" list >"$T/list.out" 2>&1 || bad "list exited $?"; check "list names the tree" grep -q '^six ' "$T/list.out"
 
