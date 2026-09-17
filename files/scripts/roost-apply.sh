@@ -194,6 +194,8 @@ files/privatebin/privatebin.caddy|/etc/caddy/sites-enabled/privatebin.caddy|plai
 files/private/caddy-sites/app.caddy|/etc/caddy/sites-enabled/app.caddy|plain|reload-or-restart:caddy
 files/private/caddy-sites/tailnet-scratch.caddy|/etc/caddy/sites-enabled/tailnet-scratch.caddy|plain|reload-or-restart:caddy
 files/private/caddy-sites/tailnet-workout.caddy|/etc/caddy/sites-enabled/tailnet-workout.caddy|plain|reload-or-restart:caddy
+files/private/gp-picker.service|/etc/systemd/system/gp-picker.service|envsubst:USERNAME,HOME_DIR|daemon-reload,restart:gp-picker
+files/private/caddy-sites/apps-picker.caddy|/etc/caddy/apps-enabled/picker.caddy|plain|reload-or-restart:caddy
 files/private/cron-mirrors|/etc/cron.d/$ROOST_DIR_NAME-mirrors|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|
 MANIFEST_B
 }
