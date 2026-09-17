@@ -1,0 +1,12 @@
+[Unit]
+Description=Sample tmux client activity every 10s
+
+[Timer]
+OnBootSec=10
+OnUnitActiveSec=10
+# systemd coalesces timers to the minute by default, which would leave a 10s
+# timer firing once a minute — the cadence this replaced.
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

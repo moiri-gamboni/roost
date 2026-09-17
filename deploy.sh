@@ -1089,6 +1089,14 @@ remote_script "setup/ram-monitor.sh"
 ok "RAM monitor checking every 30s (3GB threshold)"
 
 # ============================================
+# Attention Sampler
+# ============================================
+
+section "Attention Sampler"
+remote_script "setup/session-focus-tick.sh"
+ok "tmux activity sampled every 10s for `session time`"
+
+# ============================================
 # Cron Jobs
 # ============================================
 

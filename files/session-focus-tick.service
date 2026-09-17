@@ -1,0 +1,14 @@
+[Unit]
+Description=Sample tmux client activity for `session time` attended tracking
+
+[Service]
+Type=oneshot
+User=$USERNAME
+# The session CLI reads its data root from session.conf under CLAUDE_CONFIG_DIR;
+# without this it would write marks into ~/.claude/session-usage, where nothing
+# reads them. A timer inherits no shell environment, exactly like the cron line
+# this replaced.
+Environment=CLAUDE_CONFIG_DIR=$HOME_DIR/$ROOST_DIR_NAME/claude
+# 20 = the 10s sampling interval plus slack, so input between two samples is
+# never missed and a client that has gone quiet stops emitting marks.
+ExecStart=$HOME_DIR/bin/session --focus-mark tick 20
