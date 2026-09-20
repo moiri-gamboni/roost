@@ -21,8 +21,8 @@
 # Every browser-needing verb first makes sure a Chrome is up: no state file, or
 # a state file whose pid is not a Chrome on that profile (reboot, OOM kill) →
 # `rodney start` under a per-home lock, banner to stderr so stdout stays the
-# verb's own output. start/stop/status/connect/help pass straight through.
-# Each call stamps <home>/last-used, the reaper's idle clock.
+# verb's own output, and stamps <home>/last-used, the reaper's idle clock.
+# start/stop/status/connect/help pass straight through and stamp nothing.
 set -euo pipefail
 
 real="$HOME/go/bin/rodney"
@@ -31,8 +31,8 @@ sessions_dir="${RODNEY_SESSIONS_DIR:-$HOME/.cache/rodney/sessions}"
 local_flag=0; global_flag=0; verb=""
 for a in "$@"; do
     case "$a" in
-        --local)  local_flag=1 ;;
-        --global) global_flag=1 ;;
+        --local)  local_flag=1; global_flag=0 ;;   # last one wins, as upstream
+        --global) global_flag=1; local_flag=0 ;;
         *) [ -n "$verb" ] || verb="$a" ;;
     esac
 done
@@ -44,6 +44,7 @@ elif [ -f "$PWD/.rodney/state.json" ]; then home="$PWD/.rodney"
 elif [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then home="$sessions_dir/$CLAUDE_CODE_SESSION_ID"
 else home="$HOME/.rodney"
 fi
+home=$(realpath -sm "$home")   # lexically clean, like rodney's own filepath.Join: "/x/y/" must match the "/x/y/chrome-data" it launches with
 export RODNEY_HOME="$home"
 
 case "$verb" in
@@ -65,6 +66,10 @@ mkdir -p "$home"
 exec 9>"$home/.lock"
 flock 9
 if ! chrome_alive; then
+    # A Chrome still holding this profile with no usable state file (a start whose
+    # state write failed, a truncated file) is ours and unreachable: `start` would
+    # only die on its SingletonLock, every call, so clear it first.
+    pkill -9 -f -- "--user-data-dir=$home/chrome-data " || true
     rm -f "$home/state.json"
     "$real" start 9>&- >&2     # fd 9 closed for Chrome: an inherited lock fd would never unlock
 fi

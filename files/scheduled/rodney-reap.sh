@@ -3,7 +3,7 @@
 #
 # The ~/bin/rodney wrapper (files/scripts/rodney.sh) gives every Claude Code
 # session its own browser under $RODNEY_SESSIONS_DIR/<session id>/ and stamps
-# <home>/last-used on each call. Nothing closes those browsers on its own —
+# <home>/last-used on each browser-needing verb. Nothing closes those browsers on its own —
 # SessionEnd is not guaranteed to fire (OOM, reboot, kill) — so this runs from
 # cron every 10 minutes and applies two rules:
 #
@@ -27,6 +27,7 @@
 #   rodney-reap.sh --dry-run    # print what would happen, change nothing
 # Env: RODNEY_SESSIONS_DIR (~/.cache/rodney/sessions), RODNEY_GLOBAL_HOME
 #      (~/.rodney), RODNEY_IDLE_MIN (60), CLAUDE_CONFIG_DIR (the registry).
+
 set -euo pipefail
 
 real="$HOME/go/bin/rodney"
@@ -59,12 +60,14 @@ stop_home() {       # $1 = home, $2 = reason
     pid=$(chrome_pid_of "$home")
     if [ "$dry" = 1 ]; then log "$2: would stop $home (chrome pid ${pid:-none})"; return; fi
     if [ -n "$pid" ]; then
-        RODNEY_HOME="$home" "$real" stop >/dev/null || kill "$pid" || true
+        # bounded: a Chrome that accepts the DevTools socket but never answers would otherwise hang every later run on the cron flock
+        timeout 30 env RODNEY_HOME="$home" "$real" stop >/dev/null || kill "$pid" || true
         for _ in $(seq 50); do [ -d "/proc/$pid" ] || break; sleep 0.1; done   # `stop` returns before Chrome has finished writing its profile
-        [ ! -d "/proc/$pid" ] || kill -9 "$pid" || true      # a controller-less headless Chrome shrugs off SIGTERM
+        [ ! -d "/proc/$pid" ] || { kill -9 "$pid" || true; sleep 0.2; }       # a controller-less headless Chrome shrugs off SIGTERM
     fi
     rm -f "$home/state.json"
-    log "$2: stopped $home (chrome pid ${pid:-none})"
+    if [ -n "$pid" ] && [ -d "/proc/$pid" ]; then log "$2: FAILED to stop $home (chrome pid $pid still alive)"
+    else log "$2: stopped $home (chrome pid ${pid:-none})"; fi
 }
 
 session_alive() {   # $1 = session id: registered with a live pid
@@ -89,15 +92,19 @@ for d in "$sessions_dir"/*/; do
     d=${d%/}; sid=$(basename "$d")
     if ! session_alive "$sid"; then
         while read -r sf; do stop_home "$(dirname "$sf")" "session $sid gone"; done < <(find "$d" -name state.json)
-        if [ "$dry" = 1 ]; then log "session $sid gone: would remove $d"; else rm -rf "$d"; fi
+        if [ "$dry" = 1 ]; then log "session $sid gone: would remove $d"; continue; fi
+        pkill -9 -f -- "--user-data-dir=$d/" || true     # a Chrome with no state file beside it: unreachable through rodney, ours all the same
+        rm -rf "$d"
+        log "session $sid gone: removed $d"
         continue
     fi
     while read -r sf; do
         h=$(dirname "$sf")
+        [ "$(jq -r '.chrome_pid // 0' "$sf")" != 0 ] || continue   # `rodney connect`: an external browser is never idle-stopped
         idle "$h" && stop_home "$h" "idle"
     done < <(find "$d" -name state.json)
 done
 
-if [ -f "$global_home/state.json" ] && idle "$global_home"; then
+if [ -f "$global_home/state.json" ] && [ "$(jq -r '.chrome_pid // 0' "$global_home/state.json")" != 0 ] && idle "$global_home"; then
     stop_home "$global_home" "idle"
 fi
