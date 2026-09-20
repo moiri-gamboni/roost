@@ -47,4 +47,4 @@ Second-model review without hand-rolling a prompt: `codex exec review --uncommit
 ## Notes
 
 - Spend lands on the user's ChatGPT plan / OpenAI credits — delegation shifts cost off Claude's caps entirely, which is the point when a cap is exhausted.
-- `codex doctor` diagnoses install/config/auth; installed via the official standalone installer (`~/.local/bin/codex` → `~/.codex/packages/`), refreshed by the weekly auto-update.
+- `codex doctor` diagnoses install/config/auth; installed via the official standalone installer (`~/.local/bin/codex` → `~/.codex/packages/`), refreshed by the daily auto-update.

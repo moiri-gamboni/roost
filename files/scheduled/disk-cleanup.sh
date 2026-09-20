@@ -2,8 +2,9 @@
 # Reclaim disk from regenerable artifacts: superseded toolchain versions, package
 # manager caches, orphaned virtualenvs, dangling Docker layers, archived journals.
 #
-# Runs from auto-update.sh (Sunday 3am), right after the Node LTS bump — the moment
-# the previous Node version becomes stale. Safe to run by hand; --dry-run shows the
+# Runs from auto-update.sh (daily 3am), right after any Node LTS bump — the moment
+# the previous Node version becomes stale — and before more hourly snapshots can
+# pin what it removes. Safe to run by hand; --dry-run shows the
 # plan without deleting.
 #
 # Everything removed here is either re-downloadable or reconstructible from a lockfile.
@@ -60,7 +61,7 @@ human() {
 log "=== Disk cleanup started${DRY_RUN:+ (dry run)} ==="
 
 # --- fnm Node versions ------------------------------------------------------
-# auto-update bumps Node LTS weekly, stranding the previous version (~500M each).
+# auto-update bumps Node LTS as releases clear the cooldown, stranding the previous version (~500M each).
 # Three things make a version un-deletable, and all three have bitten us:
 #   1. it is fnm's `default` alias
 #   2. a project pins it via .nvmrc / .node-version
@@ -297,7 +298,8 @@ done
 CLEANUP_SUMMARY="$CLEANUP_SUMMARY\n(df lags: snapshots still pin freed extents)"
 
 # Under auto-update.sh the parent captures this on stdout and folds it into the
-# weekly message. A standalone run sends its own ntfy. Never both.
+# update message (dropped when that run changed nothing). A standalone run sends
+# its own ntfy. Never both.
 if [ -n "${AUTO_UPDATE_PARENT:-}" ] || [ "$DRY_RUN" = 1 ]; then
     echo -e "$CLEANUP_SUMMARY"
 else

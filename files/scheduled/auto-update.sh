@@ -1,7 +1,11 @@
 #!/bin/bash
-# Weekly auto-update for self-hosted tools.
-# Creates a btrfs snapshot before updating, logs everything, sends summary via ntfy.
-# Major version bumps are blocked and reported; only minor/patch updates proceed.
+# Daily auto-update for self-hosted tools (cron, 3am).
+# Logs everything; ntfys a summary only when something updated, failed, or a new
+# major version is waiting. Major version bumps are blocked and reported; only
+# minor/patch updates proceed, and only once a release is 7 days old.
+# No snapshot of its own: snapper's hourly timeline is the rollback point, and a
+# pinned pre-update snapshot per run would hold every superseded toolchain and
+# every dangling Docker layer the cleanup at the end is there to reclaim.
 HOOK_DROP_TO_SUDO_USER=1
 source "$(dirname "$0")/../lib/_hook-env.sh"
 
@@ -84,12 +88,6 @@ pypi_cooldown_ok() {
 }
 
 logger -t "$_HOOK_TAG" "=== Auto-update started ==="
-
-# Pre-update snapshot
-if command -v snapper &>/dev/null && snapper list-configs 2>/dev/null | grep -q root; then
-    sudo snapper create --description "pre-auto-update $(date +%Y-%m-%d)" --cleanup-algorithm number --userdata "important=yes" 2>&1 | logger -t "$_HOOK_TAG"
-    logger -t "$_HOOK_TAG" "Snapshot created"
-fi
 
 # --- Claude Code ---
 # No major version guard: claude update is Anthropic-managed, we trust it.
@@ -266,8 +264,9 @@ track "OS packages" bash -c "sudo DEBIAN_FRONTEND=noninteractive apt update -qq 
 # --- Disk cleanup ---
 # Last, so it sees this run's leavings: the Node version the LTS bump just
 # superseded, the Claude Code version `claude update` replaced, the apt archives.
+# Daily, that junk is gone before more than a few hourly snapshots can pin it.
 # Runs as a subprocess (it ends in `exit 0`, so sourcing would cut this run short)
-# and reports its summary on stdout for the weekly message.
+# and reports its summary on stdout for the update message.
 CLEANUP_SUMMARY=""
 if [ -x "$(dirname "$0")/disk-cleanup.sh" ]; then
     CLEANUP_SUMMARY=$(AUTO_UPDATE_PARENT=1 "$(dirname "$0")/disk-cleanup.sh")
@@ -280,10 +279,15 @@ BODY=""
 [ -n "$UPDATED" ] && BODY="Updated:$UPDATED"
 [ -n "$FAILED" ] && BODY="$BODY\n\nFailed:$FAILED"
 [ -n "$MAJOR_UPGRADES" ] && BODY="$BODY\n\nNew major versions available:$MAJOR_UPGRADES"
-[ -z "$BODY" ] && BODY="Everything already up to date."
+# A run that changed nothing stays quiet (daily, "up to date" would be most
+# mornings); the cleanup summary rides along only when there is a message.
+if [ -z "$BODY" ]; then
+    logger -t "$_HOOK_TAG" "nothing updated; no notification"
+    exit 0
+fi
 [ -n "$CLEANUP_SUMMARY" ] && BODY="$BODY\n\n$CLEANUP_SUMMARY"
 
 ntfy_send \
-    -t "Weekly update $(date +%Y-%m-%d)" \
+    -t "Auto-update $(date +%Y-%m-%d)" \
     -p "$([ -n "$FAILED" ] && echo high || echo low)" \
     "$(echo -e "$BODY")"

@@ -520,9 +520,11 @@ Rollback a btrfs snapshot: `snapper list`, then `snapper rollback <number>`, the
 
 ## Auto-updates
 
-A weekly cron job (Sunday 3am) updates all installed tools. Before updating,
-it creates a btrfs snapshot. After finishing, it sends an ntfy summary with
-what was updated, what failed, and any available major version bumps.
+A daily cron job (3am) updates all installed tools whose latest release has
+cleared the cooldown, then runs the disk cleanup. It sends an ntfy summary
+only when something was updated or failed, or a major version bump is
+waiting; a run that changed nothing is silent. Rollback is snapper's hourly
+timeline (the job takes no snapshot of its own).
 
 Updated tools: Claude Code, claude-code-tools, claude-code-transcripts,
 aichat-search, Go, fnm, Node.js, uv, gitleaks, dufs,
