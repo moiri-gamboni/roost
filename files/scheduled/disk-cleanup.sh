@@ -2,9 +2,9 @@
 # Reclaim disk from regenerable artifacts: superseded toolchain versions, package
 # manager caches, orphaned virtualenvs, dangling Docker layers, archived journals.
 #
-# Runs from auto-update.sh (daily 3am), right after any Node LTS bump — the moment
-# the previous Node version becomes stale — and before more hourly snapshots can
-# pin what it removes. Safe to run by hand; --dry-run shows the
+# Runs from auto-update.sh (daily, 2:50am start), right after any Node LTS bump —
+# the moment the previous Node version becomes stale — and timed to finish before
+# the 3:00 hourly snapshot, so nothing it removes gets pinned by a fresh one. Safe to run by hand; --dry-run shows the
 # plan without deleting.
 #
 # Everything removed here is either re-downloadable or reconstructible from a lockfile.
@@ -58,7 +58,7 @@ human() {
     fi
 }
 
-log "=== Disk cleanup started${DRY_RUN:+ (dry run)} ==="
+log "=== Disk cleanup started$([ "$DRY_RUN" = 1 ] && echo ' (dry run)') ==="   # DRY_RUN is 0/1, never unset, so ${DRY_RUN:+…} labelled every run a dry run
 
 # --- fnm Node versions ------------------------------------------------------
 # auto-update bumps Node LTS as releases clear the cooldown, stranding the previous version (~500M each).

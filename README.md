@@ -520,8 +520,9 @@ Rollback a btrfs snapshot: `snapper list`, then `snapper rollback <number>`, the
 
 ## Auto-updates
 
-A daily cron job (3am) updates all installed tools whose latest release has
-cleared the cooldown, then runs the disk cleanup. It sends an ntfy summary
+A daily cron job (2:50am, so it finishes before the 3:00 hourly snapshot)
+updates all installed tools whose latest release has cleared the cooldown,
+then runs the disk cleanup. It sends an ntfy summary
 only when something was updated or failed, or a major version bump is
 waiting; a run that changed nothing is silent. Rollback is snapper's hourly
 timeline (the job takes no snapshot of its own).
