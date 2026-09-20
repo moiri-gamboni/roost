@@ -12,6 +12,9 @@
 #
 # The daemon behind each session exits after an hour without commands, so a
 # session that ends without `agent-browser close` leaks nothing for long.
+#
+# SessionStart fires again on /clear, --resume and compaction, against the
+# same env file, so the line is only appended when it is not already there.
 # Always exits 0: a missing env file (older harness) just leaves the default.
 set -uo pipefail
 [ -n "${CLAUDE_ENV_FILE:-}" ] || exit 0
@@ -19,5 +22,6 @@ sid=$(jq -r '.session_id // empty')
 case "$sid" in
     *[!A-Za-z0-9_-]*|"") exit 0 ;;
 esac
-echo "export AGENT_BROWSER_SESSION=$sid" >> "$CLAUDE_ENV_FILE"
+line="export AGENT_BROWSER_SESSION=$sid"
+[ -f "$CLAUDE_ENV_FILE" ] && grep -qxF -- "$line" "$CLAUDE_ENV_FILE" || echo "$line" >> "$CLAUDE_ENV_FILE"
 exit 0
