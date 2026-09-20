@@ -160,6 +160,19 @@ go install github.com/JohannesKaufmann/html-to-markdown/v2/cli/html2markdown@lat
 info "agent-browser + mmdc..."
 npm install -g agent-browser @mermaid-js/mermaid-cli
 agent-browser install    # Chrome for Testing; an installed Chrome is detected but this pins the automation build
+# Ubuntu 24.04 denies the unprivileged user namespaces Chrome's sandbox needs
+# (kernel.apparmor_restrict_unprivileged_userns=1): Chrome dies at startup with
+# "No usable sandbox!" unless an AppArmor profile grants userns to the binary.
+if [ -z "$MAC" ] && command -v apparmor_parser >/dev/null; then
+    sudo tee /etc/apparmor.d/agent-browser-chrome >/dev/null <<EOF
+abi <abi/4.0>,
+include <tunables/global>
+profile agent-browser-chrome $HOME/.agent-browser/browsers/chrome-*/chrome flags=(unconfined) {
+  userns,
+}
+EOF
+    sudo apparmor_parser -r /etc/apparmor.d/agent-browser-chrome
+fi
 
 info "showboat + gdoc..."
 uv tool install showboat
