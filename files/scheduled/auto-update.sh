@@ -1,5 +1,6 @@
 #!/bin/bash
-# Daily auto-update for self-hosted tools (cron, 3am).
+# Daily auto-update for self-hosted tools (cron, 2:50am: the run ends before the
+# 3:00 hourly snapshot, so what the cleanup removes is not pinned by it).
 # Logs everything; ntfys a summary only when something updated, failed, or a new
 # major version is waiting. Major version bumps are blocked and reported; only
 # minor/patch updates proceed, and only once a release is 7 days old.
