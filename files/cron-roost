@@ -33,8 +33,9 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 # unallocated drops below 5GiB (RO-flip prevention).
 30 2 * * 0 $USERNAME flock -n $HOME_DIR/.locks/btrfs-balance $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/btrfs-balance.sh
 
-# Weekly auto-update (Sunday 3am)
-0 3 * * 0 $USERNAME flock -n $HOME_DIR/.locks/auto-update $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/auto-update.sh
+# Daily auto-update (3am): tools and OS packages whose latest release is at
+# least 7 days old, ending in disk-cleanup.sh. Silent when nothing changed.
+0 3 * * * $USERNAME flock -n $HOME_DIR/.locks/auto-update $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/auto-update.sh
 
 # Weekly Travel-VPN audit (Sunday 4am): roost-net test when vpn=on. cmd_test ntfy_sends on failure so no extra wrapper is needed.
 0 4 * * 0 $USERNAME flock -n $HOME_DIR/.locks/travel-audit sh -c 'if [ "$(cat /etc/roost-travel/vpn)" = "on" ]; then $HOME_DIR/$ROOST_DIR_NAME/claude/scripts/roost-net.sh test; fi'

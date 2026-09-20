@@ -7,7 +7,7 @@
 #   /var/www/privatebin       app code (root-owned, read-only)
 #   /etc/privatebin/conf.php  config (CONFIG_PATH env set in the fpm pool)
 #   /var/lib/privatebin/data  paste storage (privatebin system user)
-# Weekly updates are handled by auto-update.sh (same-major releases only).
+# Updates are handled by the daily auto-update.sh (same-major releases only).
 source "$(dirname "$0")/../_setup-env.sh"
 
 PRIVATEBIN_VERSION="2.0.4"
