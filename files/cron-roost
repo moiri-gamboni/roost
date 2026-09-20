@@ -30,7 +30,7 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 # rodney browser reaper (every 10 min): stops the per-session headless Chromes
 # whose Claude Code session is gone, and any rodney browser idle for over an
 # hour (the ~/bin/rodney wrapper restarts one on the session's next verb).
-*/10 * * * * $USERNAME flock -n $HOME_DIR/.locks/rodney-reap $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/rodney-reap.sh
+*/10 * * * * $USERNAME flock -n $HOME_DIR/.locks/rodney-reap $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/rodney-reap.sh 2>&1 | logger -t roost/rodney-reap
 
 # Weekly btrfs data balance (Sunday 2:30am): return slack trapped in
 # part-empty data chunks to the unallocated pool so the metadata pool can keep

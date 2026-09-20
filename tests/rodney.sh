@@ -67,6 +67,19 @@ CLAUDE_CODE_SESSION_ID=sid-A "$W" open https://example.com >/dev/null 2>"$T/a2.e
 check "restarted transparently" bash -c "[ \"\$(chrome_pid '$A')\" != '$apid' ] && grep -q 'Chrome started' '$T/a2.err'"
 apid=$(chrome_pid "$A")
 
+echo "== a Chrome that outlived its state file is cleared, not tripped over"
+rm -f "$A/state.json"          # what a start whose state write failed leaves behind
+CLAUDE_CODE_SESSION_ID=sid-A "$W" open https://example.com >/dev/null 2>"$T/a3.err"
+check "verb succeeded with a fresh Chrome" bash -c "[ \"\$(chrome_pid '$A')\" != '$apid' ] && ! grep -q SingletonLock '$T/a3.err'"
+check "the orphan is gone" [ ! -d "/proc/$apid" ]
+apid=$(chrome_pid "$A")
+
+echo "== RODNEY_HOME with a trailing slash keeps matching its own Chrome"
+CLAUDE_CODE_SESSION_ID=sid-A RODNEY_HOME="$T/slash/" "$W" open https://example.com >/dev/null 2>&1
+spid=$(chrome_pid "$T/slash")
+CLAUDE_CODE_SESSION_ID=sid-A RODNEY_HOME="$T/slash/" "$W" url >/dev/null 2>"$T/slash.err"
+check "second call reused the first Chrome" bash -c "[ \"\$(chrome_pid '$T/slash')\" = '$spid' ] && ! grep -q 'Chrome started' '$T/slash.err'"
+
 echo "== concurrent first use starts exactly one Chrome"
 C="$RODNEY_SESSIONS_DIR/sid-C"
 CLAUDE_CODE_SESSION_ID=sid-C "$W" url >/dev/null 2>&1 &
