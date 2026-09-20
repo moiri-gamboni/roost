@@ -50,10 +50,9 @@ else
     ok "Go $GO_VERSION installed"
 fi
 
-# Ensure Go is in user PATH
-grep -q '/usr/local/go/bin' "$HOME_DIR/.bashrc" || \
-    echo 'export PATH=$PATH:/usr/local/go/bin:~/go/bin' >> "$HOME_DIR/.bashrc"
-
+# Go's PATH entries come from shell/bashrc.sh (after ~/bin, so wrappers there
+# shadow ~/go/bin tools); a raw append here would land in ~/.bashrc before
+# roost.sh is sourced and put ~/go/bin ahead of ~/bin in non-login shells.
 # --- rodney (headless Chrome CLI via go-rod) ---
 
 if as_user "command -v rodney" &>/dev/null; then
