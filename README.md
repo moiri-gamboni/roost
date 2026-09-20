@@ -526,7 +526,7 @@ what was updated, what failed, and any available major version bumps.
 
 Updated tools: Claude Code, claude-code-tools, claude-code-transcripts,
 aichat-search, Go, fnm, Node.js, uv, gitleaks, dufs,
-PrivateBin, acme.sh, rodney, and OS packages.
+PrivateBin, acme.sh, agent-browser, and OS packages.
 
 Safeguards:
 - New releases must be at least 7 days old before being applied (cooldown)

@@ -76,7 +76,7 @@ else
     sudo apt-get install -y -qq git jq unzip build-essential curl ca-certificates gnupg gh pandoc poppler-utils
 fi
 
-# --- Google Chrome (backs rodney; mmdc's puppeteer can use it too) ---
+# --- Google Chrome (agent-browser detects it; mmdc's puppeteer can use it too) ---
 if [ -n "$MAC" ]; then
     if [ ! -d "/Applications/Google Chrome.app" ]; then
         info "Google Chrome..."
@@ -137,7 +137,7 @@ if ! command -v uv >/dev/null; then
     curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
 
-# --- Go toolchain (for rodney + html2markdown; mac gets Go from brew above) ---
+# --- Go toolchain (for html2markdown; mac gets Go from brew above) ---
 if [ -z "$MAC" ]; then
     if [ ! -x /usr/local/go/bin/go ]; then
         info "Go..."
@@ -154,12 +154,12 @@ else
 fi
 export PATH="$HOME/go/bin:$PATH"
 
-info "rodney + html2markdown..."
-go install github.com/simonw/rodney@latest
+info "html2markdown..."
 go install github.com/JohannesKaufmann/html-to-markdown/v2/cli/html2markdown@latest
 
-info "mmdc..."
-npm install -g @mermaid-js/mermaid-cli
+info "agent-browser + mmdc..."
+npm install -g agent-browser @mermaid-js/mermaid-cli
+agent-browser install    # Chrome for Testing; an installed Chrome is detected but this pins the automation build
 
 info "showboat + gdoc..."
 uv tool install showboat
@@ -201,7 +201,7 @@ Academic research workstation. The two main surfaces are Google Docs (the user's
 | gdoc | Google Docs/Drive CLI: `gdoc cat DOC_ID` (markdown out), `gdoc find "query"`, `gdoc ls`, `gdoc new "Title"`, `gdoc write DOC_ID draft.md`, `gdoc edit DOC_ID "old" "new"`, `gdoc comments DOC_ID`, `gdoc comment DOC_ID "text" --quote "anchor"`. `--json` for scripting. |
 | `zotero` skill | The paper-library loop: bulk PDF summaries, collections, tags, related-item links. Start there for anything library-related. |
 | pdftotext (poppler) | Cheap bulk PDF→text; prefer it over vision-reading except for figure-heavy layouts |
-| rodney | Headless-Chrome CLI: open, scrape, screenshot, print-to-PDF JS-heavy pages (`rodney --help`) |
+| agent-browser | Headless-Chrome CLI for agents: `open`, `snapshot -i` (accessibility tree with `@e1` refs to click/fill), `read`, `screenshot`; `agent-browser skills get core` for the workflow |
 | html2markdown (+ skill) | Clean webpage/HTML → readable markdown |
 | pandoc | markdown → PDF/docx, citations via citeproc |
 | mmdc | Mermaid → PNG/SVG figures; render to verify before shipping a diagram |
@@ -214,7 +214,7 @@ Academic research workstation. The two main surfaces are Google Docs (the user's
 - **Review loop:** put the draft in Docs, the user comments there (desktop or phone); read comments with `gdoc comments`, respond with `gdoc comment --quote`, edit with `gdoc edit`, iterate.
 - **Paper intake → summaries:** per the zotero skill — iterate items missing the `ai-summary` child note, `pdftotext | claude -p --model claude-sonnet-5`, write the note back. Summaries stay in Zotero as child notes (they're data: bulk re-readable via the API); resumable by construction. Bulk runs burn this account's rate-limit windows, so plan large backlogs as chunks.
 - **Synthesis:** run over the Zotero summary notes, not the PDFs — cluster, add `dc:relation` links between items — and write the human-facing result to Docs, citing items as `zotero://select/library/items/<KEY>` links so the user can jump from prose to paper.
-- **Web research:** WebSearch/WebFetch are built in; reach for rodney or `curl | html2markdown` when a page resists plain fetching.
+- **Web research:** WebSearch/WebFetch are built in; reach for agent-browser or `curl | html2markdown` when a page resists plain fetching.
 
 ## Setup
 

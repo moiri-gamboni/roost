@@ -99,7 +99,7 @@ check deny  'head -n +5 is bounded (degenerate)'        'head -n +5 file'
 # --- must allow: false-positive candidates ---
 check allow 'word in a quoted string'                   'git commit -m "docs: head of the table"'
 check allow 'git HEAD'                                  'git log HEAD -1'
-check allow 'headless as a word'                        'rodney open --headless http://x'
+check allow 'headless as a word'                        'agent-browser open --headless http://x'
 check allow 'tailscale'                                 'tailscale ip -4'
 check allow 'a path containing head'                    'cat /tmp/head/out.txt'
 check allow 'grep for the word head'                    'grep -rn "head -5" files/hooks/'

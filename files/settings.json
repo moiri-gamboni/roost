@@ -42,7 +42,17 @@
   },
   "model": "claude-fable-5-1[1m]",
   "hooks": {
-    "SessionStart": [],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/agent-browser-session.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PreCompact": [],
     "Stop": [
       {

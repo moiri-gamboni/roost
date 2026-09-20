@@ -118,17 +118,16 @@ files/scheduled/vision-abuse-watch.sh|$ROOST_DIR/claude/scheduled/vision-abuse-w
 files/scheduled/session-daily-brief.sh|$ROOST_DIR/claude/scheduled/session-daily-brief.sh|plain+x|
 files/scheduled/roughdraft-watch.sh|$ROOST_DIR/claude/scheduled/roughdraft-watch.sh|plain+x|
 files/scheduled/btrfs-balance.sh|$ROOST_DIR/claude/scheduled/btrfs-balance.sh|plain+x|
-files/scheduled/rodney-reap.sh|$ROOST_DIR/claude/scheduled/rodney-reap.sh|plain+x|
 files/scripts/roost-apply.sh|$ROOST_DIR/claude/scripts/roost-apply.sh|plain+x|
 files/scripts/roost-net.sh|$ROOST_DIR/claude/scripts/roost-net.sh|plain+x|
 files/scripts/agent-worktree.sh|$ROOST_DIR/claude/scripts/agent-worktree.sh|plain+x|
-files/scripts/rodney.sh|$ROOST_DIR/claude/scripts/rodney.sh|plain+x|run:ln -sfn ~/roost/claude/scripts/rodney.sh ~/bin/rodney
 files/roost-session-resume.service|$HOME_DIR/.config/systemd/user/roost-session-resume.service|plain|run:systemctl --user daemon-reload && systemctl --user enable roost-session-resume.service
 files/hooks/shellcheck-edit.sh|$ROOST_DIR/claude/hooks/shellcheck-edit.sh|plain+x|
 files/hooks/notion-write-guard.sh|$ROOST_DIR/claude/hooks/notion-write-guard.sh|plain+x|
 files/hooks/truncation-guard.sh|$ROOST_DIR/claude/hooks/truncation-guard.sh|plain+x|
 files/hooks/roughdraft-write-guard.sh|$ROOST_DIR/claude/hooks/roughdraft-write-guard.sh|plain+x|
 files/hooks/fork-context-guard.sh|$ROOST_DIR/claude/hooks/fork-context-guard.sh|plain+x|
+files/hooks/agent-browser-session.sh|$ROOST_DIR/claude/hooks/agent-browser-session.sh|plain+x|
 files/private/granola-digest.sh|$ROOST_DIR/claude/scripts/granola-digest.sh|plain+x|
 files/private/drive-mirror-refresh.sh|$ROOST_DIR/claude/scripts/drive-mirror-refresh.sh|plain+x|
 files/travel/travel-health.sh|$ROOST_DIR/claude/scheduled/health-check-apps.sh|plain+x|
@@ -169,6 +168,7 @@ files/session-focus-tick.timer|/etc/systemd/system/session-focus-tick.timer|plai
 files/cron-roost|/etc/cron.d/$ROOST_DIR_NAME|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|
 files/tmux.conf|$HOME_DIR/.tmux.conf|plain|run:tmux source-file ~/.tmux.conf
 files/sshd/50-clip-forward.conf|/etc/ssh/sshd_config.d/50-clip-forward.conf|plain|restart:ssh
+files/apparmor/agent-browser-chrome|/etc/apparmor.d/agent-browser-chrome|envsubst:HOME_DIR|run:sudo apparmor_parser -r /etc/apparmor.d/agent-browser-chrome
 files/tailscaled-iptables.conf|/etc/systemd/system/tailscaled.service.d/iptables-pin.conf|plain|daemon-reload,restart:tailscaled
 files/notion-webhook.service|/etc/systemd/system/notion-webhook.service|plain|daemon-reload,restart:notion-webhook
 files/granola-webhook.service|/etc/systemd/system/granola-webhook.service|plain|daemon-reload,restart:granola-webhook

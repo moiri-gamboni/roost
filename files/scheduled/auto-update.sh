@@ -253,8 +253,12 @@ elif [ -x /root/.acme.sh/acme.sh ]; then
     logger -t "$_HOOK_TAG" "acme.sh: skipped (release < 7 days old)"
 fi
 
-# --- rodney (headless Chrome CLI) ---
-track "rodney" bash -c "go install github.com/simonw/rodney@latest"
+# --- agent-browser (headless-Chrome CLI for agents) ---
+# `install` afterwards fetches the Chrome for Testing build the new CLI expects
+# (a no-op when it is already present). Not `agent-browser upgrade`: that runs a
+# plain `npm i -g`, which lands in the fnm-versioned global and gets stranded by
+# the Node LTS bump above.
+track "agent-browser" bash -c "npm i -g --prefix \"\$HOME/.local\" agent-browser@latest && agent-browser install"
 
 # --- OS packages ---
 track "OS packages" bash -c "sudo DEBIAN_FRONTEND=noninteractive apt update -qq && sudo DEBIAN_FRONTEND=noninteractive apt -o Dpkg::Options::='--force-confold' upgrade -y"

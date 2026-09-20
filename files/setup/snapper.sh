@@ -45,7 +45,7 @@ for rel in "${NESTED_SUBVOLS[@]}"; do
     # Convert in place: reflink the tree into a fresh subvolume (no data is
     # duplicated, only metadata), then swap. Processes holding files in the old
     # tree keep their inodes, so it stays as <dir>.old until nothing runs out
-    # of it (VS Code server, uvx-run MCP servers, the shared rodney Chromium);
+    # of it (VS Code server, uvx-run MCP servers, the mmdc and roughdraft browsers);
     # deleting it under a live uvx env is the `uv cache prune --force` hazard.
     [ -e "$dir.subvol" ] && btrfs subvolume delete "$dir.subvol" >/dev/null
     btrfs subvolume create "$dir.subvol" >/dev/null
