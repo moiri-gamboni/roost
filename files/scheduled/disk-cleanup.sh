@@ -191,7 +191,7 @@ fi
 # --- Package manager caches -------------------------------------------------
 # All pure caches: worst case is a slower next install.
 # Deliberately NOT touched, because each is a browser some tool needs at runtime:
-# ~/.cache/rod (rodney's Chromium, long-lived shared browser, typically running),
+# ~/.cache/rod (the Chromium every rodney per-session browser runs, usually live),
 # ~/.cache/ms-playwright (roughdraft and podcast-studio), and ~/.cache/puppeteer
 # (mmdc renders through it; removing it returns mmdc to the "Could not find
 # Chrome" state it was in before 2026-08-28). All are re-downloadable but large.

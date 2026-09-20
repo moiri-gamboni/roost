@@ -118,9 +118,11 @@ files/scheduled/vision-abuse-watch.sh|$ROOST_DIR/claude/scheduled/vision-abuse-w
 files/scheduled/session-daily-brief.sh|$ROOST_DIR/claude/scheduled/session-daily-brief.sh|plain+x|
 files/scheduled/roughdraft-watch.sh|$ROOST_DIR/claude/scheduled/roughdraft-watch.sh|plain+x|
 files/scheduled/btrfs-balance.sh|$ROOST_DIR/claude/scheduled/btrfs-balance.sh|plain+x|
+files/scheduled/rodney-reap.sh|$ROOST_DIR/claude/scheduled/rodney-reap.sh|plain+x|
 files/scripts/roost-apply.sh|$ROOST_DIR/claude/scripts/roost-apply.sh|plain+x|
 files/scripts/roost-net.sh|$ROOST_DIR/claude/scripts/roost-net.sh|plain+x|
 files/scripts/agent-worktree.sh|$ROOST_DIR/claude/scripts/agent-worktree.sh|plain+x|
+files/scripts/rodney.sh|$ROOST_DIR/claude/scripts/rodney.sh|plain+x|run:ln -sfn ~/roost/claude/scripts/rodney.sh ~/bin/rodney
 files/roost-session-resume.service|$HOME_DIR/.config/systemd/user/roost-session-resume.service|plain|run:systemctl --user daemon-reload && systemctl --user enable roost-session-resume.service
 files/hooks/shellcheck-edit.sh|$ROOST_DIR/claude/hooks/shellcheck-edit.sh|plain+x|
 files/hooks/notion-write-guard.sh|$ROOST_DIR/claude/hooks/notion-write-guard.sh|plain+x|
