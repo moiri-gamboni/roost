@@ -42,7 +42,17 @@
   },
   "model": "claude-fable-5-1[1m]",
   "hooks": {
-    "SessionStart": [],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/agent-browser-session.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PreCompact": [],
     "Stop": [
       {
@@ -286,7 +296,7 @@
       "$defaults",
       "Bash(tasks:*) in ~/roost/apart-research \u2014 routine tasksync CLI usage (130 occurrences)",
       "Bash(session:*) in ~/roost/apart-research \u2014 routine session CLI usage (90 occurrences)",
-      "Bash(rodney:*) in ~/roost/apart-research \u2014 routine headless-Chrome automation per CLAUDE.md (32 occurrences)",
+      "Bash(agent-browser:*) in ~/roost/apart-research \u2014 routine headless-browser automation per CLAUDE.md",
       "Bash(roughdraft:*) in ~/roost/apart-research \u2014 routine Markdown review tool (14 occurrences)"
     ],
     "environment": [
@@ -312,7 +322,7 @@
       "### User-specific",
       "**Primary use of Claude Code**: software development and operational/administrative work for Apart Research (task tracking, deploys, Notion sync, meeting-note processing) \u2014 routine under this repo's tasks/, notes/, plans/, and sub-repo prefixes",
       "**Trusted repo**: moiri-gamboni/apart-research (this repo, private) and its origin remote; sub-repos apartresearch/aws_infra, apartresearch/apart-kit, apartresearch/ai_tooling, apartresearch/apart-ops-stack, apartresearch/apart-tools (org remotes, per CLAUDE.md), and moiri-gamboni/apart-workflows (personal remote) \u2014 confidential material may be committed to these given private visibility, but secrets/PII are never cleared by visibility alone",
-      "**Org-specific CLIs**: tasks (tasksync CLI, 130\u00d7), session (90\u00d7), rodney (headless-Chrome automation, 32\u00d7), roughdraft (14\u00d7), roost-apply (11\u00d7), granola (3\u00d7) \u2014 all evidenced by frequent project-transcript usage",
+      "**Org-specific CLIs**: tasks (tasksync CLI, 130\u00d7), session (90\u00d7), agent-browser (headless-browser automation), roughdraft (14\u00d7), roost-apply (11\u00d7), granola (3\u00d7) \u2014 all evidenced by frequent project-transcript usage",
       "and any \"routine under <user>/ prefix\" qualifiers: routine under moiri-gamboni/ and apartresearch/ remote prefixes only, scoped to the sub-repos named above"
     ]
   }

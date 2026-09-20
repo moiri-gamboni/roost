@@ -27,11 +27,6 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 # changed. Daily is enough: upstream has merged nothing since 2026-06-19.
 10 7 * * * $USERNAME flock -n $HOME_DIR/.locks/roughdraft-watch $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/roughdraft-watch.sh
 
-# rodney browser reaper (every 10 min): stops the per-session headless Chromes
-# whose Claude Code session is gone, and any rodney browser idle for over an
-# hour (the ~/bin/rodney wrapper restarts one on the session's next verb).
-*/10 * * * * $USERNAME flock -n $HOME_DIR/.locks/rodney-reap $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/rodney-reap.sh 2>&1 | logger -t roost/rodney-reap
-
 # Weekly btrfs data balance (Sunday 2:30am): return slack trapped in
 # part-empty data chunks to the unallocated pool so the metadata pool can keep
 # growing. health-check.sh also runs it, under the same lock, whenever

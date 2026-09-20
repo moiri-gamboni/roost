@@ -91,9 +91,6 @@ chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-net"
 # (apart-research/apart-tools/session/); its install.sh owns the ~/bin/session
 # symlink, the settings.json hook entries and ~/roost/claude/session.conf.
 ln -sf "$ROOST_DIR/claude/scripts/agent-worktree.sh" "$HOME_DIR/bin/agent-worktree"
-# rodney: the per-session-browser wrapper shadows ~/go/bin/rodney (roost.sh puts ~/bin ahead of ~/go/bin)
-ln -sf "$ROOST_DIR/claude/scripts/rodney.sh" "$HOME_DIR/bin/rodney"
-chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/rodney"
 
 # Restore the sessions a `session reboot` snapshotted, at boot. Lingering is
 # what lets the user manager (and so this unit) run with nobody logged in;

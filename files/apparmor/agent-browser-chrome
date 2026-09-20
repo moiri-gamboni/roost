@@ -1,0 +1,14 @@
+abi <abi/4.0>,
+include <tunables/global>
+
+# Let the Chrome for Testing that agent-browser downloads create the
+# unprivileged user namespaces its sandbox needs, despite Ubuntu 24.04's
+# kernel.apparmor_restrict_unprivileged_userns=1 (without this Chrome dies at
+# startup with "No usable sandbox!"). Same shape as the bwrap profile Codex's
+# sandbox uses (setup/dev-tools.sh). The version directory changes on every
+# `agent-browser install`, hence the glob.
+profile agent-browser-chrome $HOME_DIR/.agent-browser/browsers/chrome-*/chrome flags=(unconfined) {
+  userns,
+
+  include if exists <local/agent-browser-chrome>
+}

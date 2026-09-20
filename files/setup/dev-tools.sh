@@ -50,17 +50,26 @@ else
     ok "Go $GO_VERSION installed"
 fi
 
-# Go's PATH entries come from shell/bashrc.sh (after ~/bin, so wrappers there
-# shadow ~/go/bin tools); a raw append here would land in ~/.bashrc before
+# Go's PATH entries come from shell/bashrc.sh (after ~/bin, so a wrapper there
+# shadows a ~/go/bin tool); a raw append here would land in ~/.bashrc before
 # roost.sh is sourced and put ~/go/bin ahead of ~/bin in non-login shells.
-# --- rodney (headless Chrome CLI via go-rod) ---
 
-if as_user "command -v rodney" &>/dev/null; then
-    skip "rodney already installed"
+# --- agent-browser (headless-Chrome CLI for agents; native Rust binary via npm) ---
+# Chrome for Testing goes under ~/.agent-browser/browsers/. Its sandbox needs
+# unprivileged user namespaces, which Ubuntu 24.04's AppArmor denies unless a
+# profile grants `userns` (same story as bwrap below), so the profile is part of
+# the install rather than running Chrome with --no-sandbox.
+
+if as_user "command -v agent-browser" &>/dev/null; then
+    skip "agent-browser already installed"
 else
-    as_user "GOPATH=\$HOME/go /usr/local/go/bin/go install github.com/simonw/rodney@latest"
-    ok "rodney installed"
+    as_user "npm i -g --prefix \"\$HOME/.local\" agent-browser"
+    as_user "agent-browser install --with-deps"
+    ok "agent-browser installed"
 fi
+envsubst '$HOME_DIR' < "$REMOTE_DIR/files/apparmor/agent-browser-chrome" > /etc/apparmor.d/agent-browser-chrome
+apparmor_parser -r /etc/apparmor.d/agent-browser-chrome
+ok "agent-browser Chrome AppArmor userns profile installed"
 
 # --- uv ---
 
