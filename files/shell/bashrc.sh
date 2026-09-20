@@ -23,6 +23,13 @@ export CLAUDE_CONFIG_DIR="$_ROOST_DIR/claude"
 # Ensure true-color support is advertised over SSH (not forwarded by default)
 [[ -z "${COLORTERM:-}" ]] && export COLORTERM=truecolor
 
+# Local binaries, ahead of Go so a wrapper in ~/bin shadows a ~/go/bin tool
+# (rodney) in every shell, not only the login shells whose ~/.profile prepends
+# ~/bin itself. Appended, not prepended: a prepend would also put ~/bin/node
+# ahead of the fnm multishell and defeat --use-on-cd.
+_roost_path_append "$HOME/bin"
+_roost_path_append "$HOME/.local/bin"
+
 # Go
 _roost_path_append /usr/local/go/bin
 _roost_path_append "$HOME/go/bin"
@@ -44,9 +51,6 @@ if [ -d "$HOME/.local/lib/clip-forward/shims" ]; then
     _roost_path_prepend "$HOME/.local/lib/clip-forward/shims"
 fi
 
-# Local binaries
-_roost_path_append "$HOME/bin"
-_roost_path_append "$HOME/.local/bin"
 export PATH
 
 # Roost server management (symlink created by setup/shell-config.sh)
