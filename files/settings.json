@@ -14,8 +14,7 @@
     "CLAUDE_CODE_MAX_WEB_SEARCHES_PER_SESSION": "1000",
     "CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP": "1",
     "CLAUDE_CODE_SCROLL_SPEED": "1",
-    "ENABLE_CLAUDEAI_MCP_SERVERS": "false",
-    "APART_WORKSPACE": "/home/moiri/roost/apart-research"
+    "ENABLE_CLAUDEAI_MCP_SERVERS": "false"
   },
   "permissions": {
     "allow": [
@@ -59,7 +58,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --turn-end || true",
+            "command": "bash /home/moiri/roost/code/session/session --turn-end || true",
             "timeout": 2
           }
         ]
@@ -70,12 +69,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --turn-fail || true",
+            "command": "bash /home/moiri/roost/code/session/session --turn-fail || true",
             "timeout": 2
           },
           {
             "type": "command",
-            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --rewake-waiter",
+            "command": "bash /home/moiri/roost/code/session/session --rewake-waiter",
             "timeout": 700000,
             "asyncRewake": true,
             "rewakeMessage": "Claude usage limits (auto-resume waiter):",
@@ -89,7 +88,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --session-end || true",
+            "command": "bash /home/moiri/roost/code/session/session --session-end || true",
             "timeout": 2
           }
         ]
@@ -109,7 +108,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --subagent-start || true",
+            "command": "bash /home/moiri/roost/code/session/session --subagent-start || true",
             "timeout": 2
           }
         ]
@@ -129,7 +128,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --subagent-end || true",
+            "command": "bash /home/moiri/roost/code/session/session --subagent-end || true",
             "timeout": 2
           }
         ]
@@ -140,7 +139,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --compact-mark || true",
+            "command": "bash /home/moiri/roost/code/session/session --compact-mark || true",
             "timeout": 2
           }
         ]
@@ -163,12 +162,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --hook || true",
+            "command": "bash /home/moiri/roost/code/session/session --hook || true",
             "timeout": 2
           },
           {
             "type": "command",
-            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --rewake-waiter",
+            "command": "bash /home/moiri/roost/code/session/session --rewake-waiter",
             "timeout": 700000,
             "asyncRewake": true,
             "rewakeMessage": "Claude usage limits (auto-resume waiter):",
@@ -187,7 +186,7 @@
           },
           {
             "type": "command",
-            "command": "bash /home/moiri/roost/apart-research/apart-tools/session/session --perm-mark || true",
+            "command": "bash /home/moiri/roost/code/session/session --perm-mark || true",
             "timeout": 2
           }
         ]
@@ -254,7 +253,7 @@
   "workflowKeywordTriggerEnabled": false,
   "statusLine": {
     "type": "command",
-    "command": "bash /home/moiri/roost/apart-research/apart-tools/session/statusline.sh",
+    "command": "bash /home/moiri/roost/code/session/statusline.sh",
     "refreshInterval": 10
   },
   "enabledPlugins": {
@@ -264,7 +263,10 @@
     "plugin-dev@claude-plugins-official": true,
     "praxis@praxis-marketplace": true,
     "serena@claude-plugins-official": true,
-    "apart-tools@apart-tools": true,
+    "tasksync@apart-tools": true,
+    "outbox@apart-tools": true,
+    "session@apart-tools": true,
+    "granola-mirror@apart-tools": true,
     "diataxis@diataxis-skill": true
   },
   "extraKnownMarketplaces": {
