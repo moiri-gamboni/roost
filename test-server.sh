@@ -558,6 +558,23 @@ else
     fail "RAM monitor timer"
 fi
 
+# ── earlyoom ──────────────────────────────────────────────────
+echo ""
+echo "--- earlyoom ---"
+
+if run systemctl is-active earlyoom >/dev/null 2>&1; then
+    pass "earlyoom service active"
+else
+    fail "earlyoom service"
+fi
+
+# The packaged default is -r 3600 alone; ours carries the thresholds.
+if run grep -q -- '-s 50,25' /etc/default/earlyoom 2>/dev/null; then
+    pass "earlyoom options deployed (/etc/default/earlyoom)"
+else
+    fail "earlyoom options" "/etc/default/earlyoom lacks the roost thresholds"
+fi
+
 # ── Directory Structure ───────────────────────────────────────
 echo ""
 echo "--- Directory Structure ---"

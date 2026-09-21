@@ -1086,7 +1086,15 @@ ok "Glances running at http://$TAILSCALE_IP:61208"
 
 section "RAM Monitor"
 remote_script "setup/ram-monitor.sh"
-ok "RAM monitor checking every 30s (3GB threshold)"
+ok "RAM monitor checking every 30s (3GB per process, 6GB per command name)"
+
+# ============================================
+# earlyoom
+# ============================================
+
+section "earlyoom"
+remote_script "setup/earlyoom.sh"
+ok "earlyoom kills the largest process before a swap thrash takes the box down"
 
 # ============================================
 # Attention Sampler

@@ -163,6 +163,7 @@ files/dufs.service|/etc/systemd/system/dufs.service|envsubst:USERNAME,HOME_DIR,R
 files/glances.service|/etc/systemd/system/glances.service|envsubst:USERNAME|daemon-reload,restart:glances
 files/ram-monitor.service|/etc/systemd/system/ram-monitor.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
 files/ram-monitor.timer|/etc/systemd/system/ram-monitor.timer|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload,restart:ram-monitor.timer
+files/earlyoom.default|/etc/default/earlyoom|plain|restart:earlyoom
 files/session-focus-tick.service|/etc/systemd/system/session-focus-tick.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
 files/session-focus-tick.timer|/etc/systemd/system/session-focus-tick.timer|plain|daemon-reload,restart:session-focus-tick.timer
 files/cron-roost|/etc/cron.d/$ROOST_DIR_NAME|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|

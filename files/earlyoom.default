@@ -1,0 +1,26 @@
+# earlyoom: kill the largest process before the kernel's OOM killer, which
+# only acts once RAM and swap are both exhausted. On 2026-09-20 that took ten
+# minutes of thrash (five ripgreps at 8 GB together) during which sshd,
+# tailscaled and cloudflared were starved and the box was unreachable; the
+# kernel then killed Chrome renderers, caddy and the VS Code extension host
+# instead of the ripgreps. earlyoom acts when BOTH thresholds are crossed.
+#
+# -m 10,5   available RAM under 10% (SIGTERM), under 5% (SIGKILL)
+# -s 50,25  free swap under 50% (SIGTERM), under 25% (SIGKILL). The packaged
+#           default of 10% is the end of a thrash, not its ramp: with 8 GB of
+#           swap the ramp filled it in about two minutes. 50% free (4 GB used)
+#           together with RAM under 10% is roughly where health-check.sh's
+#           own headroom rule (20% of RAM + swap) starts warning, so the
+#           daemon acts where the alert already says the box is in trouble.
+#           Idle sessions park 2-3 GB in swap in steady state (swappiness 10),
+#           which is why the swap line is not lower.
+# --avoid   never pick the processes whose death is the outage: tmux (every
+#           session's terminal), the network path in, the daemons. The regex
+#           must not contain spaces (systemd splits this value on them), hence
+#           the dot in "tmux:.server". Claude sessions are deliberately not on
+#           it: if one is the hog, losing it beats losing the box.
+# -r 3600   one memory report line an hour in the journal.
+#
+# Kills are reported by health-check.sh (every 5 min, from the earlyoom journal).
+# Deployed by setup/earlyoom.sh and roost-apply (restart:earlyoom).
+EARLYOOM_ARGS="-m 10,5 -s 50,25 -r 3600 --avoid ^(tmux:.server|sshd|tailscaled|cloudflared|caddy|ntfy|xray|systemd|systemd-.*|dbus-daemon|postgres|dockerd|containerd)$"
