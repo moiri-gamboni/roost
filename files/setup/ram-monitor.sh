@@ -22,7 +22,7 @@ fi
 
 if ! systemctl is-active --quiet ram-monitor.timer; then
     systemctl enable --now ram-monitor.timer
-    ok "RAM monitor running (10s interval)"
+    ok "RAM monitor running (30s interval)"
 else
     skip "RAM monitor timer already running"
 fi
