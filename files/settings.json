@@ -113,6 +113,15 @@
             "timeout": 2
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/subagent-context.sh",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "SubagentStop": [
@@ -217,6 +226,11 @@
             "type": "command",
             "command": "~/roost/claude/hooks/fork-context-guard.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/redelegation-guard.sh",
+            "timeout": 6
           }
         ]
       }
