@@ -16,7 +16,7 @@ User=moiri
 # notes.sh at the roost config.
 Environment=PATH=/home/moiri/.local/bin:/home/moiri/bin:/usr/local/bin:/usr/bin:/bin
 Environment=CLAUDE_CONFIG_DIR=/home/moiri/roost/claude
-ExecStart=/usr/bin/python3 /home/moiri/roost/apart-research/apart-tools/granola-mirror/webhook_receiver.py
+ExecStart=/usr/bin/python3 /home/moiri/roost/code/granola-mirror/webhook_receiver.py
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true

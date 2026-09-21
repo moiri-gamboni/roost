@@ -176,24 +176,25 @@ if [ -f "$(dirname "$0")/health-check-apps-private.sh" ]; then
     source "$(dirname "$0")/health-check-apps-private.sh"
 fi
 
-# --- Notion mirror: hourly rows refresh + tasksync conflict ageing ----------
-# The hourly notion-rows job never ntfys — losing the race with the nightly is
-# its designed outcome, 2-4 times a night. It records every attempt in a marker
+# --- tasksync dead-man: hourly rows refresh + tasksync conflict ageing -------
+# The hourly rows job never ntfys — losing the race with the nightly is its
+# designed outcome, 2-4 times a night. It records every attempt in a marker
 # instead, and this is the only thing that reads it. Keyed on the age of the
 # last SUCCESS, not on exit status: a wedged nightly holds the lock
 # indefinitely and every tick behind it exits 1 from flock -n, so
-# alert-on-failure would never fire.
-ROWS_STATUS="$HOME/roost/apart-research/apart-tools/notion-mirror/rows_status.py"
-if [ -f "$ROWS_STATUS" ]; then
-    if ! ROWS_ALARMS="$(python3 "$ROWS_STATUS" --check 2>&1)"; then
+# alert-on-failure would never fire. The check composes the mirror's marker
+# alarms with the tasks-side ones, so one listener covers both.
+TASKS_DEADMAN="$HOME/roost/apart-research/tasksync"
+if [ -f "$TASKS_DEADMAN/tasksync/deadman.py" ]; then
+    if ! ALARMS="$(cd "$TASKS_DEADMAN" && python3 -m tasksync.deadman --check 2>&1)"; then
         # 6h cooldown matches the staleness threshold, so a real outage nags
         # ~4x a day rather than 24, and a recovery is visible within one cycle.
         if cooldown_ok "notion-rows-deadman" 21600; then
-            ntfy_send -t "Notion mirror dead-man" -p "high" "$ROWS_ALARMS"
+            ntfy_send -t "tasksync dead-man" -p "high" "$ALARMS"
         fi
     fi
 else
-    FAILURES="$FAILURES\n- notion mirror rows_status.py missing ($ROWS_STATUS)"
+    FAILURES="$FAILURES\n- tasksync deadman.py missing ($TASKS_DEADMAN/tasksync/deadman.py)"
 fi
 
 if [ -n "$FAILURES" ]; then

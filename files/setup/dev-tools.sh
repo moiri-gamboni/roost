@@ -187,7 +187,7 @@ else
 fi
 
 # --- GitHub host key, pinned (not TOFU) --------------------------------------
-# The apart-tools plugin install (claude-config.sh) is the provision's first
+# The apart-tools marketplace add (claude-config.sh) is the provision's first
 # SSH-to-GitHub operation. Seed known_hosts from GitHub's published keys over
 # TLS (the same trust the HTTPS fetches above already extend) so it neither
 # TOFU-accepts nor silently skips.

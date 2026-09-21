@@ -137,6 +137,10 @@ files/private/health-check-apps-private.sh|$ROOST_DIR/claude/scheduled/health-ch
 files/shell/bashrc.sh|$HOME_DIR/.bashrc.d/roost.sh|plain|
 files/private/global-CLAUDE.md|$ROOST_DIR/claude/CLAUDE.md|plain|
 files/private/apart-env.sh|$HOME_DIR/.config/apart/env|plain+600|
+files/private/apart-tools-env|$HOME_DIR/.config/apart-tools/env|plain+600|
+files/private/notion-mirror-env|$HOME_DIR/.config/notion-mirror/env|plain+600|
+files/private/notion-mirror-changelog-context.md|$HOME_DIR/.config/notion-mirror/changelog-context.md|plain+600|
+files/private/public-scrub-check.sh|$ROOST_DIR/claude/scripts/public-scrub-check.sh|plain+x|
 files/skills/codex/SKILL.md|$ROOST_DIR/claude/skills/codex/SKILL.md|plain|
 files/agents/effort-low.md|$ROOST_DIR/claude/agents/effort-low.md|plain|
 files/agents/effort-medium.md|$ROOST_DIR/claude/agents/effort-medium.md|plain|

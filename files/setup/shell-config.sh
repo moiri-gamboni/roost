@@ -87,9 +87,9 @@ ln -sf "$ROOST_DIR/claude/scripts/roost-apply.sh" "$HOME_DIR/bin/roost-apply"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-apply"
 ln -sf "$ROOST_DIR/claude/scripts/roost-net.sh" "$HOME_DIR/bin/roost-net"
 chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-net"
-# session: the session CLI lives in the apart-tools repo since 2026-08-31
-# (apart-research/apart-tools/session/); its install.sh owns the ~/bin/session
-# symlink, the settings.json hook entries and ~/roost/claude/session.conf.
+# session: the session CLI lives in its own clone (~/roost/code/session); its
+# install.sh owns the ~/bin/session symlink, the settings.json hook entries and
+# ~/roost/claude/session.conf.
 ln -sf "$ROOST_DIR/claude/scripts/agent-worktree.sh" "$HOME_DIR/bin/agent-worktree"
 
 # Restore the sessions a `session reboot` snapshotted, at boot. Lingering is
@@ -103,9 +103,9 @@ as_user "systemctl --user daemon-reload && systemctl --user enable roost-session
 echo "  [+] Session restore-after-reboot enabled"
 # granola-digest ships from files/private/, so skip when it isn't deployed
 # (public-repo-only checkouts won't have it). The granola mirror tooling itself
-# (granola/granola-transcripts/granola-refresh) lives in the apart-tools clone
-# since 2026-08-19; its symlinks are wired by the private claude-plugins.sh
-# alongside the plugin install.
+# (granola/granola-transcripts/granola-refresh) lives in its own clone; its
+# symlinks, like every other clone-based CLI's, are wired by the private
+# claude-plugins.sh.
 if [ -f "$ROOST_DIR/claude/scripts/granola-digest.sh" ]; then
     ln -sf "$ROOST_DIR/claude/scripts/granola-digest.sh" "$HOME_DIR/bin/granola-digest"
     chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/granola-digest"
@@ -132,11 +132,3 @@ as_user "git config --global gpg.format ssh"
 as_user "git config --global user.signingkey '$HOME_DIR/.ssh/id_ed25519.pub'"
 as_user "git config --global commit.gpgsign true"
 echo "  [+] Git commit signing configured"
-
-# `tasks` — the tasksync CLI from the apart-tools clone inside the apart-research
-# workspace. Guarded: a box without that checkout just skips the link.
-tasks_cli="$HOME_DIR/$ROOST_DIR_NAME/apart-research/apart-tools/tasksync/tasks"
-if [ -x "$tasks_cli" ]; then
-    ln -sfn "$tasks_cli" "$HOME_DIR/bin/tasks"
-    chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/tasks"
-fi

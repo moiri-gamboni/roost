@@ -145,13 +145,16 @@ check allow 'grep for a write call by name' \
 check ask  'KNOWN FALSE POSITIVE: paren in the pattern, host in the same command' \
     'grep -rn "requests.post(" $(grep -rl api.notion.com .)'
 
-# --- the apart-tools clone: its two tool dirs are sanctioned, the repo root is not ---
-check allow 'push via the apart-tools clone CLI' \
-    'apart-tools/tasksync/tasks push some-slug --apply # writes api.notion.com'
-check allow 'mirror refresh from the apart-tools clone' \
-    'apart-tools/notion-mirror/refresh.sh daily # api.notion.com'
-check ask  'incidental mention of the clone root does not sanction a raw write' \
-    'cd apart-tools && curl -X PATCH "https://api.notion.com/v1/pages/abc"'
+# --- the two sync-tool clones are sanctioned by directory name, wherever they sit ---
+# Each allow case carries a write verb, so it passes only through the allowlist.
+check allow 'push via the tasksync clone CLI, relative' \
+    'tasksync/tasks push some-slug --apply # -X PATCH api.notion.com/v1/pages'
+check allow 'mirror refresh from the notion-mirror clone, absolute' \
+    '/home/moiri/roost/code/notion-mirror/refresh.sh daily # requests.post( api.notion.com'
+check allow 'tasksync clone reached through a worktree-relative path' \
+    '../x/tasksync/tasks push some-slug --apply # -X PATCH api.notion.com/v1/pages'
+check ask  'a cd into the clone does not sanction a raw write beside it' \
+    'cd notion-mirror && curl -X PATCH "https://api.notion.com/v1/pages/abc"'
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

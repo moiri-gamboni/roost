@@ -7,7 +7,11 @@ After=network.target
 
 [Service]
 User=moiri
-ExecStart=/usr/bin/python3 /home/moiri/roost/apart-research/apart-tools/notion-mirror/webhook_receiver.py
+# The receiver reads the Notion token from the Claude Code config dir on the
+# first comment event; systemd starts it with no shell environment, so the
+# roost config dir is named here.
+Environment=CLAUDE_CONFIG_DIR=/home/moiri/roost/claude
+ExecStart=/usr/bin/python3 /home/moiri/roost/code/notion-mirror/webhook_receiver.py
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true

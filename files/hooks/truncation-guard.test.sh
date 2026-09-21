@@ -59,7 +59,7 @@ check deny  'tasks push tailed above the floor'         'tasks push some-slug --
 check deny  'tasks push, stderr merged, tailed'         'tasks push some-slug 2>&1 | tail -n 100'
 check deny  'tasks gate to head'                        'tasks gate some-slug | head -200'
 check deny  'tasks ls through grep then tail'           'tasks ls | grep -v DRAFT | tail -n 150'
-check deny  'absolute tasks entry script'               '/home/x/apart-tools/tasksync/tasks push s | tail -n 500'
+check deny  'absolute tasks entry script'               '/home/x/tasksync/tasks push s | tail -n 500'
 check allow 'tasks redirected to a file'                'tasks push some-slug > /tmp/out.txt 2>&1'
 check allow 'tail >=100 on another producer'            'git log --oneline | tail -n 200'
 check allow 'tasks then && separates the tail'          'tasks push s && git log --oneline | tail -n 100'
