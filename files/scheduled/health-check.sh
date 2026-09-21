@@ -186,7 +186,7 @@ fi
 # alarms with the tasks-side ones, so one listener covers both.
 TASKS_DEADMAN="$HOME/roost/apart-research/tasksync"
 if [ -f "$TASKS_DEADMAN/tasksync/deadman.py" ]; then
-    if ! ALARMS="$(cd "$TASKS_DEADMAN" && python3 -m tasksync.deadman --check 2>&1)"; then
+    if ! ALARMS="$(cd "$TASKS_DEADMAN" && python3 -m tasksync.deadman 2>&1)"; then
         # 6h cooldown matches the staleness threshold, so a real outage nags
         # ~4x a day rather than 24, and a recovery is visible within one cycle.
         if cooldown_ok "notion-rows-deadman" 21600; then
