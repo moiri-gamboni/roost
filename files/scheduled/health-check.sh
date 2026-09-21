@@ -53,11 +53,16 @@ OOM_SINCE=$(date -d '-5 min' +%s)
 date +%s > "$OOM_STATE"
 # A kill line: sending SIGTERM to process 381164 uid 1000 "rg": badness 950, VmRSS 1613 MiB
 # (the startup banner also starts with "sending SIGTERM", hence "to process").
-OOM_KILLS=$(sudo -n journalctl -u earlyoom --since "@$OOM_SINCE" -o cat --no-pager |
-    grep -E '^sending SIG(TERM|KILL) to process' | sed -E 's/ uid [0-9]+//; s/: badness [0-9]+,//')
-if [ -n "$OOM_KILLS" ]; then
-    logger -t "$_HOOK_TAG" "earlyoom killed: $OOM_KILLS"
-    ntfy_send -t "earlyoom killed a process" -p "high" "$OOM_KILLS"
+# An unreadable journal (unparseable state file, sudo refused) must not read
+# as "no kills": that is the one outcome this block exists to prevent.
+if ! OOM_JOURNAL=$(sudo -n journalctl -u earlyoom --since "@$OOM_SINCE" -o cat --no-pager); then
+    FAILURES="$FAILURES\n- earlyoom journal unreadable (since @$OOM_SINCE)"
+else
+    OOM_KILLS=$(grep -E '^sending SIG(TERM|KILL) to process' <<<"$OOM_JOURNAL" | sed -E 's/ uid [0-9]+//; s/: badness [0-9]+,//')
+    if [ -n "$OOM_KILLS" ]; then
+        logger -t "$_HOOK_TAG" "earlyoom killed: $OOM_KILLS"
+        ntfy_send -t "earlyoom killed a process" -p "high" "$OOM_KILLS"
+    fi
 fi
 
 DISK_PCT=$(df / --output=pcent | tail -1 | tr -d ' %')
