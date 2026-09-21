@@ -42,6 +42,24 @@ fi
 
 check_service "cloudflared"
 
+# earlyoom stands between a swap thrash and the kernel's OOM killer (files/
+# earlyoom.default). It logs each kill to its own journal and nothing else
+# reports it, so replay the kills since the last run here. The window is kept
+# in a state file rather than "-5min" so a delayed run misses nothing.
+check_service "earlyoom"
+OOM_STATE="$HOOK_RUNTIME_DIR/earlyoom-since"
+OOM_SINCE=$(date -d '-5 min' +%s)
+[ -f "$OOM_STATE" ] && read -r OOM_SINCE < "$OOM_STATE"
+date +%s > "$OOM_STATE"
+# A kill line: sending SIGTERM to process 381164 uid 1000 "rg": badness 950, VmRSS 1613 MiB
+# (the startup banner also starts with "sending SIGTERM", hence "to process").
+OOM_KILLS=$(sudo -n journalctl -u earlyoom --since "@$OOM_SINCE" -o cat --no-pager |
+    grep -E '^sending SIG(TERM|KILL) to process' | sed -E 's/ uid [0-9]+//; s/: badness [0-9]+,//')
+if [ -n "$OOM_KILLS" ]; then
+    logger -t "$_HOOK_TAG" "earlyoom killed: $OOM_KILLS"
+    ntfy_send -t "earlyoom killed a process" -p "high" "$OOM_KILLS"
+fi
+
 DISK_PCT=$(df / --output=pcent | tail -1 | tr -d ' %')
 logger -t "$_HOOK_TAG" "Disk: ${DISK_PCT}%"
 # Alert on the trend, not the level. A disk parked above 80% is a known state,
