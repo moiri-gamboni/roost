@@ -53,52 +53,18 @@
       }
     ],
     "PreCompact": [],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /home/moiri/roost/code/session/session --turn-end || true",
-            "timeout": 2
-          }
-        ]
-      }
-    ],
-    "StopFailure": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /home/moiri/roost/code/session/session --turn-fail || true",
-            "timeout": 2
-          },
-          {
-            "type": "command",
-            "command": "bash /home/moiri/roost/code/session/session --rewake-waiter",
-            "timeout": 700000,
-            "asyncRewake": true,
-            "rewakeMessage": "Claude usage limits (auto-resume waiter):",
-            "rewakeSummary": "usage waiter: fresh window \u2014 auto-resuming"
-          }
-        ]
-      }
-    ],
     "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /home/moiri/roost/code/session/session --session-end || true",
-            "timeout": 2
-          }
-        ]
-      },
       {
         "hooks": [
           {
             "type": "command",
             "command": "~/roost/claude/scripts/agent-worktree.sh finish",
             "timeout": 120
+          },
+          {
+            "type": "command",
+            "command": "bash /home/moiri/roost/code/session/session --session-end || true",
+            "timeout": 2
           }
         ]
       }
@@ -108,38 +74,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /home/moiri/roost/code/session/session --subagent-start || true",
-            "timeout": 2
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "~/roost/claude/hooks/subagent-context.sh",
             "timeout": 5
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
+          },
           {
             "type": "command",
-            "command": "bash /home/moiri/roost/code/session/session --subagent-end || true",
-            "timeout": 2
-          }
-        ]
-      }
-    ],
-    "PostCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /home/moiri/roost/code/session/session --compact-mark || true",
+            "command": "bash /home/moiri/roost/code/session/session --subagent-start || true",
             "timeout": 2
           }
         ]
@@ -153,25 +93,6 @@
             "type": "command",
             "command": "~/roost/claude/hooks/shellcheck-edit.sh",
             "timeout": 10
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /home/moiri/roost/code/session/session --hook || true",
-            "timeout": 2
-          },
-          {
-            "type": "command",
-            "command": "bash /home/moiri/roost/code/session/session --rewake-waiter",
-            "timeout": 700000,
-            "asyncRewake": true,
-            "rewakeMessage": "Claude usage limits (auto-resume waiter):",
-            "rewakeSummary": "usage waiter: fresh window \u2014 auto-resuming"
           }
         ]
       }
@@ -244,6 +165,77 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /home/moiri/roost/code/session/session --hook || true",
+            "timeout": 2
+          },
+          {
+            "type": "command",
+            "command": "bash /home/moiri/roost/code/session/session --rewake-waiter",
+            "timeout": 700000,
+            "asyncRewake": true,
+            "rewakeMessage": "Claude usage limits (auto-resume waiter):",
+            "rewakeSummary": "usage waiter: fresh window — auto-resuming"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /home/moiri/roost/code/session/session --turn-end || true",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /home/moiri/roost/code/session/session --turn-fail || true",
+            "timeout": 2
+          },
+          {
+            "type": "command",
+            "command": "bash /home/moiri/roost/code/session/session --rewake-waiter",
+            "timeout": 700000,
+            "asyncRewake": true,
+            "rewakeMessage": "Claude usage limits (auto-resume waiter):",
+            "rewakeSummary": "usage waiter: fresh window — auto-resuming"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /home/moiri/roost/code/session/session --subagent-end || true",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /home/moiri/roost/code/session/session --compact-mark || true",
+            "timeout": 2
+          }
+        ]
+      }
     ]
   },
   "worktree": {
@@ -263,11 +255,11 @@
     "plugin-dev@claude-plugins-official": true,
     "praxis@praxis-marketplace": true,
     "serena@claude-plugins-official": true,
+    "diataxis@diataxis-skill": true,
     "tasksync@work-tools": true,
     "outbox@work-tools": true,
     "session@work-tools": true,
-    "granola-mirror@work-tools": true,
-    "diataxis@diataxis-skill": true
+    "granola-mirror@work-tools": true
   },
   "extraKnownMarketplaces": {
     "work-tools": {
@@ -283,11 +275,16 @@
       }
     }
   },
-  "feedbackDrafts": "off",
   "feedbackSurveyRate": 0,
+  "feedbackDrafts": "off",
   "promptCacheTtl": "1h",
   "subagentPromptCacheTtl": "1h",
   "effortLevel": "xhigh",
+  "modelSettings": {
+    "claude-fable-5-1": {
+      "effortLevel": "high"
+    }
+  },
   "promptSuggestionEnabled": false,
   "awaySummaryEnabled": false,
   "askUserQuestionTimeout": "never",
@@ -301,10 +298,10 @@
   "switchModelsOnFlag": true,
   "autoContinueAtUsageLimit": true,
   "autoScrollEnabled": false,
-  "autoUploadSessions": false,
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
   "crossSessionInbound": "accept",
+  "autoUploadSessions": false,
   "agentPushNotifEnabled": false,
   "skipAutoPermissionPrompt": true
 }
