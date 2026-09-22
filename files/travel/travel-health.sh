@@ -73,16 +73,17 @@ if [ "$_travel_vpn_state" = "on" ]; then
     fi
 
     # Kill-switch: OUTPUT REJECT for xray uid that doesn't egress via wg-proton or lo.
-    # Match structurally on `--uid-owner <anything> ... -j REJECT` so the rule is
-    # detected whether iptables-save shows the UID symbolically or numerically.
-    if sudo iptables -S OUTPUT | grep -qE -- '--uid-owner [^ ]+.*-j REJECT'; then
+    # Matched on xray's own uid, named or numeric (iptables-save may print either),
+    # so another per-uid REJECT in OUTPUT cannot stand in for this one.
+    _travel_xray_reject="--uid-owner (xray|$(id -u xray)) .*-j REJECT"
+    if sudo iptables -S OUTPUT | grep -qE -- "$_travel_xray_reject"; then
         logger -t "$_HOOK_TAG" "OK: IPv4 kill-switch REJECT rule present"
     else
         logger -t "$_HOOK_TAG" "FAIL: IPv4 kill-switch REJECT rule missing while vpn=on"
         FAILURES="$FAILURES\n- IPv4 kill-switch REJECT rule missing"
     fi
 
-    if sudo ip6tables -S OUTPUT | grep -qE -- '--uid-owner [^ ]+.*-j REJECT'; then
+    if sudo ip6tables -S OUTPUT | grep -qE -- "$_travel_xray_reject"; then
         logger -t "$_HOOK_TAG" "OK: IPv6 kill-switch REJECT rule present"
     else
         logger -t "$_HOOK_TAG" "FAIL: IPv6 kill-switch REJECT rule missing while vpn=on"
@@ -130,7 +131,7 @@ if [ "$_travel_travel_state" = "on" ]; then
     fi
 fi
 
-unset _travel_state_dir _travel_vpn_state _travel_travel_state _travel_wg_state
+unset _travel_state_dir _travel_vpn_state _travel_travel_state _travel_wg_state _travel_xray_reject
 
 # --- PrivateBin (origin for paste.$DOMAIN behind the CF tunnel) ---
 check_service "php8.3-fpm"
