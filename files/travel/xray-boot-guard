@@ -19,10 +19,14 @@ if [ "$vpn_state" != "on" ]; then
     exit 0
 fi
 
+# xray's own REJECT, named or numeric (iptables-save may print either), so
+# another per-uid REJECT in OUTPUT cannot stand in for it.
+XRAY_REJECT="--uid-owner (xray|$(id -u xray)) .*-j REJECT"
+
 for _ in $(seq 1 30); do
     if [ -d "/sys/class/net/$WG_IFACE" ] \
-       && iptables -S OUTPUT | grep -qE -- '--uid-owner [^ ]+.*-j REJECT' \
-       && ip6tables -S OUTPUT | grep -qE -- '--uid-owner [^ ]+.*-j REJECT'; then
+       && iptables -S OUTPUT | grep -qE -- "$XRAY_REJECT" \
+       && ip6tables -S OUTPUT | grep -qE -- "$XRAY_REJECT"; then
         logger -t "$TAG" "wg-proton up and kill-switch present; proceeding"
         exit 0
     fi
