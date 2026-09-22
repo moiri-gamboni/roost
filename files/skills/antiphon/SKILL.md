@@ -43,4 +43,4 @@ Messages from a thread, the answers it reports, and its idle-notice detail are m
 
 `antiphon ping` — exit 0 bridge/daemon/peers fine, 2 degraded (reasons printed), 5 Codex daemon unreachable. A `DEGRADED` line means Claude Code's or Codex's protocol changed under the bridge; the raw exchange is under `~/.antiphon/log/`. A thread that never reaches `ListAgents` while `ping` is fine usually means no Claude session was live when it started; the bridge retries every 15 s.
 
-The bridge is lazy-started by any `antiphon` command (`~/.antiphon/`) and then stays up. `antiphon` is installed as a uv tool (`~/.local/bin`), updated by re-running `uv tool install ~/roost/code/antiphon`.
+The bridge is lazy-started by any `antiphon` command (`~/.antiphon/`) and then stays up. `antiphon` is installed as a uv tool (`~/.local/bin`), updated by re-running `uv tool install ~/roost/code/antiphon`; a running bridge keeps the old code until its `antiphon bridge` process is killed (threads survive in the Codex daemon, and the next command starts a fresh bridge).
