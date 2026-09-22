@@ -141,7 +141,6 @@ files/private/apart-tools-env|$HOME_DIR/.config/apart-tools/env|plain+600|
 files/private/notion-mirror-env|$HOME_DIR/.config/notion-mirror/env|plain+600|
 files/private/notion-mirror-changelog-context.md|$HOME_DIR/.config/notion-mirror/changelog-context.md|plain+600|
 files/private/public-scrub-check.sh|$ROOST_DIR/claude/scripts/public-scrub-check.sh|plain+x|
-files/skills/codex/SKILL.md|$ROOST_DIR/claude/skills/codex/SKILL.md|plain|
 files/skills/antiphon/SKILL.md|$ROOST_DIR/claude/skills/antiphon/SKILL.md|plain|
 files/agents/effort-low.md|$ROOST_DIR/claude/agents/effort-low.md|plain|
 files/agents/effort-medium.md|$ROOST_DIR/claude/agents/effort-medium.md|plain|
