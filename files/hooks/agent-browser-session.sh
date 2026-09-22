@@ -10,8 +10,10 @@
 # which is also what CLAUDE_CODE_SESSION_ID carries. A session name may only
 # contain letters, digits, hyphens and underscores; a UUID qualifies.
 #
-# The daemon behind each session exits after an hour without commands, so a
-# session that ends without `agent-browser close` leaks nothing for long.
+# The daemon behind each session exits after 15 minutes without commands
+# (idleTimeout in ~/.agent-browser/config.json, from
+# files/agent-browser-config.json), so a session that ends without
+# `agent-browser close` leaks nothing for long.
 #
 # SessionStart fires again on /clear, --resume and compaction, against the
 # same env file, so the line is only appended when it is not already there.

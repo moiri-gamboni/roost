@@ -70,6 +70,9 @@ fi
 envsubst '$HOME_DIR' < "$REMOTE_DIR/files/apparmor/agent-browser-chrome" > /etc/apparmor.d/agent-browser-chrome
 apparmor_parser -r /etc/apparmor.d/agent-browser-chrome
 ok "agent-browser Chrome AppArmor userns profile installed"
+install -d -o "$USERNAME" -g "$USERNAME" "$HOME_DIR/.agent-browser"
+install -m 0644 -o "$USERNAME" -g "$USERNAME" "$REMOTE_DIR/files/agent-browser-config.json" "$HOME_DIR/.agent-browser/config.json"
+ok "agent-browser config installed (idle browsers shut down after 15 min)"
 
 # --- uv ---
 
