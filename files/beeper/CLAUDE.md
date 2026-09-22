@@ -4,12 +4,12 @@ Beeper Server (the headless Beeper Desktop that the attention queue in `~/roost/
 
 ## Files
 
-- `beeper-egress.sh` → `/usr/local/sbin/beeper-egress` (root). `up` resolves the allowlist, builds the `beeper-egress` chain in both `iptables` and `ip6tables`, and hooks it into `OUTPUT` for `--uid-owner beeper`; `ensure` re-resolves and rebuilds only when the address set grew or a chain, its final REJECT, or a hook is missing; `down` removes both (the user is then unfiltered). The chain is loopback ACCEPT, then TCP 443 ACCEPT per address, then LOG (`beeper-reject: `, rate-limited per destination so a telemetry burst cannot hide a needed host), then REJECT. It is replaced whole by `iptables-restore --noflush`, which commits atomically, so a refresh never passes through a state without the REJECT.
+- `beeper-egress.sh` → `/usr/local/sbin/beeper-egress` (root). `up` resolves the allowlist, builds the `beeper-egress` chain in both `iptables` and `ip6tables`, and hooks it into `OUTPUT` for `--uid-owner beeper`; `ensure` re-resolves and rebuilds when the address set differs from the one last applied, or a chain, its final REJECT, or a hook is missing; `down` removes both (the user is then unfiltered). The chain is loopback ACCEPT, then TCP 443 ACCEPT per address, then LOG (`beeper-reject: `, rate-limited per destination so a telemetry burst cannot hide a needed host), then REJECT. It is replaced whole by `iptables-restore --noflush`, which commits atomically, so a refresh never passes through a state without the REJECT.
 - `egress-hosts` → `/etc/beeper-egress/hosts`: the allowlist, one host per line with why.
 
 ## State and inspection
 
-- `/var/lib/beeper-egress/addresses`: the union of every address ever resolved for the allowlist (`<address> <host>`), so a DNS rotation can add addresses but never strand the server. Delete a line by hand to drop an address; the next `up` rebuilds without it.
+- `/var/lib/beeper-egress/addresses`: the union of every address ever resolved for the hosts still listed (`<address> <host>`), so a DNS rotation can add addresses but never strand the server; removing a host from the list drops its addresses on the next `ensure`. `addresses.applied` is the set last applied in both families, written only after both succeed, so a failed apply is retried on the next run. Runs take a lock (`/run/beeper-egress.lock`), so the timer and a server start never interleave.
 - Rejected traffic: `sudo journalctl -k | grep 'beeper-reject: '` (the kernel journal needs root). A reject to a known telemetry host is the policy working; a reject to anything else means Beeper needs a host the list lacks.
 - The chain: `sudo iptables -S beeper-egress`, `sudo ip6tables -S beeper-egress`.
 - The chain is the only per-uid rule this policy puts in `OUTPUT` (`-j beeper-egress`, not `-j REJECT`), and the travel VPN's kill-switch checks match xray's own uid, so neither policy's checks can pass on the other's rules.
