@@ -1,0 +1,10 @@
+# Hosts Beeper Server may reach, TCP 443 only. Deployed to
+# /etc/beeper-egress/hosts; read by beeper-egress. Everything not listed is
+# rejected and logged as "beeper-reject:" in the kernel journal.
+api.beeper.com                      # Desktop API account calls, update feed; shares its address with ai-services.beeper.com
+matrix.beeper.com                   # homeserver; CNAME to a pool of 6 v4 + 6 v6 addresses
+roomserv.beeper.com                 # room service
+sygnal.beeper.com                   # push gateway
+updates.beeper.com                  # self-update
+download.beeper.com                 # self-update
+beeper-desktop.download.beeper.com  # the update feed's artifact URL host

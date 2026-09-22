@@ -1,6 +1,6 @@
 # files/ — what each deployed file is for
 
-Everything here is deployed by `roost-apply push` from the manifest in `scripts/roost-apply.sh` (explicit list, no globs: a new file needs a manifest line). The root `CLAUDE.md` has the one-line map; this file holds the per-file detail that only matters when editing them. Subdirectories with their own `CLAUDE.md`: `hooks/`, `scripts/`, `scheduled/`, `travel/`, `laptop/`, `private/` (README there).
+Everything here is deployed by `roost-apply push` from the manifest in `scripts/roost-apply.sh` (explicit list, no globs: a new file needs a manifest line). The root `CLAUDE.md` has the one-line map; this file holds the per-file detail that only matters when editing them. Subdirectories with their own `CLAUDE.md`: `hooks/`, `scripts/`, `scheduled/`, `travel/`, `beeper/`, `laptop/`, `private/` (README there).
 
 ## Claude Code config
 

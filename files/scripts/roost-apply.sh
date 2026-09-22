@@ -205,6 +205,8 @@ files/travel/vision-fallback.caddy|/etc/caddy/sites-enabled/vision-fallback.cadd
 files/privatebin/conf.php|/etc/privatebin/conf.php|plain|
 files/privatebin/php-fpm-pool.conf|/etc/php/8.3/fpm/pool.d/privatebin.conf|plain|restart:php8.3-fpm
 files/privatebin/privatebin.caddy|/etc/caddy/sites-enabled/privatebin.caddy|plain|reload-or-restart:caddy
+files/beeper/beeper-egress.sh|/usr/local/sbin/beeper-egress|plain+x|
+files/beeper/egress-hosts|/etc/beeper-egress/hosts|plain|
 files/private/caddy-sites/app.caddy|/etc/caddy/sites-enabled/app.caddy|plain|reload-or-restart:caddy
 files/private/caddy-sites/analytics.caddy|/etc/caddy/sites-enabled/analytics.caddy|envsubst:TAILSCALE_IP|reload-or-restart:caddy
 files/private/caddy-sites/tailnet-scratch.caddy|/etc/caddy/sites-enabled/tailnet-scratch.caddy|plain|reload-or-restart:caddy

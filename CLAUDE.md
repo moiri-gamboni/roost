@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guidance for work **in this repo**. The box-wide facts a session elsewhere needs (layout, network, hooks, gotchas) live in the deployed global CLAUDE.md (`files/private/global-CLAUDE.md`, Infrastructure section), which no longer includes this file. Subsystem detail lives next to the code: `files/CLAUDE.md` (deployed config files), `files/hooks/`, `files/scripts/`, `files/scheduled/`, `files/travel/`, `files/laptop/`, `files/private/` each have their own `CLAUDE.md`, loaded when you work there. Reusable procedures are in `docs/runbooks/`.
+Guidance for work **in this repo**. The box-wide facts a session elsewhere needs (layout, network, hooks, gotchas) live in the deployed global CLAUDE.md (`files/private/global-CLAUDE.md`, Infrastructure section), which no longer includes this file. Subsystem detail lives next to the code: `files/CLAUDE.md` (deployed config files), `files/hooks/`, `files/scripts/`, `files/scheduled/`, `files/travel/`, `files/beeper/`, `files/laptop/`, `files/private/` each have their own `CLAUDE.md`, loaded when you work there. Reusable procedures are in `docs/runbooks/`.
 
 ## Project Overview
 
@@ -47,6 +47,7 @@ roost-apply --caddy|--cloudflare|--ntfy|--systemd|--cron|--xray|--proton|--all  
   - `lib/` — shared code → `claude/lib/`: `_hook-env.sh` (hook JSON input, ntfy, rate limiting, logging), `cloudflare-assemble.sh`, `tmux-main-guard.sh` (rebuilds a killed `main` session from its surviving group; run by tmux's `session-closed` hook and `_ensure_tmux`)
   - `skills/` — skills → `$CLAUDE_CONFIG_DIR/skills/` (antiphon, html2markdown, havelock-api, humanizer, pastebin, roughdraft, zotero); each SKILL.md is self-describing
   - `travel/` — travel VPN server pieces (`files/travel/CLAUDE.md`)
+  - `beeper/` — default-deny egress for Beeper Server, the attention queue's local client (`files/beeper/CLAUDE.md`)
   - `setup/` — modular setup scripts run by `deploy.sh` via `remote_script()`: `system`, `create-user`, `ssh-hardening`, `ufw`, `swap`, `snapper`, `tailscale`, `shell-config`, `dev-tools`, `caddy`, `ntfy`, `cloudflare`, `privatebin`, `travel-vpn`, `dufs`, `glances`, `ram-monitor`, `earlyoom`, `cron`, `claude-code`, `claude-config`, `agent-tools`, `et`, `clip-forward`, `unattended-upgrades`
   - `laptop/` — runs on the laptop, not the server; each component has its own `install-*.sh` (`files/laptop/CLAUDE.md`)
 - **`extras/`** — standalone utilities: `hetzner-watch.sh` (server-type availability poller → ntfy), `vscode-tmux-tabs/` (VS Code Remote-SSH extension: one editor tab per `main` tmux window; see its README)
@@ -162,7 +163,7 @@ Defined in `files/shell/bashrc.sh` → `~/.bashrc.d/roost.sh`. A running shell r
 
 Rollback: `snapper list`, `snapper rollback <number>`, reboot.
 
-Not in any snapshot or backup: the regenerable trees `setup/snapper.sh` keeps as nested subvolumes (`~/.cache`, `~/.npm`, `~/.local/share/{fnm,uv,pnpm,virtualenvs,claude}`, `~/.vscode-server/cli`, `~/.codex/packages`, `~/roost/drop`). Their churn is what used to fill the root disk (`plans/snapshot-exclusions.md`); when unallocated space stays low after the balance, the health check prunes the oldest timeline snapshots itself.
+Not in any snapshot or backup: the regenerable trees `setup/snapper.sh` keeps as nested subvolumes (`~/.cache`, `~/.npm`, `~/.local/share/{fnm,uv,pnpm,virtualenvs,claude}`, `~/.vscode-server/cli`, `~/.codex/packages`, `~/roost/drop`), and the attention queue's four, kept out for the decrypted message text three of them hold and the per-release binaries in the fourth (`/var/lib/beeper-server`, `~/.local/share/bbctl`, `~/.local/state/attention-queue`, `/opt/beeper-server`; `files/beeper/CLAUDE.md`). Their churn is what used to fill the root disk (`plans/snapshot-exclusions.md`); when unallocated space stays low after the balance, the health check prunes the oldest timeline snapshots itself.
 
 ## Security Model
 

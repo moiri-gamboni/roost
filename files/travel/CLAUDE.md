@@ -25,7 +25,7 @@ Root CLAUDE.md has the overview (four paths, the mode table, the `roost-net` ver
 - **C** — Shadowsocks-2022 (`chacha20-poly1305`) on `:::51820`, TCP + UDP.
 - **D** — VLESS + XTLS-Vision over plain TLS on `:::8443` (Let's Encrypt wildcard via acme.sh DNS-01; bad-key probes fall back to a Caddy canned page on `127.0.0.1:8081` so the listener doesn't RST and fingerprint as a proxy).
 
-**Egress:** optional ProtonVPN WireGuard (`wg-proton`) as a policy-routed outbound. Traffic from the `xray` user plus Tailscale-exit-node forwarded traffic is fwmarked `0x1337` (mask `0x0000ffff`, so Tailscale's own mark bits survive); a dual-stack kill-switch REJECTs anything from those sources that would otherwise leave via `eth0`.
+**Egress:** optional ProtonVPN WireGuard (`wg-proton`) as a policy-routed outbound. Traffic from the `xray` user plus Tailscale-exit-node forwarded traffic is fwmarked `0x1337` (mask `0x0000ffff`, so Tailscale's own mark bits survive); a dual-stack kill-switch REJECTs anything from those sources that would otherwise leave via `eth0`. The box has a second per-uid egress policy (Beeper Server, `files/beeper/`), so every check on this kill-switch (`xray-boot-guard`, `travel-health.sh`, the `wg-proton` drop-in) matches xray's own uid, never any `--uid-owner … -j REJECT`.
 
 ## State
 
