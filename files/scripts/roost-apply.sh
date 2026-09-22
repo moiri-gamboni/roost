@@ -154,6 +154,7 @@ files/skills/pastebin/SKILL.md|$ROOST_DIR/claude/skills/pastebin/SKILL.md|envsub
 files/skills/roughdraft/SKILL.md|$ROOST_DIR/claude/skills/roughdraft/SKILL.md|plain|
 files/skills/zotero/SKILL.md|$ROOST_DIR/claude/skills/zotero/SKILL.md|plain|
 files/privatebin/privatebin-cloudflare.yml.tmpl|$ROOST_DIR/cloudflared/apps/privatebin.yml|envsubst:DOMAIN|run:~/roost/claude/lib/cloudflare-assemble.sh,restart:cloudflared
+files/private/apart-hackathon-analytics/analytics-cloudflare.yml.tmpl|$ROOST_DIR/cloudflared/apps/analytics.yml|envsubst:DOMAIN|run:~/roost/claude/lib/cloudflare-assemble.sh,restart:cloudflared
 MANIFEST_A
 
     # Category B: System files (root needed, may require service restarts)
@@ -165,6 +166,7 @@ files/cloudflare-config.yml|$HOME_DIR/.cloudflared/config.yml|envsubst:TUNNEL_ID
 files/ntfy-server.yml|/etc/ntfy/server.yml|plain|restart:ntfy
 files/et.cfg|/etc/et.cfg|envsubst:TAILSCALE_IP|restart:et
 files/caddy-tailscale.conf|/etc/systemd/system/caddy.service.d/tailscale.conf|plain|daemon-reload
+files/caddy-secrets.conf|/etc/systemd/system/caddy.service.d/secrets.conf|plain|daemon-reload,restart:caddy
 files/dufs.service|/etc/systemd/system/dufs.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload,restart:dufs
 files/glances.service|/etc/systemd/system/glances.service|envsubst:USERNAME|daemon-reload,restart:glances
 files/ram-monitor.service|/etc/systemd/system/ram-monitor.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
@@ -203,6 +205,7 @@ files/privatebin/conf.php|/etc/privatebin/conf.php|plain|
 files/privatebin/php-fpm-pool.conf|/etc/php/8.3/fpm/pool.d/privatebin.conf|plain|restart:php8.3-fpm
 files/privatebin/privatebin.caddy|/etc/caddy/sites-enabled/privatebin.caddy|plain|reload-or-restart:caddy
 files/private/caddy-sites/app.caddy|/etc/caddy/sites-enabled/app.caddy|plain|reload-or-restart:caddy
+files/private/caddy-sites/analytics.caddy|/etc/caddy/sites-enabled/analytics.caddy|envsubst:TAILSCALE_IP|reload-or-restart:caddy
 files/private/caddy-sites/tailnet-scratch.caddy|/etc/caddy/sites-enabled/tailnet-scratch.caddy|plain|reload-or-restart:caddy
 files/private/caddy-sites/tailnet-workout.caddy|/etc/caddy/sites-enabled/tailnet-workout.caddy|plain|reload-or-restart:caddy
 files/private/gp-picker.service|/etc/systemd/system/gp-picker.service|envsubst:USERNAME,HOME_DIR|daemon-reload,restart:gp-picker
