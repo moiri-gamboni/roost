@@ -4,16 +4,18 @@
 # Every packet the `beeper` user sends goes through the beeper-egress chain:
 # loopback (the Desktop API, the local DNS stub) and TCP 443 to the addresses
 # of the hosts in $HOSTS_FILE are accepted; anything else is logged with the
-# prefix "beeper-reject: " and rejected. The address set is the union of every
-# resolution so far ($ADDR_FILE), so a DNS rotation can add addresses but can
-# never strand the server on a stale set.
+# prefix "beeper-reject: " and rejected. The address set ($ADDR_FILE) is the
+# union of every resolution so far for the hosts still listed, so a DNS
+# rotation can add addresses but can never strand the server on a stale set,
+# while removing a host from the list removes its addresses.
 #
 # The chain is replaced whole by iptables-restore, which commits atomically:
 # a refresh never passes through a state without the REJECT, and a failed
 # restore leaves the previous chain in place.
 #
 #   up      resolve, build both chains, hook them into OUTPUT (idempotent)
-#   ensure  re-resolve; rebuild only if the set grew or a chain or hook is gone
+#   ensure  re-resolve; rebuild when the set differs from the one last applied
+#           ($APPLIED_FILE), or a chain, its final REJECT or a hook is missing
 #   down    unhook and delete the chains (the user is then unfiltered)
 set -euo pipefail
 export LC_ALL=C   # one collation for sort and comm
@@ -23,34 +25,40 @@ USER_NAME=beeper
 CHAIN=beeper-egress
 HOSTS_FILE=/etc/beeper-egress/hosts
 ADDR_FILE=/var/lib/beeper-egress/addresses
+APPLIED_FILE=$ADDR_FILE.applied
 TAG=roost/beeper-egress
 
+# The timer's ensure and the server's ExecStartPre can run at the same moment
+exec 9> /run/beeper-egress.lock
+flock 9
+
 # Resolve every listed host and merge into $ADDR_FILE ("<address> <host>"
-# lines). A host that does not resolve keeps its earlier addresses. Prints
-# "grew" when the union gained a line.
+# lines). A listed host that does not resolve keeps its earlier addresses; an
+# unlisted host's addresses are dropped.
 refresh_addresses() {
-    local host new
+    local hosts host new
+    hosts=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$HOSTS_FILE" | awk '{ print $1 }')
     new=$(mktemp)
-    [ -f "$ADDR_FILE" ] && cat "$ADDR_FILE" > "$new"
+    if [ -f "$ADDR_FILE" ]; then
+        awk 'NR == FNR { keep[$1]; next } $2 in keep' <(printf '%s\n' "$hosts") "$ADDR_FILE" > "$new"
+    fi
     while read -r host; do
+        [ -n "$host" ] || continue
         # getent exits 2 when a family has no record; v4-mapped v6 answers are skipped
         { getent ahostsv4 "$host" || true; getent ahostsv6 "$host" || true; } \
             | awk -v h="$host" '$1 !~ /^::ffff:/ { print $1, h }' >> "$new"
-    done < <(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$HOSTS_FILE" | awk '{ print $1 }')
+    done <<< "$hosts"
     sort -u -o "$new" "$new"
     mkdir -p "$(dirname "$ADDR_FILE")"
-    if [ -f "$ADDR_FILE" ] && cmp -s "$new" "$ADDR_FILE"; then
-        rm -f "$new"
-        return
-    fi
-    if [ -f "$ADDR_FILE" ]; then
-        comm -13 "$ADDR_FILE" "$new" | while read -r addr host; do
-            logger -t "$TAG" "new address $addr for $host"
-        done
-    fi
+    touch "$ADDR_FILE"
+    comm -13 "$ADDR_FILE" "$new" | while read -r addr host; do
+        logger -t "$TAG" "new address $addr for $host"
+    done
+    comm -23 "$ADDR_FILE" "$new" | while read -r addr host; do
+        logger -t "$TAG" "dropped address $addr for $host (host no longer listed)"
+    done
     mv "$new" "$ADDR_FILE"
     chmod 0644 "$ADDR_FILE"
-    echo grew
 }
 
 # $1: 4 or 6
@@ -83,6 +91,8 @@ apply() {
         "$ipt" -C OUTPUT -m owner --uid-owner "$USER_NAME" -j "$CHAIN" \
             || "$ipt" -I OUTPUT 1 -m owner --uid-owner "$USER_NAME" -j "$CHAIN"
     done
+    # Recorded only after both families applied, so a failed apply is retried
+    cp "$ADDR_FILE" "$APPLIED_FILE"
     logger -t "$TAG" "applied: $(awk '{ print $1 }' "$ADDR_FILE" | sort -u | wc -l) addresses"
 }
 
@@ -96,12 +106,13 @@ intact() {
 
 case "$ACTION" in
     up)
-        refresh_addresses > /dev/null
+        refresh_addresses
         apply
         ;;
     ensure)
-        if [ "$(refresh_addresses)" = grew ] || ! intact; then
-            logger -t "$TAG" "ensure: address set grew or rules missing; re-applying"
+        refresh_addresses
+        if ! cmp -s "$ADDR_FILE" "$APPLIED_FILE" || ! intact; then
+            logger -t "$TAG" "ensure: address set changed or rules missing; re-applying"
             apply
         fi
         ;;
@@ -115,6 +126,7 @@ case "$ACTION" in
                 "$ipt" -X "$CHAIN"
             fi
         done
+        rm -f "$APPLIED_FILE"
         logger -t "$TAG" "down: chains removed, $USER_NAME is unfiltered"
         ;;
     *)
