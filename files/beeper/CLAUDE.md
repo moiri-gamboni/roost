@@ -18,6 +18,7 @@ Beeper Server (the headless Beeper Desktop that the attention queue in `~/roost/
 
 - `/opt/beeper-server/<version>/beeper-server` with `current` → the running version, plus the vendor tarball beside it for rollback; the feed publishes a sha512 to check a download against (`https://api.beeper.com/desktop/update-feed.json?bundleID=com.automattic.beeper.server&platform=linux&channel=stable&arch=x64`).
 - `/var/lib/beeper-server` (0700 `beeper`): the user's home; `.cache/BeeperServer/` is where the binary unpacks itself, `data/` is `--data-dir` (message store, logs, `config.json` with `sentry_disabled`).
-- Both, plus the bridges' `~/.local/share/bbctl` and the queue's `~/.local/state/attention-queue`, are nested btrfs subvolumes: decrypted message text stays out of snapper snapshots and the off-site backup.
+- `~/.local/share/bbctl/built/`: `bbctl` and the bridges, built here from pinned release tags rather than downloaded (bbctl's own download path has no checksum). Bridges build with the pure-Go crypto backend, `./build.sh -tags goolm -o <path>` in a checkout of the tag, and run through `bbctl run --custom-startup-command <path> sh-<type>`; `~/.local/bin/bbctl` and the unversioned bridge names are symlinks to the current build.
+- `/opt/beeper-server` and `/var/lib/beeper-server`, plus the bridges' `~/.local/share/bbctl` and the queue's `~/.local/state/attention-queue`, are nested btrfs subvolumes: decrypted message text stays out of snapper snapshots and the off-site backup.
 
 Beeper Server and the one-minute `ensure` currently run as transient units started by hand (`systemctl status beeper-server beeper-egress-ensure.timer`); they do not survive a reboot, and nothing runs unfiltered after one because nothing starts.
