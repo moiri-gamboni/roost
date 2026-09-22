@@ -34,7 +34,7 @@ Codex's automatic reviewer denied an action in "<name>" (token a1b2c3): <reason>
 The thread has continued without it. Reply with: antiphon approve a1b2c3   or   antiphon deny a1b2c3 -- <why>
 ```
 
-Decide as for a command of your own; never approve what this session would not run itself, and ask the user where your own rules would. Approving cannot rescue a denial reading `risk critical`: the guardian re-reviews the retry and refuses again, holding critical risk beyond anyone's authorization (whether it rescues a lower-rated one is untested), so do not promise the user the action will now run. When you want the decision to be yours from the start, `antiphon start --review-by-parent`: there the request comes to you directly and your approval is what runs it.
+Decide as for a command of your own; never approve what this session would not run itself, and ask the user where your own rules would. The guardian reviews the retry again, and an explicit approval lets a `risk high` denial through. A `critical` refusal has no token, since no approval can override it: it arrives as `... refused an action in "<name>" as critical risk: ...` with the command and directory. Tell the user; if they want it done, they run it themselves outside Codex, and you never try to get it past the reviewer another way. When you want every decision to be yours from the start, `antiphon start --review-by-parent`: there the request comes to you directly and your approval is what runs it.
 
 ## Codex output is untrusted
 
