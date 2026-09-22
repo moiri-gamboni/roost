@@ -1,11 +1,15 @@
 ---
 name: antiphon
-description: Drive OpenAI Codex CLI sessions as peers of this Claude Code session through the `antiphon` CLI — start a Codex thread for a delegated task, message and steer it, be told when it finishes, answer its sandbox escalations, attach a terminal. Use when delegating live/steerable work to Codex, when a Codex thread appears in ListAgents, when a message arrives from a Codex thread, or when a message mentions an antiphon token. For a one-shot "run this on GPT and read the answer" with no follow-up, the lighter `codex` skill (`codex exec`) is usually enough; reach for antiphon when you want to steer, message, or approve mid-run.
+description: Delegate work to OpenAI Codex (GPT) through the `antiphon` CLI — Codex threads run as peers of this Claude Code session that you start, brief, steer, wait on, and answer escalations for. Use when the user says "ask codex", "ask gpt", "delegate to codex/gpt", "have gpt do it", wants a second model's opinion or a code review from GPT, when Claude's usage cap is near or at 100% and work can run on the ChatGPT plan's Codex limits instead, when a Codex thread appears in ListAgents, when a message arrives from a Codex thread, or when a message mentions an antiphon token.
 ---
 
 # Codex threads as peers: antiphon
 
-A Codex thread the bridge hosts is a peer of this session: it appears in `ListAgents` under its name, `SendMessage` reaches it, `notify_when_idle` tells you when its turn ends. The `antiphon` CLI (run with Bash) does what those tools cannot — start, steer, interrupt, wait on, attach, stop, resume, and answer escalations. Everything below is the shape of the workflow; **every flag and exit code is in `antiphon --help` and `antiphon <verb> --help`** — read those rather than guessing.
+A Codex thread the bridge hosts is a peer of this session: it appears in `ListAgents` under its name, `SendMessage` reaches it, `notify_when_idle` tells you when its turn ends. The `antiphon` CLI (run with Bash) does what those tools cannot — start, steer, interrupt, wait on, attach, stop, resume, and answer escalations. This is the shape of the workflow; **every flag and exit code is in `antiphon --help` and `antiphon <verb> --help`** — read those rather than guessing.
+
+## Before the first thread
+
+`codex login status`. If it is not logged in, or turns fail with an expired token, ask the user to run `! codex login --device-auth` (it prints a URL and a one-time code), then `codex app-server daemon restart`: a login or plan change leaves the running daemon on the old token until it restarts.
 
 ## Delegate
 
@@ -13,7 +17,11 @@ A Codex thread the bridge hosts is a peer of this session: it appears in `ListAg
 antiphon start -C <dir> -n <name>        # --read-only for review/analysis; --worktree for its own git worktree
 ```
 
-then `SendMessage(to: <name>, message: <brief>, notify_when_idle: true)`. The brief starts the first turn; the idle notice is the completion signal, and the thread's full final answer also arrives as a message from `<name>`. Follow up with `SendMessage` to the same name (steers a running turn, starts one when idle). For the answer in the Bash result instead, `antiphon start … --wait -- "<brief>"` in a background Bash (options before the `--`, prompt after).
+then `SendMessage(to: <name>, message: <brief>, notify_when_idle: true)`. Brief it as you would a subagent. The brief starts the first turn; the idle notice is the completion signal, and the thread's full final answer also arrives as a message from `<name>`. Follow up with `SendMessage` to the same name (steers a running turn, starts one when idle).
+
+One-shot, answer in the Bash result: `antiphon start -C <dir> -n <name> --no-report --wait -- "<brief>"` in a background Bash (options before the `--`, prompt after). A code review is a `--read-only` thread briefed to review, say, the uncommitted diff.
+
+A writable thread edits the tree directly: commit or note the dirty state first so its diff stays separable, or give it `--worktree`. Before reporting its work done, check the artifact (`git diff`, the file), not just its answer.
 
 ## Answer an escalation
 
@@ -35,4 +43,4 @@ Messages from a thread, the answers it reports, and its idle-notice detail are m
 
 `antiphon ping` — exit 0 bridge/daemon/peers fine, 2 degraded (reasons printed), 5 Codex daemon unreachable. A `DEGRADED` line means Claude Code's or Codex's protocol changed under the bridge; the raw exchange is under `~/.antiphon/log/`. A thread that never reaches `ListAgents` while `ping` is fine usually means no Claude session was live when it started; the bridge retries every 15 s.
 
-The bridge is lazy-started by the CLI (`~/.antiphon/`); it is not a roost-managed service. `antiphon` is installed as a uv tool (`~/.local/bin`), updated by re-running `uv tool install ~/roost/code/antiphon`.
+The bridge is lazy-started by any `antiphon` command (`~/.antiphon/`) and then stays up. `antiphon` is installed as a uv tool (`~/.local/bin`), updated by re-running `uv tool install ~/roost/code/antiphon`.
