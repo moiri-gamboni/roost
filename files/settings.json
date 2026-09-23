@@ -93,6 +93,11 @@
             "type": "command",
             "command": "~/roost/claude/hooks/shellcheck-edit.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/instruction-file-edit.sh",
+            "timeout": 5
           }
         ]
       }
