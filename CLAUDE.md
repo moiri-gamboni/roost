@@ -58,7 +58,7 @@ roost-apply --caddy|--cloudflare|--ntfy|--systemd|--cron|--xray|--proton|--all  
 ~/roost/                    Managed root directory (name from ROOST_DIR_NAME)
 ├── claude/                 Claude Code config (CLAUDE_CONFIG_DIR)
 │   ├── settings.json       Default model, hooks, cleanup policy
-│   ├── hooks/              Event hooks (notify, statusline, shellcheck-edit, notion-write-guard, truncation-guard, fork-context-guard, redelegation-guard, subagent-context, agent-browser-session)
+│   ├── hooks/              Event hooks (notify, statusline, shellcheck-edit, notion-write-guard, truncation-guard, fork-context-guard, redelegation-guard, subagent-context, agent-browser-session) + session-switch-notify (the session CLI's push on a login switch)
 │   ├── scripts/            User CLIs → ~/bin (roost-apply, roost-net, agent-worktree)
 │   ├── scheduled/          Cron + timer jobs (health-check, auto-update, ram-monitor, …)
 │   ├── lib/                Shared: _hook-env.sh, cloudflare-assemble.sh

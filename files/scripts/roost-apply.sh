@@ -130,6 +130,7 @@ files/hooks/fork-context-guard.sh|$ROOST_DIR/claude/hooks/fork-context-guard.sh|
 files/hooks/redelegation-guard.sh|$ROOST_DIR/claude/hooks/redelegation-guard.sh|plain+x|
 files/hooks/subagent-context.sh|$ROOST_DIR/claude/hooks/subagent-context.sh|plain+x|
 files/hooks/agent-browser-session.sh|$ROOST_DIR/claude/hooks/agent-browser-session.sh|plain+x|
+files/hooks/session-switch-notify.sh|$ROOST_DIR/claude/hooks/session-switch-notify.sh|plain+x|
 files/agent-browser-config.json|$HOME_DIR/.agent-browser/config.json|plain|
 files/private/granola-digest.sh|$ROOST_DIR/claude/scripts/granola-digest.sh|plain+x|
 files/private/drive-mirror-refresh.sh|$ROOST_DIR/claude/scripts/drive-mirror-refresh.sh|plain+x|
