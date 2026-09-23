@@ -25,7 +25,9 @@
 #     starts from committed state plus its own changes.
 #
 # At exit Claude removes a clean root itself and prompts Keep/Remove for a dirty
-# one; SessionEnd then runs `finish`: each sub worktree is removed if it made no
+# one; it never calls a WorktreeRemove hook for git worktrees, and SessionEnd
+# fires only after that removal, with cwd back at the launch repo — which is why
+# sub-repo worktrees live outside the root. SessionEnd then runs `finish`: each sub worktree is removed if it made no
 # commits, fast-forwarded into the branch it came from when that is a pure ff
 # and the live checkout accepts it, and kept (with an ntfy summary) otherwise.
 #
