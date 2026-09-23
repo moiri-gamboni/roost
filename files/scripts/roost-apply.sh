@@ -208,6 +208,11 @@ files/privatebin/php-fpm-pool.conf|/etc/php/8.3/fpm/pool.d/privatebin.conf|plain
 files/privatebin/privatebin.caddy|/etc/caddy/sites-enabled/privatebin.caddy|plain|reload-or-restart:caddy
 files/beeper/beeper-egress.sh|/usr/local/sbin/beeper-egress|plain+x|
 files/beeper/egress-hosts|/etc/beeper-egress/hosts|plain|
+files/beeper/beeper-egress.service|/etc/systemd/system/beeper-egress.service|plain|daemon-reload
+files/beeper/beeper-egress-ensure.service|/etc/systemd/system/beeper-egress-ensure.service|plain|daemon-reload
+files/beeper/beeper-egress-ensure.timer|/etc/systemd/system/beeper-egress-ensure.timer|plain|daemon-reload,restart:beeper-egress-ensure.timer
+files/beeper/beeper-server.service|/etc/systemd/system/beeper-server.service|plain|daemon-reload
+files/beeper/attention-bridge@.service|/etc/systemd/system/attention-bridge@.service|envsubst:USERNAME,HOME_DIR|daemon-reload
 files/private/caddy-sites/app.caddy|/etc/caddy/sites-enabled/app.caddy|plain|reload-or-restart:caddy
 files/private/caddy-sites/analytics.caddy|/etc/caddy/sites-enabled/analytics.caddy|envsubst:TAILSCALE_IP|reload-or-restart:caddy
 files/private/caddy-sites/tailnet-scratch.caddy|/etc/caddy/sites-enabled/tailnet-scratch.caddy|plain|reload-or-restart:caddy

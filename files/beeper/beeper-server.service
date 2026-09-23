@@ -1,0 +1,26 @@
+[Unit]
+# Headless Beeper Desktop for the attention queue, as its own system user
+# behind the beeper-egress policy. The ExecStartPre ensure runs as root (the
+# leading +) on every start, including Restart=, so no start runs unfiltered:
+# Requires= orders the egress unit but does not re-apply its rules.
+Description=Beeper Server (attention queue)
+Documentation=file:/home/moiri/roost/code/server/files/beeper/CLAUDE.md
+Requires=beeper-egress.service
+After=beeper-egress.service network-online.target
+Wants=network-online.target
+
+[Service]
+User=beeper
+Group=beeper
+Environment=HOME=/var/lib/beeper-server
+WorkingDirectory=/var/lib/beeper-server
+ExecStartPre=+/usr/local/sbin/beeper-egress ensure
+ExecStart=/opt/beeper-server/current/beeper-server --host=127.0.0.1 --port=23373 --data-dir=/var/lib/beeper-server/data
+Restart=on-failure
+RestartSec=10s
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
