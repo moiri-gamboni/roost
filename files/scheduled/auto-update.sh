@@ -259,6 +259,11 @@ fi
 # the Node LTS bump above.
 track "agent-browser" bash -c "npm i -g --prefix \"\$HOME/.local\" agent-browser@latest && agent-browser install"
 
+# --- Language servers (Claude Code LSP plugins) ---
+# typescript stays on major 6: typescript-language-server needs the tsserver that
+# TypeScript 7 dropped (setup/dev-tools.sh).
+track "language servers" npm i -g --prefix "$HOME/.local" pyright@latest typescript-language-server@latest typescript@6 bash-language-server@latest
+
 # --- OS packages ---
 track "OS packages" bash -c "sudo DEBIAN_FRONTEND=noninteractive apt update -qq && sudo DEBIAN_FRONTEND=noninteractive apt -o Dpkg::Options::='--force-confold' upgrade -y"
 

@@ -45,6 +45,7 @@ roost-apply --caddy|--cloudflare|--ntfy|--systemd|--cron|--xray|--proton|--all  
   - `scripts/` — user CLIs → `claude/scripts/`, symlinked into `~/bin`: `roost-apply`, `roost-net` (`files/scripts/CLAUDE.md`)
   - `scheduled/` — cron + systemd-timer jobs → `claude/scheduled/` (`files/scheduled/CLAUDE.md`)
   - `lib/` — shared code → `claude/lib/`: `_hook-env.sh` (hook JSON input, ntfy, rate limiting, logging), `cloudflare-assemble.sh`, `tmux-main-guard.sh` (rebuilds a killed `main` session from its surviving group; run by tmux's `session-closed` hook and `_ensure_tmux`)
+  - `claude-plugins/` — the local `roost` plugin marketplace → `$CLAUDE_CONFIG_DIR/roost-plugins/` (`bash-lsp`; the Python/TypeScript LSP plugins are the official ones; detail: `files/CLAUDE.md`)
   - `skills/` — skills → `$CLAUDE_CONFIG_DIR/skills/` (antiphon, html2markdown, havelock-api, humanizer, pastebin, roughdraft, zotero); each SKILL.md is self-describing
   - `travel/` — travel VPN server pieces (`files/travel/CLAUDE.md`)
   - `beeper/` — default-deny egress for Beeper Server, the attention queue's local client (`files/beeper/CLAUDE.md`)
@@ -63,6 +64,7 @@ roost-apply --caddy|--cloudflare|--ntfy|--systemd|--cron|--xray|--proton|--all  
 │   ├── scheduled/          Cron + timer jobs (health-check, auto-update, ram-monitor, …)
 │   ├── lib/                Shared: _hook-env.sh, cloudflare-assemble.sh
 │   ├── skills/             Skills
+│   ├── roost-plugins/      Local plugin marketplace (bash-lsp)
 │   ├── usage/              session CLI data: per-login limit cache, sample/turn/focus logs, briefs, resume queue
 │   ├── accounts/           login vault for `session account`
 │   └── projects/           Session transcripts (auto-managed)

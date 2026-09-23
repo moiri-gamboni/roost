@@ -1,0 +1,19 @@
+{
+  "name": "bash-lsp",
+  "version": "1.0.0",
+  "description": "Bash language server (bash-language-server) for code navigation in shell scripts",
+  "lspServers": {
+    "bash": {
+      "command": "bash-language-server",
+      "args": ["start"],
+      "extensionToLanguage": {
+        ".sh": "shellscript",
+        ".bash": "shellscript"
+      },
+      "env": {
+        "SHELLCHECK_PATH": ""
+      },
+      "diagnostics": false
+    }
+  }
+}

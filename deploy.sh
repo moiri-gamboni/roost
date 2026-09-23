@@ -818,7 +818,6 @@ if [ "${SKIP_PLUGINS:-}" != "true" ]; then
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin marketplace add moiri-gamboni/praxis" || warn "Failed to add praxis marketplace"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install praxis@praxis-marketplace" || warn "Failed to install praxis plugin"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install ralph-loop@claude-plugins-official" || warn "Failed to install ralph plugin"
-    remote "sudo -u $USERNAME $CLAUDE_CMD plugin install serena@claude-plugins-official" || warn "Failed to install serena plugin"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin marketplace add mksglu/context-mode" || warn "Failed to add context-mode marketplace"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install context-mode@context-mode" || warn "Failed to install context-mode plugin"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin marketplace add moiri-gamboni/claude-strip-images" || warn "Failed to add claude-strip-images marketplace"

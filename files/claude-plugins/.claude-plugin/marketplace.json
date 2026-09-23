@@ -1,0 +1,13 @@
+{
+  "name": "roost",
+  "owner": {
+    "name": "roost"
+  },
+  "plugins": [
+    {
+      "name": "bash-lsp",
+      "description": "Bash language server (bash-language-server) for code navigation in shell scripts",
+      "source": "./bash-lsp"
+    }
+  ]
+}
