@@ -104,9 +104,8 @@ fi
 # the steady-state pass) and the alert says what it reclaimed. A balance only
 # returns slack from part-empty data chunks; when it reclaims nothing the
 # chunks are full of live extents — in practice files that snapshots still
-# pin — and the remedy is pruning snapshots or moving data off the filesystem,
-# and the remedy is pruning history: the oldest timeline snapshots go, three
-# per hour at most, until headroom is back. Never the off-site backup's pinned
+# pin — and the remedy is pruning history: the oldest timeline snapshots go,
+# three per hour at most, until headroom is back. Never the off-site backup's pinned
 # parent (its cleanup algorithm is empty) and never number/important ones —
 # those are the rollback points, and a fs that needs more than this is a
 # runaway writer, which the alert is for.
