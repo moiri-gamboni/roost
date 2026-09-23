@@ -415,7 +415,7 @@ Installs the sing-box CLI, the wrapper, the systemd unit, and fetches your confi
 
 ### Runbooks
 
-Procedures that get re-run live in `docs/runbooks/`: `singbox-client-deploy.md` (shipping a client-render change while in-country) and `path-d-vision.md` (Path D cert/listener/abuse troubleshooting). Design and state reference for the server pieces: `files/travel/CLAUDE.md`.
+Procedures that get re-run live in `docs/runbooks/`: `singbox-client-deploy.md` (shipping a client-render change while in-country), `path-d-vision.md` (Path D cert/listener/abuse troubleshooting) and `attention-queue.md` (the attention queue's credentials, Beeper Server rollback and update, firewall-flush recovery). Design and state reference for the server pieces: `files/travel/CLAUDE.md`.
 
 ### Reboot behavior
 
