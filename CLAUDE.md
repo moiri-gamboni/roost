@@ -41,7 +41,7 @@ roost-apply --caddy|--cloudflare|--xray|--all|…   # reload services directly (
   - `setup/` — one script per concern, run by `deploy.sh`, all sourcing `files/_setup-env.sh`
   - `hooks/` → `~/roost/claude/hooks/` — Claude Code event hooks, wired in `settings.json`: `notify`, `shellcheck-edit`, `notion-write-guard`, `truncation-guard` (deployed but unwired), `fork-context-guard`, `redelegation-guard`, `subagent-context`, `roughdraft-write-guard`, `agent-browser-session`. Table and mechanism: `files/hooks/CLAUDE.md`; what a session does when one fires: the global CLAUDE.md. The usage, time-tracking and auto-resume hooks and the statusline come from the `session` clone. Hook config is read at session start, so a wiring change reaches new sessions only
   - `scripts/` → `~/roost/claude/scripts/`, symlinked into `~/bin`: `roost-apply`, `roost-net` (travel VPN), `agent-worktree` (the per-session composite worktrees behind `agent`, wired as the `WorktreeCreate`/`SessionEnd` hooks; its header is the contract)
-  - `scheduled/` → `~/roost/claude/scheduled/`, via `cron-roost` or a timer: `health-check`, `auto-update` (runs `disk-cleanup`), `btrfs-balance`, `agents-cleanup`, `track-ssh-activity`, `ram-monitor`, `vision-abuse-watch`, `session-daily-brief`, `roughdraft-watch`, `scheduled-task`/`run-scheduled-task`. Schedules and policies: `files/scheduled/CLAUDE.md`
+  - `scheduled/` → `~/roost/claude/scheduled/`, via `cron-roost` or a timer: `health-check`, `auto-update` (runs `disk-cleanup`), `btrfs-balance`, `ram-monitor`, `vision-abuse-watch`, `session-daily-brief`, `roughdraft-watch`, `scheduled-task`/`run-scheduled-task`, plus `agents-cleanup` and `track-ssh-activity` (disabled). Schedules and policies: `files/scheduled/CLAUDE.md`
   - `lib/` → `~/roost/claude/lib/`: `_hook-env.sh` (hook JSON input, `ntfy_send`, rate limiting, logging), `cloudflare-assemble.sh`, `tmux-main-guard.sh`
   - `skills/` → `~/roost/claude/skills/`: one directory per skill, each `SKILL.md` self-describing
   - `shell/bashrc.sh` → `~/.bashrc.d/roost.sh` — PATH, tmux, the `agent`/`agents`/`attach` helpers (their contract is in the global CLAUDE.md). Running shells re-source it at their next prompt after a deploy changes it
@@ -50,7 +50,7 @@ roost-apply --caddy|--cloudflare|--xray|--all|…   # reload services directly (
   - the rest are service configs: `Caddyfile`, `cloudflare-config.yml` (a template; the live tunnel config is assembled from it plus app fragments), `ntfy-server.yml`, `tmux.conf`, `cron-roost`, systemd units, `settings.json`
 - `extras/` — standalone utilities: `hetzner-watch.sh` (server-type availability poller), `vscode-tmux-tabs/` (VS Code extension, see its README)
 
-The `session` tool (identity, rate-limit usage, time tracking, login switching, reboot survival) lives in its own clone at `~/roost/code/session`, whose README is the ops contract; this repo only deploys the conf, tmux hooks, cron tick and boot unit that feed it (`files/scripts/CLAUDE.md`).
+The `session` tool (identity, rate-limit usage, time tracking, login switching, reboot survival) lives in its own clone at `~/roost/code/session`, whose README is the ops contract; this repo only deploys the conf, tmux hooks, focus-tick timer and boot unit that feed it (`files/scripts/CLAUDE.md`).
 
 Scripts log to journald as `roost/<script-name>` (`journalctl -t roost/health-check`).
 
