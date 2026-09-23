@@ -10,7 +10,7 @@ Rules shared by the guards:
 
 | Event (matcher) | Script | What it does |
 |---|---|---|
-| Notification (`permission_prompt`) | `notify.sh` | Urgent ntfy push, rate-limited |
+| Notification (`permission_prompt`) | `notify.sh` | ntfy push, rate-limited, titled with the session's name (`session whoami --name`; the directory name before the session has a title) |
 | PostToolUse (Edit\|Write) | `shellcheck-edit.sh` | Shellchecks an edited `*.sh` and returns the findings as context; never blocks |
 | PostToolUse (Edit\|Write) | `instruction-file-edit.sh` | After an edit to a `CLAUDE.md` (any `*CLAUDE.md`), `AGENTS.md` or `SKILL.md`, returns a short checklist as context: what the file costs to load, main path only, one home per fact, tighten rather than append, check why a rule exists before cutting it. A `README.md` gets its own: written for humans, no overlap with the sibling CLAUDE.md or skill, no history. Once per session per file; never blocks |
 | PreToolUse (Bash) | `notion-write-guard.sh` | Asks before a command sending a write verb to `api.notion.com`. Commands through a `tasksync/` or `notion-mirror/` clone pass, and so do Notion's POST-shaped reads (`/query`, `/v1/search`) when each write call's URL literal can be paired with it. It matches the raw command, quotes and heredocs included (the URL usually sits in quotes). It never logs the command, which carries the token |
