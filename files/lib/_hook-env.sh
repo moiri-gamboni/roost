@@ -21,6 +21,10 @@ _HOOK_NAME="$(basename "${BASH_SOURCE[1]:-unknown}" .sh)"
 _HOOK_TAG="roost/$_HOOK_NAME"
 
 # --- JSON input (lazy: reads stdin only on first call) ---
+# The cache is two shell variables, so the first call must run in the hook's
+# own shell: made inside $(...), it caches in that subshell only, and every
+# later call reads the already-drained stdin. Prime it with a bare
+# `hook_input >/dev/null` before any `x=$(hook_json ...)`.
 _HOOK_INPUT=""
 _HOOK_INPUT_READ=false
 
