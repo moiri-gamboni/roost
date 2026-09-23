@@ -1,6 +1,6 @@
 # travel/ — travel VPN server pieces
 
-Root CLAUDE.md has the overview (four paths, the mode table, the `roost-net` verbs). README has the human playbook (pre-departure, departure day, mid-trip degradation, return). `docs/runbooks/` has the procedures that get re-run: `singbox-client-deploy.md`, `path-d-vision.md`. This file is the design and state reference for editing the pieces. Full rationale: `plans/add-stealth-protocols.md`, `plans/dns-architecture.md`, `plans/singbox-dns-bootstrap-fix.md`.
+The four paths are under Paths below, the mode table is in README's Travel VPN section, and the verbs are in `roost-net --help`. README also has the human playbook (pre-departure, departure day, mid-trip degradation, return). `docs/runbooks/` has the procedures that get re-run: `singbox-client-deploy.md`, `path-d-vision.md`. This file is the design and state reference for editing the pieces. Full rationale: `plans/add-stealth-protocols.md`, `plans/dns-architecture.md`, `plans/singbox-dns-bootstrap-fix.md`.
 
 ## Files
 
