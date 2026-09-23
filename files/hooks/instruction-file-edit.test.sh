@@ -29,7 +29,9 @@ expect "global source fires, global"     s1 /r/files/private/global-CLAUDE.md fi
 expect "deployed global fires, global"   s1 /home/u/roost/claude/CLAUDE.md fires "every turn of every session"
 expect "AGENTS.md fires"                 s1 /r/AGENTS.md fires
 expect "guest-CLAUDE.md fires"           s1 /r/files/laptop/guest-CLAUDE.md fires
-expect "README.md is silent"             s1 /r/README.md silent
+expect "README.md fires, readme text"    s1 /r/README.md fires "A README is for humans"
+expect "README.md again is silent"       s1 /r/README.md silent
+expect "README.rst is silent"            s1 /r/README.rst silent
 expect "a .sh file is silent"            s1 /r/x.sh silent
 expect "SKILL.md.bak is silent"          s1 /r/SKILL.md.bak silent
 expect "no session id still fires"       "" /r/other/CLAUDE.md fires
