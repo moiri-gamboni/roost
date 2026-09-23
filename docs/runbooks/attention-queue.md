@@ -41,7 +41,7 @@ Every failure below also shows up as a line in the `Service health alert` ntfy w
   chmod 600 ~/.config/attention-queue/beeper-token
   ```
 
-  An account that already exists logs straight in (reply shape: `attention-queue/captures/v1-app-setup-response-redacted.json`). Then `aq pass --dry-run` must exit 0.
+  At the first login the email of an existing Beeper account logged straight in, with no signup step (reply shape: `attention-queue/captures/v1-app-setup-response-redacted.json`). Then `aq pass --dry-run` must exit 0.
 - **From the phone?** No: the calls run on the box. A Claude session over SSH can run them; the code lands in the account's mailbox.
 - **Meanwhile.** The bridge is unaffected (it does not use this token); messages keep flowing into Beeper. The board goes stale and nudges stop until the pass runs again.
 
@@ -95,6 +95,7 @@ FEED='https://api.beeper.com/desktop/update-feed.json?bundleID=com.automattic.be
 META=$(curl -fsS "$FEED")
 jq '{version, url, sha512, pub_date}' <<<"$META"
 V=$(jq -r .version <<<"$META")
+if [ "$V" = "$(readlink /opt/beeper-server/current)" ]; then echo "already on $V"; exit 0; fi
 TARBALL=/opt/beeper-server/beeper-server-$V-linux-x64.tar.gz
 sudo curl -fsSL -o "$TARBALL" "$(jq -r .url <<<"$META")"
 if [ "$(sudo openssl dgst -sha512 -binary "$TARBALL" | base64 -w0)" != "$(jq -r .sha512 <<<"$META")" ]; then
