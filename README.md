@@ -13,7 +13,7 @@ After running the deploy script you will have:
 - Session search and lineage tracking (claude-code-tools)
 - Push notifications to your phone (ntfy)
 - System monitoring (Glances) with automated health alerts
-- RAM monitoring with alerts per process (3GB) and per command name (6GB summed), and earlyoom to end a swap thrash in seconds rather than minutes
+- RAM monitoring logged to the journal per process (3GB) and per command name (6GB summed), and earlyoom to end a swap thrash in seconds rather than minutes; the health check ntfys its kills within five minutes
 - Off-site btrfs backups to laptop (daily incremental snapshots)
 - Drop folder for quick laptop-to-server file transfer
 - PrivateBin: end-to-end encrypted pastebin; links are publicly readable via the tunnel (`paste.<domain>`), creation is server-side only (publish via the `pastebin` skill)
