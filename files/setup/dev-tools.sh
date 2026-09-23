@@ -87,6 +87,19 @@ else
     ok "language servers installed (pyright, typescript-language-server, bash-language-server)"
 fi
 
+# --- ast-grep (syntax-tree code search; the engine behind ~/bin/sym) ---
+# From the release zip, and only its `ast-grep` binary: the zip and the npm
+# package also ship an `sg`, which in ~/.local/bin would shadow /usr/bin/sg
+# (the `sg docker -c` the tmux shells rely on).
+
+if as_user "command -v ast-grep" &>/dev/null; then
+    skip "ast-grep already installed"
+else
+    AST_GREP_VERSION=$(curl -fsSL https://api.github.com/repos/ast-grep/ast-grep/releases/latest | jq -r .tag_name)
+    as_user "curl -fsSL -o /tmp/ast-grep.zip https://github.com/ast-grep/ast-grep/releases/download/${AST_GREP_VERSION}/app-x86_64-unknown-linux-gnu.zip && unzip -o -j -q /tmp/ast-grep.zip ast-grep -d \"\$HOME/.local/bin\" && chmod +x \"\$HOME/.local/bin/ast-grep\" && rm -f /tmp/ast-grep.zip"
+    ok "ast-grep $AST_GREP_VERSION installed"
+fi
+
 # --- uv ---
 
 if as_user "command -v uv" &>/dev/null; then
