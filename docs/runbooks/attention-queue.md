@@ -28,8 +28,8 @@ Every failure below also shows up as a line in the `Service health alert` ntfy w
 
 `~/.config/attention-queue/beeper-token` (0600) is the Matrix access token the headless login handed back; the pass and the dead-man send it as the bearer.
 
-- **How expiry shows.** `aq pass` exits 1 with a 401 body in `~/.local/state/attention-queue/api-log/<today>.jsonl`; the dead-man reports `Beeper accounts unreadable` and, three slots later, `attention queue: last pass N min ago`. Beeper Server itself keeps running: the token gates the API, not the server's own session.
-- **Where to re-authenticate.** On the box, against the API, no token needed for these calls:
+- **How expiry shows.** `aq pass` exits 1 with a 401 body in `~/.local/state/attention-queue/api-log/<today>.jsonl`; the dead-man reports `Beeper accounts unreadable` and, three slots later, `attention queue: no pass for over 45 min`. Beeper Server itself keeps running: the token gates the API, not the server's own session.
+- **Where to re-authenticate.** On the box, against the API. Untested for re-authentication: this sequence has run once, for the first login, before any account was set up on the server, so whether it logs in again while one is set up is unknown. The API spec marks these three calls as needing no token, but `GET /v1/app/setup`, which it marks optional-auth, answers 401 without one today, so a 401 here is possible:
 
   ```bash
   API=http://127.0.0.1:23373
@@ -58,7 +58,7 @@ Every failure below also shows up as a line in the `Service health alert` ntfy w
 
 The bridge holds a Slack browser session (`xoxc-` token + `xoxd-` cookie) in `~/.local/share/bbctl/prod/sh-slack/mautrix-slack.db`, obtained with `login token` because Slack's email login demands a CAPTCHA the command interface cannot show.
 
-- **How expiry shows.** The bridge stays up but the login goes bad: `GET /v1/accounts` shows `sh-slack_…` with a status other than `connected` (`bad-credentials` in the bridge's state), the dead-man reports `Beeper account not connected: sh-slack_… <status>`, and the bridge bot posts in its control chat. `aq pass` then alarms `account matched zero chats` once the chats stop listing.
+- **How expiry shows.** The bridge stays up but the login goes bad: `GET /v1/accounts` shows `sh-slack_…` with a status other than `connected` (`bad-credentials` in the bridge's state), the dead-man reports `Beeper account not connected: sh-slack_… <status>`, and the bridge bot posts in its control chat. Once the chats stop listing, the pass records `No chats at all for sh-slack_…` and the dead-man reports it as `attention queue alarm: …`.
 - **Where to re-authenticate.** In the bridge's control chat (the DM with `@sh-slackbot:beeper.local`, room `!6FrQeeevFdLaH0k16dqQ:beeper.local`): send `login token`, then paste the `xoxc-…` token and the `xoxd-…` cookie value from a logged-in Slack web session (browser dev tools, `api.slack.com` requests or the `d` cookie on `app.slack.com`). No unit restart needed.
 - **From the phone?** The command and the paste, yes, from the Beeper app. Getting the token and cookie out of a browser session realistically needs a desktop browser.
 - **Meanwhile.** Existing chats stay readable; nothing new arrives from Slack and nothing sent from Beeper reaches Slack. Once logged in again the bridge backfills.
@@ -90,19 +90,35 @@ The data directory (`/var/lib/beeper-server/data`) is shared across versions; a 
 Updates are manual. The server does not update itself: 4.3.144 was published on 2026-09-23 while 4.3.123 ran for 19 h with no new build in its cache. The feed publishes the version, the artifact URL and a base64 sha512:
 
 ```bash
+bash -e <<'EOF'
 FEED='https://api.beeper.com/desktop/update-feed.json?bundleID=com.automattic.beeper.server&platform=linux&channel=stable&arch=x64'
-curl -s "$FEED" | jq '{version, url, sha512, pub_date}'
-V=$(curl -s "$FEED" | jq -r .version)
-sudo curl -fsSL -o "/opt/beeper-server/beeper-server-$V-linux-x64.tar.gz" "$(curl -s "$FEED" | jq -r .url)"
-[ "$(sudo openssl dgst -sha512 -binary "/opt/beeper-server/beeper-server-$V-linux-x64.tar.gz" | base64 -w0)" = "$(curl -s "$FEED" | jq -r .sha512)" ] && echo sha512 OK
-sudo mkdir -p "/opt/beeper-server/$V" && sudo tar -C "/opt/beeper-server/$V" --strip-components=1 -xzf "/opt/beeper-server/beeper-server-$V-linux-x64.tar.gz"
-sudo ln -sfn "$V" /opt/beeper-server/current && sudo systemctl restart beeper-server
+META=$(curl -fsS "$FEED")
+jq '{version, url, sha512, pub_date}' <<<"$META"
+V=$(jq -r .version <<<"$META")
+TARBALL=/opt/beeper-server/beeper-server-$V-linux-x64.tar.gz
+sudo curl -fsSL -o "$TARBALL" "$(jq -r .url <<<"$META")"
+if [ "$(sudo openssl dgst -sha512 -binary "$TARBALL" | base64 -w0)" != "$(jq -r .sha512 <<<"$META")" ]; then
+    sudo rm -f "$TARBALL"
+    echo "sha512 MISMATCH: tarball deleted, nothing installed" >&2
+    exit 1
+fi
+echo "sha512 OK"
+sudo mkdir -p "/opt/beeper-server/$V"
+sudo tar -C "/opt/beeper-server/$V" --strip-components=1 -xzf "$TARBALL"
+sudo ln -sfn "$V" /opt/beeper-server/current
+sudo systemctl restart beeper-server
+EOF
+```
+
+The block stops at the first failed step; on a sha512 mismatch it has deleted the tarball and changed nothing else. Then check the new version, the accounts and a pass:
+
+```bash
 curl -s http://127.0.0.1:23373/v1/info | jq -r .app.version
 curl -s -H "Authorization: Bearer $(cat ~/.config/attention-queue/beeper-token)" http://127.0.0.1:23373/v1/accounts | jq -r '.[] | "\(.accountID) \(.status)"'
 ~/roost/code/attention-queue/aq pass --dry-run > /dev/null; echo "exit $?"
 ```
 
-If the sha512 line does not print, delete the tarball and stop. After a good update, watch `sudo journalctl -k | grep beeper-reject` for a reject to an address outside the telemetry hosts: a new version wanting a new host shows up there (and in the dead-man as `beeper rejects to unlisted destinations`), and the fix is a line in `files/beeper/egress-hosts` pushed with `roost-apply`. Then bump `BEEPER_SERVER_VERSION` and `BEEPER_SERVER_SHA512` in `files/setup/attention-queue.sh` so a rebuilt box installs the version that is running. Remove the version before the previous one once the new one has run a day.
+After a good update, watch `sudo journalctl -k | grep beeper-reject` for a reject to an address outside the telemetry hosts: a new version wanting a new host shows up there (and in the dead-man as `beeper rejects to unlisted destinations`), and the fix is a line in `files/beeper/egress-hosts` pushed with `roost-apply`. Then bump `BEEPER_SERVER_VERSION` and `BEEPER_SERVER_SHA512` in `files/setup/attention-queue.sh` so a rebuilt box installs the version that is running. Remove the version before the previous one once the new one has run a day.
 
 ## Rebuild or update the bridge binaries
 
@@ -110,6 +126,13 @@ If the sha512 line does not print, delete the tarball and stop. After a good upd
 
 ## The egress policy after a firewall change
 
-`ufw reload`, `ufw disable`/`enable` and `systemctl restart ufw` flush the built-in chains, which drops the `beeper-egress` hook from `OUTPUT` (the chain itself survives). The ensure timer restores it within five minutes and the dead-man's probe runs ensure itself when it fails; to close the window at once: `sudo systemctl restart beeper-egress` (or `sudo beeper-egress ensure`). Never `beeper-egress down` while Beeper Server runs: it leaves the user unfiltered until the next ensure.
+On this box ufw leaves the built-in chains alone (`MANAGE_BUILTINS=no` in `/etc/default/ufw`), so `ufw reload`, `ufw disable`/`enable` and `systemctl restart ufw` keep the `beeper-egress` hook in `OUTPUT`. The hook goes when something flushes the built-in chains: a hand `iptables -F`/`-X` (or the `ip6tables` twin), another tool restoring the whole filter table, or ufw itself if `MANAGE_BUILTINS` is ever set to `yes`. The ensure timer puts it back within five minutes, and the dead-man's probe runs ensure itself when it fails. To put it back at once:
+
+```bash
+sudo beeper-egress ensure
+sudo iptables -S OUTPUT | grep beeper-egress && sudo ip6tables -S OUTPUT | grep beeper-egress
+```
+
+Do not use `sudo systemctl restart beeper-egress` for this: Beeper Server `Requires=` that unit, so restarting it restarts the server too. Never `beeper-egress down` while Beeper Server runs: it leaves the user unfiltered until the next ensure.
 
 To see what the policy is refusing: `sudo journalctl -k --since -1h | grep beeper-reject | sed -E 's/.*DST=([^ ]+).*DPT=([0-9]+).*/\1:\2/' | sort | uniq -c`. Rejects to `rudderstack.beeper-tools.com`, `es.beeper-tools.com` and `o248881.ingest.us.sentry.io` (resolve them to compare) are the policy working, at a steady 200 or so an hour.
