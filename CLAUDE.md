@@ -81,7 +81,7 @@ Event hooks, and what they mean for a session (mechanism per hook: `files/hooks/
 
 | Event | Script | Effect on the session |
 |---|---|---|
-| Notification | `hooks/notify.sh` | ntfy push (rate-limited, priority levels) |
+| Notification | `hooks/notify.sh` | ntfy push for permission prompts, titled with the session's name (rate-limited) |
 | UserPromptSubmit | `session --hook` (the `session` tool, `~/roost/code/session`) | Silent below `USAGE_WARN_PCT` (90). Above it, injects a one-line usage notice + one ⚠ advisory: keep working, the auto-resume waiter is armed. Never blocks a prompt. Also promotes the session's auto-title to its peer name once (what ListAgents prints and `SendMessage to:` takes, otherwise a cwd slug); `--name`/`/rename` win over it |
 | UserPromptSubmit + StopFailure (`asyncRewake`) | `session --rewake-waiter` | The auto-resume waiter: sleeps to the warned window's reset (or a login switch) and wakes the session, even idle. Nothing to do by hand |
 | Stop / StopFailure / SessionEnd / Subagent* / PostCompact / Notification(permission_prompt) | `session --turn-end` etc. | Lifecycle rows into `usage/turn-log.tsv` for `session time`; always exit 0 |
