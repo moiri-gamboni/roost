@@ -36,7 +36,12 @@ subvolume() {
         echo "  [!] $dir exists but is not a btrfs subvolume; move it aside and re-run" >&2
         exit 1
     fi
-    mkdir -p "$(dirname "$dir")"
+    # A missing ~/.local/share or ~/.local/state made here as root would stay
+    # root-owned and lock the user out of everything else that lives there.
+    case $dir in
+        "$HOME_DIR"/*) as_user mkdir -p "$(dirname "$dir")" ;;
+        *) mkdir -p "$(dirname "$dir")" ;;
+    esac
     btrfs subvolume create "$dir" > /dev/null
     chown "$owner" "$dir"
     chmod "$mode" "$dir"
