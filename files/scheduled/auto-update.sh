@@ -264,6 +264,18 @@ track "agent-browser" bash -c "npm i -g --prefix \"\$HOME/.local\" agent-browser
 # TypeScript 7 dropped (setup/dev-tools.sh).
 track "language servers" npm i -g --prefix "$HOME/.local" pyright@latest typescript-language-server@latest typescript@6 bash-language-server@latest
 
+# --- ast-grep (behind ~/bin/sym) ---
+# Only the `ast-grep` binary from the release zip: its `sg` would shadow /usr/bin/sg (setup/dev-tools.sh).
+if command -v ast-grep >/dev/null && github_release_cooldown_ok "ast-grep/ast-grep" 7; then
+    AST_GREP_LATEST=$(github_latest_version "ast-grep/ast-grep")
+    AST_GREP_CURRENT=$(ast-grep --version | awk '{print $2}')
+    if [ -n "$AST_GREP_LATEST" ] && [ "$AST_GREP_CURRENT" != "$AST_GREP_LATEST" ]; then
+        track "ast-grep" bash -c "curl -fsSL -o /tmp/ast-grep.zip https://github.com/ast-grep/ast-grep/releases/download/${AST_GREP_LATEST}/app-x86_64-unknown-linux-gnu.zip && unzip -o -j -q /tmp/ast-grep.zip ast-grep -d \"\$HOME/.local/bin\" && rm -f /tmp/ast-grep.zip"
+    fi
+elif command -v ast-grep >/dev/null; then
+    logger -t "$_HOOK_TAG" "ast-grep: skipped (release < 7 days old)"
+fi
+
 # --- OS packages ---
 track "OS packages" bash -c "sudo DEBIAN_FRONTEND=noninteractive apt update -qq && sudo DEBIAN_FRONTEND=noninteractive apt -o Dpkg::Options::='--force-confold' upgrade -y"
 

@@ -91,6 +91,8 @@ chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-net"
 # install.sh owns the ~/bin/session symlink, the settings.json hook entries and
 # ~/roost/claude/session.conf.
 ln -sf "$ROOST_DIR/claude/scripts/agent-worktree.sh" "$HOME_DIR/bin/agent-worktree"
+ln -sf "$ROOST_DIR/claude/scripts/sym.py" "$HOME_DIR/bin/sym"
+chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/sym"
 
 # Restore the sessions a `session reboot` snapshotted, at boot. Lingering is
 # what lets the user manager (and so this unit) run with nobody logged in;
