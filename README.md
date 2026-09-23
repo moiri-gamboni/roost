@@ -332,7 +332,7 @@ hcloud server poweron <server-name>
 
 ## Troubleshooting
 
-**Tailscale IP changed:** `roost-apply push files/Caddyfile files/et.cfg` re-renders both with the new IP; `files/apps.caddy` names the IP literally, so edit it and push it too; then `sudo systemctl restart glances`. Or re-run `deploy.sh`.
+**Tailscale IP changed:** `roost-apply push files/Caddyfile files/et.cfg` re-renders both with the new IP (add `files/apps.caddy` to the same push); then `sudo systemctl restart glances`. Or re-run `deploy.sh`.
 
 **Cloudflare Tunnel not working:** `journalctl -u cloudflared`; check the tunnel ID and credentials path in `/etc/cloudflared/config.yml` and that the hostname has its CNAME ([Add a web app](#add-a-web-app), step 4).
 
