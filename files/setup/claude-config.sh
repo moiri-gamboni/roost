@@ -60,6 +60,21 @@ sed -i "s|~/roost/|~/$ROOST_DIR_NAME/|g" "$CLAUDE_DIR/hooks/reflect.md"
 
 ok "All hook scripts installed"
 
+# --- LSP plugins (code intelligence via Claude Code's LSP tool) ---------------
+# Binaries come from dev-tools.sh. Python and TypeScript use the official
+# plugins; Bash has none there, so it comes from the local `roost` marketplace
+# (files/claude-plugins/, loaded in place from $CLAUDE_DIR/roost-plugins/).
+mkdir -p "$CLAUDE_DIR/roost-plugins"
+cp -r "$REMOTE_DIR/files/claude-plugins/." "$CLAUDE_DIR/roost-plugins/"
+chown -R "$USERNAME:$USERNAME" "$CLAUDE_DIR/roost-plugins"
+if ! as_user "CLAUDE_CONFIG_DIR=$CLAUDE_DIR claude plugin marketplace list 2>/dev/null | grep -q roost-plugins"; then
+    as_user "CLAUDE_CONFIG_DIR=$CLAUDE_DIR claude plugin marketplace add $CLAUDE_DIR/roost-plugins" \
+        || warn "roost plugin marketplace add failed"
+fi
+for p in pyright-lsp@claude-plugins-official typescript-lsp@claude-plugins-official bash-lsp@roost; do
+    as_user "CLAUDE_CONFIG_DIR=$CLAUDE_DIR claude plugin install $p --scope user" || warn "$p install failed"
+done
+
 # --- private plugin installs (optional) -------------------------------------
 # Personal/work-specific Claude Code plugins live in the private repo; this
 # hook stays generic. The private script sees the same _setup-env vars.

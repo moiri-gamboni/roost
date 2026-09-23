@@ -249,7 +249,9 @@
     "playground@claude-plugins-official": true,
     "plugin-dev@claude-plugins-official": true,
     "praxis@praxis-marketplace": true,
-    "serena@claude-plugins-official": true,
+    "pyright-lsp@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "bash-lsp@roost": true,
     "diataxis@diataxis-skill": true,
     "tasksync@apart-tools": true,
     "outbox@apart-tools": true,
@@ -267,6 +269,12 @@
       "source": {
         "source": "git",
         "url": "git@github.com:moiri-gamboni/diataxis-skill.git"
+      }
+    },
+    "roost": {
+      "source": {
+        "source": "directory",
+        "path": "/home/moiri/roost/claude/roost-plugins"
       }
     }
   },

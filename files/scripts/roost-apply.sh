@@ -131,6 +131,8 @@ files/hooks/redelegation-guard.sh|$ROOST_DIR/claude/hooks/redelegation-guard.sh|
 files/hooks/subagent-context.sh|$ROOST_DIR/claude/hooks/subagent-context.sh|plain+x|
 files/hooks/agent-browser-session.sh|$ROOST_DIR/claude/hooks/agent-browser-session.sh|plain+x|
 files/agent-browser-config.json|$HOME_DIR/.agent-browser/config.json|plain|
+files/claude-plugins/.claude-plugin/marketplace.json|$ROOST_DIR/claude/roost-plugins/.claude-plugin/marketplace.json|plain|
+files/claude-plugins/bash-lsp/.claude-plugin/plugin.json|$ROOST_DIR/claude/roost-plugins/bash-lsp/.claude-plugin/plugin.json|plain|
 files/private/granola-digest.sh|$ROOST_DIR/claude/scripts/granola-digest.sh|plain+x|
 files/private/drive-mirror-refresh.sh|$ROOST_DIR/claude/scripts/drive-mirror-refresh.sh|plain+x|
 files/travel/travel-health.sh|$ROOST_DIR/claude/scheduled/health-check-apps.sh|plain+x|

@@ -74,6 +74,19 @@ install -d -o "$USERNAME" -g "$USERNAME" "$HOME_DIR/.agent-browser"
 install -m 0644 -o "$USERNAME" -g "$USERNAME" "$REMOTE_DIR/files/agent-browser-config.json" "$HOME_DIR/.agent-browser/config.json"
 ok "agent-browser config installed (idle browsers shut down after 15 min)"
 
+# --- Language servers for Claude Code's LSP tool ---
+# The LSP plugins (claude-config.sh) only point Claude Code at these binaries.
+# TypeScript stays on major 6: typescript-language-server drives tsserver, which
+# TypeScript 7 no longer ships. It prefers a repo's own node_modules/typescript,
+# so the global copy only serves repos without one.
+
+if as_user "command -v pyright-langserver && command -v typescript-language-server && command -v bash-language-server" &>/dev/null; then
+    skip "language servers already installed"
+else
+    as_user "npm i -g --prefix \"\$HOME/.local\" pyright typescript-language-server typescript@6 bash-language-server"
+    ok "language servers installed (pyright, typescript-language-server, bash-language-server)"
+fi
+
 # --- uv ---
 
 if as_user "command -v uv" &>/dev/null; then
