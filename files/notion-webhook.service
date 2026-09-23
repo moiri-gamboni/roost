@@ -1,7 +1,7 @@
 [Unit]
 # The receiver refuses to start when the mirror state dir is absent (never
 # creates it), so the mount ordering is load-bearing, not cosmetic.
-RequiresMountsFor=/home/moiri/roost/apart-research/notion
+RequiresMountsFor=/home/moiri/roost/apart-research/mirrors/notion
 Description=Notion webhook receiver (notion mirror event feed)
 After=network.target
 
