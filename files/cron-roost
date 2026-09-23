@@ -62,3 +62,8 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 # idle ≥48 weekday hours, only if a connection-activity marker is ≤24h old.
 # Uses rm -rf jobs/<id> — preserves transcripts and worktrees.
 #30 3 * * * $USERNAME flock -n $HOME_DIR/.locks/agents-cleanup $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/agents-cleanup.sh
+
+# Session worktrees whose Claude died without a SessionEnd (a crash, a killed
+# tmux pane): fast-forward what finished cleanly and drop it; anything dirty,
+# diverged or whose root still exists is kept (3:35am, after agents-cleanup's slot).
+35 3 * * * $USERNAME flock -n $HOME_DIR/.locks/agent-worktree-gc $HOME_DIR/bin/agent-worktree gc
