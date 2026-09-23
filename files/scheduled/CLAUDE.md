@@ -10,7 +10,6 @@ Deployed to `~/roost/claude/scheduled/`. Schedules live in `files/cron-roost` un
 - `vision-abuse-watch.sh`, daily 5:30 — ntfy on source IPs never seen before on the Path D inbound.
 - `session-daily-brief.sh`, daily 06:40 — a `claude -p` brief of yesterday's sessions, time, usage and commits, sent as plain-text ntfy and archived under `usage/briefs/`. Usage is shown as a share of the weekly cap, never in dollars, and kept separate per login.
 - `roughdraft-watch.sh`, daily 07:10 — watches upstream Roughdraft, its npm version and the PRs our fork carries, and sends an ntfy only on change (why the fork exists: the roughdraft skill, "When something is broken"). Needs `gh` authenticated.
-- `agents-cleanup.sh` + `track-ssh-activity.sh` — **disabled** (commented out in `cron-roost`); still deployed. When enabled, the first prunes finished jobs from the `claude agents` dashboard, gated on the SSH-activity marker the second touches. Policy in the header.
 - `scheduled-task.sh` / `run-scheduled-task.sh` — run a headless `claude -p` task in a window of the `cron` tmux session. No task is active.
 
 `cron-roost` also carries the weekly travel-VPN audit (`roost-net test`, Sunday 4:00, only while the VPN is on) and the nightly `agent-worktree gc` (3:35), which finishes session worktrees whose Claude died without a SessionEnd.
