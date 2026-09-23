@@ -9,303 +9,165 @@ After running the deploy script you will have:
 - Hardened Ubuntu 24.04 with btrfs snapshots and automatic security updates
 - Private networking via Tailscale (SSH gated by Hetzner cloud firewall, no public HTTP/HTTPS ports)
 - Public web apps via Cloudflare Tunnel (zero open HTTP/HTTPS ports)
-- Claude Code with session persistence and push notifications
+- Claude Code in tmux, with sessions that survive disconnects and reboots, and push notifications to your phone (ntfy)
 - Session search and lineage tracking (claude-code-tools)
-- Push notifications to your phone (ntfy)
 - System monitoring (Glances) with automated health alerts
-- RAM monitoring with alerts per process (3GB) and per command name (6GB summed), and earlyoom to end a swap thrash in seconds rather than minutes
+- RAM monitoring logged to the journal per process (3GB) and per command name (6GB summed), and earlyoom to end a swap thrash in seconds rather than minutes; the health check ntfys its kills within five minutes
 - Off-site btrfs backups to laptop (daily incremental snapshots)
 - Drop folder for quick laptop-to-server file transfer
 - PrivateBin: end-to-end encrypted pastebin; links are publicly readable via the tunnel (`paste.<domain>`), creation is server-side only (publish via the `pastebin` skill)
-- Scheduled Claude Code tasks via cron
-- Shell helpers for managing Claude Code agents (`agent`, `agents`, `attach`)
+- An optional GFW-resistant travel VPN (see [Travel VPN](#travel-vpn))
 
 ## Prerequisites
 
 - **Hetzner Cloud account** with an API token (https://console.hetzner.cloud/ > Security > API Tokens)
 - **Cloudflare account** with a domain whose DNS is managed by Cloudflare, and an API token with `Account:Cloudflare Tunnel:Edit` and `Zone:DNS:Edit` permissions (https://dash.cloudflare.com/profile/api-tokens)
 - **Tailscale account** (free, https://tailscale.com/)
-- **GitHub** account (deploy generates an SSH key to register; `gh` uses `gh auth login`)
+- **GitHub** account
 - **Claude Code subscription**
 - **On your laptop:** `hcloud` CLI, `jq`, SSH key pair, Git
 
-## File Overview
-
-```
-.env.example            Configuration template (copy to .env and fill in)
-deploy.sh               Provisions and configures the server (run from your laptop)
-test-server.sh          Post-deploy verification (runs ~50 checks over SSH)
-files/                  Config files, templates, and hook scripts deployed to the server
-files/laptop/           Scripts and systemd units for the laptop (backup, drop folder)
-extras/                 Optional standalone utilities
-```
-
-## Setup Guide
+## Set Up the Server
 
 ### Step 1: Configure
 
-**hcloud CLI:** Install from https://github.com/hetznercloud/cli, then configure:
+**hcloud CLI:** install from https://github.com/hetznercloud/cli, then `hcloud context create roost` and paste your Hetzner API token.
 
-```bash
-hcloud context create roost
-# Paste your Hetzner API token when prompted
-```
+**SSH key:** register at least one with Hetzner (`hcloud ssh-key create --name my-key --public-key-from-file ~/.ssh/id_ed25519.pub`). The deploy script picks from your keys or offers to upload one.
 
-**SSH key:** Make sure you have at least one SSH key registered with Hetzner. The deploy script auto-selects from your keys (or lets you upload a new one).
+**Tailscale:** add `"tagOwners": { "tag:server": ["autogroup:admin"] }` to your ACL policy at https://login.tailscale.com/admin/acls, then generate a **tagged** auth key with `tag:server` at https://login.tailscale.com/admin/settings/keys. Optionally generate an **API key** so deploy.sh sets restrictive ACLs itself.
 
-```bash
-# Upload to Hetzner if you haven't already
-hcloud ssh-key create --name my-key --public-key-from-file ~/.ssh/id_ed25519.pub
-```
+**`.env`:** copy `.env.example` to `.env` and fill in. Required: `SERVER_NAME`, `USERNAME`, `DOMAIN`, `TAILSCALE_AUTHKEY`, `CLOUDFLARE_API_TOKEN`. `.env.example` documents the optional settings.
 
-**Tailscale:** Add `"tagOwners": { "tag:server": ["autogroup:admin"] }` to your ACL policy at https://login.tailscale.com/admin/acls, then generate a **tagged** auth key with `tag:server` at https://login.tailscale.com/admin/settings/keys. Optionally generate an **API key** to let deploy.sh set restrictive ACLs automatically.
-
-**GitHub:** No token to create. Git uses SSH (deploy generates an ed25519 key you register on GitHub), and `gh` authenticates via `gh auth login` (OAuth) as a one-time post-deploy step — see below.
-
-**`.env`:** Copy `.env.example` to `.env` and fill in. Required: `SERVER_NAME`, `USERNAME`, `DOMAIN`, `TAILSCALE_AUTHKEY`, `CLOUDFLARE_API_TOKEN`. See `.env.example` for all optional settings.
+No GitHub token is needed: git uses an SSH key the deploy generates, and `gh` logs in with OAuth after the deploy.
 
 ### Step 2: Deploy
 
 ```bash
-chmod +x deploy.sh
-./deploy.sh
+./deploy.sh          # or ./deploy.sh --yes to skip the confirmation
 ```
 
-Or skip the confirmation prompt:
+It shows a pre-flight summary, then creates the server, converts it to btrfs, installs every service, creates the Cloudflare tunnel and joins Tailscale. It is idempotent: re-run it after a partial failure or to apply changes. Midway it asks you to authenticate Claude Code (press `s` to skip and do it later with `claude` on the server); plugins are installed only if that succeeded.
 
-```bash
-./deploy.sh --yes
-```
+### Step 3: Finish by hand
 
-The script shows a pre-flight summary (server name and type, user, domain, directory name, SSH key, tunnel name) and asks for confirmation before provisioning (unless `--yes` is used).
+1. **Verify** from your laptop: `./test-server.sh` (connectivity, firewall, filesystem, SSH hardening, every service, hooks, tools, cron).
+2. **Register the server's SSH key on GitHub.** The deploy generates one ed25519 key used for both git auth and commit signing, and there is no GitHub token on the server to upload it. Print it with `ssh <username>@<server> cat ~/.ssh/id_ed25519.pub` and add it at https://github.com/settings/keys **twice**, once as an Authentication Key and once as a Signing Key. Until then, push/pull and "Verified" badges don't work.
+3. **Authenticate `gh` on the server:** `gh auth login --hostname github.com --git-protocol ssh`.
+4. **If you didn't set `TAILSCALE_API_KEY`**, restrict the ACLs yourself at https://login.tailscale.com/admin/acls:
 
-This single command handles everything: creating the server, converting to
-btrfs, installing all software and services, creating the Cloudflare tunnel
-via API, and joining Tailscale via auth key. It is idempotent (safe to re-run
-after partial failures or to apply changes).
+   ```jsonc
+   {
+       "tagOwners": { "tag:server": ["autogroup:admin"] },
+       "grants": [
+           {"src": ["autogroup:member"], "dst": ["tag:server"], "ip": ["*"]},
+           {"src": ["tag:server"], "dst": ["tag:server"], "ip": ["*"]}
+       ]
+   }
+   ```
 
-During deploy, you will be prompted to authenticate Claude Code (interactive
-OAuth flow). Press 's' to skip and authenticate later. After the script
-finishes, Claude Code plugins are installed if authentication succeeded.
+   Check: `ssh` from the server to your laptop fails, from the laptop to the server works.
+5. **If the deploy couldn't create branch rulesets**, install the laptop ruleset sync ([Laptop tools](#laptop-tools)) and start it once with `sudo systemctl start gh-ruleset-sync.service`.
 
-### Step 3: Post-Setup (Manual)
+## Connect Your Devices
 
-These steps must be completed manually after the deploy script finishes.
+### Laptop
 
-**Verify the deploy** (from your laptop):
+Install and connect Tailscale. The optional tools in `files/laptop/` each have a self-contained installer that reads `.env`, renders its systemd units and enables them; prerequisites are in each installer's header.
 
-```bash
-./test-server.sh
-```
+#### Laptop tools
 
-Tests ~50 checks over SSH: connectivity, filesystem, SSH hardening, all services, hooks, directory structure, dev tools, cron.
+- **Off-site backup** (`./files/laptop/install-btrfs-backup.sh`): the laptop pulls a daily incremental `btrfs send` of the server's snapshots into `/backup/roost/` (a btrfs partition you mount there) and keeps 5 restore points: the last 3 days, the previous week and the previous month. ntfy on failure.
+- **Branch ruleset sync** (`./files/laptop/install-gh-ruleset-sync.sh`): re-applies the "Protect main" ruleset to every repo you own, so repos created between deploys are protected too; skips forks and archived repos. Needs `gh` logged in with a token a system unit can read (`gh auth login --insecure-storage` if you use the desktop keyring).
+- **Drop folder** (`./files/laptop/install-drop-watch.sh`): watches `~/drop/` and rsyncs changes to the server, where they are served read-only at `drop.<domain>` on the tailnet.
 
-**Register the server's SSH key on GitHub (Authentication + Signing):**
+### Phone (GrapheneOS / Android)
 
-deploy.sh generates an ed25519 key on the server and uses it for both git auth (transport is SSH) and commit signing. The fine-grained token can't upload keys, so register the public key manually:
+1. **Tailscale** from F-Droid; join your tailnet.
+2. **Termux** from F-Droid (not Google Play; on GrapheneOS it may need "exploit protection compatibility mode"), then `pkg install et openssh`. Add to the phone's `~/.bashrc`:
 
-1. Print the key: `ssh <username>@<server> cat ~/.ssh/id_ed25519.pub`
-2. Go to https://github.com/settings/keys > New SSH key
-3. Add it **twice** — once as **Authentication Key**, once as **Signing Key** (GitHub treats these as separate entries for the same key)
-4. Paste the public key for each
-
-Until the key is registered, SSH push/pull and "Verified" commit badges won't work.
-
-**If you didn't set `TAILSCALE_API_KEY` in `.env`**, restrict ACLs manually at https://login.tailscale.com/admin/acls:
-
-```jsonc
-{
-    "tagOwners": { "tag:server": ["autogroup:admin"] },
-    "grants": [
-        {"src": ["autogroup:member"], "dst": ["tag:server"], "ip": ["*"]},
-        {"src": ["tag:server"], "dst": ["tag:server"], "ip": ["*"]}
-    ]
-}
-```
-
-Verify: `ssh` from server to laptop should fail; `ssh` from laptop to server should work.
-
-**Authenticate the `gh` CLI on the server** (one-time; git already works over SSH):
-
-```bash
-gh auth login --hostname github.com --git-protocol ssh
-```
-
-**If branch rulesets weren't created during deploy**, create them from the laptop:
-
-```bash
-for repo in owner/repo1 owner/repo2; do
-  gh api "repos/$repo/rulesets" -X POST --input - <<'EOF'
-{"name":"Protect main","target":"branch","enforcement":"active",
- "conditions":{"ref_name":{"include":["refs/heads/main"],"exclude":[]}},
- "rules":[{"type":"deletion"},{"type":"non_fast_forward"}]}
-EOF
-done
-```
-
-**Add your first web app:**
-
-1. Run your app as a systemd service or standalone process listening on localhost
-
-2. Add a Caddy route file in `/etc/caddy/sites-enabled/`:
    ```bash
-   cat > /etc/caddy/sites-enabled/myapp.caddy <<'EOF'
-   http://myapp.yourdomain.dev {
+   cc() { ET_NO_TELEMETRY=1 et <username>@<tailscale-ip> --command='bash -lc "ROOST_CLIENT=pixel agents"' "$@"; }
+   ```
+
+   `cc` drops you into the tmux window picker; `ROOST_CLIENT` gives the phone its own view that it rejoins after every reconnect.
+3. **ntfy** from F-Droid: under Settings > General > Manage Users add user `phone` for server `http://<tailscale-ip>:2586` (the password is in `~/services/.ntfy-phone-pass` on the server), then subscribe to `claude-<username>`.
+
+## Use It
+
+### Run Claude Code sessions
+
+```bash
+agent [path] [claude-args...]    # Claude in a new tmux window; path defaults to cwd
+agent ~/roost/code/myapp -c      # continue that directory's last session
+agent -N                         # run in the directory itself, no worktree
+agents                           # pick a window
+attach                           # your own view of the shared `main` session
+session reboot                   # reboot the box; running sessions reopen at boot
+session resume --scan 48         # no snapshot taken? offer sessions active in the last 48h
+```
+
+In a git repo, `agent` gives each session its own worktree under `~/roost/worktrees/` (the repo and every nested repo on a session branch), fast-forwarded back when the session exits clean; `agent-worktree list` shows what was kept. `git config agent.noWorktree true` opts a repo out. `/rename` inside a session renames its tmux window.
+
+Headless one-off tasks can be scheduled through `scheduled-task.sh` (a `claude -p` run in a `cron` tmux session) with a line in `files/cron-roost`; failures, such as an expired login, arrive by ntfy.
+
+### Add a web app
+
+1. Run the app on localhost (a systemd service or any process), say on port 3000.
+2. Give it a Caddy site on a free port in `/etc/caddy/sites-enabled/myapp.caddy`. The explicit `bind` matters: Caddy binds the Tailscale IP by default, and the tunnel reaches the site over loopback:
+
+   ```caddy
+   :8096 {
+       bind 127.0.0.1
        reverse_proxy localhost:3000
    }
-   EOF
    ```
 
-3. Add a Cloudflare ingress fragment in `~/roost/cloudflared/apps/`:
-   ```bash
-   cat > ~/roost/cloudflared/apps/myapp.yml <<'EOF'
+3. Add the tunnel ingress in `~/roost/cloudflared/apps/myapp.yml`, pre-indented by two spaces (it is inserted under `ingress:`):
+
+   ```yaml
      - hostname: myapp.yourdomain.dev
-       service: http://localhost:80
-   EOF
+       service: http://127.0.0.1:8096
    ```
-   Note: fragment lines must be pre-indented with 2 spaces (they go under the `ingress:` key).
 
-4. Route DNS via the Cloudflare API:
+4. Create a proxied CNAME `myapp.yourdomain.dev` → `<TUNNEL_ID>.cfargotunnel.com` (the tunnel ID is the `tunnel:` line of `/etc/cloudflared/config.yml`), in the Cloudflare dashboard or from the laptop:
+
    ```bash
-   # Get your zone ID
-   curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-     "https://api.cloudflare.com/client/v4/zones?name=yourdomain.dev" | jq '.result[0].id'
-
-   # Create CNAME record (replace ZONE_ID and TUNNEL_ID)
-   curl -X POST "https://api.cloudflare.com/client/v4/zones/ZONE_ID/dns_records" \
-     -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{"type":"CNAME","name":"myapp.yourdomain.dev","content":"TUNNEL_ID.cfargotunnel.com","proxied":true}'
+   curl -X POST "https://api.cloudflare.com/client/v4/zones/<ZONE_ID>/dns_records" \
+     -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
+     -d '{"type":"CNAME","name":"myapp.yourdomain.dev","content":"<TUNNEL_ID>.cfargotunnel.com","proxied":true}'
    ```
 
-5. Apply the changes:
-   ```bash
-   roost-apply --caddy --cloudflare
-   ```
-   This assembles the Cloudflare config from fragments and reloads both services.
+   There is no `cert.pem` on the server, so `cloudflared tunnel route dns` doesn't work there.
+5. `roost-apply --caddy --cloudflare` reloads Caddy and rebuilds the tunnel config from the fragments.
 
-**App-specific files live in dedicated locations** so they never conflict with the base configs in the repo:
+PrivateBin is the repo-managed example of the same pattern (`files/privatebin/`, `files/setup/privatebin.sh`; its CNAME is ensured by deploy.sh).
+
+App-specific files live outside the repo's base configs so the two never conflict:
 
 | What | Where |
 |------|-------|
-| Caddy routes | `/etc/caddy/sites-enabled/<app>.caddy` |
+| Public app routes | `/etc/caddy/sites-enabled/<app>.caddy` |
+| Tailnet-only apps | `/etc/caddy/apps-enabled/<app>.caddy`: `handle_path /<name>/* { root * /path; file_server }`, served at `http://<tailscale-ip>:8090/<name>/` (files readable by `caddy`) |
 | Cloudflare ingress | `~/roost/cloudflared/apps/<app>.yml` |
-| Cron jobs | `/etc/cron.d/${ROOST_DIR_NAME}-apps` (filenames must not contain dots) |
-| Health checks | `~/roost/claude/scheduled/health-check-apps.sh` (sourced by the main health check if present) |
+| Cron jobs | `/etc/cron.d/${ROOST_DIR_NAME}-apps` (no dots in the filename) |
+| Health checks | `~/roost/claude/scheduled/health-check-apps.sh`, sourced by the health check; it is deployed from `files/travel/travel-health.sh`, so add checks there |
 
-PrivateBin (`files/setup/privatebin.sh`) is a repo-managed worked example of this pattern: loopback Caddy site on `:8095`, ingress fragment `privatebin.yml`, proxied CNAME `paste.<domain>` ensured by deploy.sh.
+### Change config after the deploy
 
-#### Shell helpers
-
-The following functions are available for managing Claude Code agents in tmux:
+Edit the file in the repo, then deploy it with `roost-apply` on the server instead of re-running `deploy.sh`:
 
 ```bash
-# Start an interactive Claude session in a tmux window. In a git repo the
-# session gets its own composite worktree (claude --worktree + the box-wide
-# agent-worktree hooks: the repo AND its nested repos each on a session
-# branch under ~/roost/worktrees/, fast-forwarded back on exit when clean).
-agent [path] [claude-args...]    # path defaults to cwd, window named after dir
-agent                            # interactive claude in cwd
-agent ~/roost/code/myapp         # opens in that dir
-agent ~/roost/code/myapp -c      # continue last session (skips the worktree)
-agent -N | --no-worktree         # run directly in the directory
-# Opt a repo out permanently: git config agent.noWorktree true
-
-# Interactive tmux window picker
-agents
-
-# Reboot the box and get every running session back afterwards
-session reboot                   # snapshot, confirm, reboot; -n snapshots only
-session resume                   # replay the snapshot by hand
-session resume --scan 48         # no snapshot: offer sessions active in 48h
+roost-apply                         # diff of every managed file (= roost-apply diff)
+roost-apply push [FILE...] [-y]     # deploy changed files, then daemon-reload and restart what they touch
+roost-apply --caddy --cloudflare    # reload services for app configs outside the repo
 ```
 
-Using `/rename` inside a session updates the tmux window name automatically.
-Sessions that aren't manually renamed get an auto-generated name on exit.
-
-A reboot destroys the tmux server and every session in it, and Claude Code prunes
-its presence registry at startup, so the running set must be captured beforehand.
-`session reboot` does that; the `roost-session-resume.service` user unit reopens
-the sessions at boot.
-
-#### Scheduled tasks
-
-`scheduled-task.sh` runs one-off Claude Code tasks as headless `claude -p`
-sessions in a `cron` tmux session; add entries to `files/cron-roost` to
-schedule one (none are currently active). If Claude Code OAuth has expired,
-scheduled task failures will alert via ntfy.
-
-#### Laptop setup:
-
-1. Install and connect Tailscale
-2. Set `CLAUDE_CONFIG_DIR=$HOME/roost/claude` in your shell profile (replace `roost` with your `ROOST_DIR_NAME` if you changed it; it must match the server)
-3. (Optional) Install laptop systemd units from `files/laptop/` (see below)
-4. (Optional) Create a sleep hook that sends `/exit` to Claude tmux sessions
-   before suspend, so sessions end cleanly:
-   ```ini
-   # /etc/systemd/system/claude-sleep.service
-   [Unit]
-   Description=Stop Claude sessions before sleep
-   Before=sleep.target
-
-   [Service]
-   Type=oneshot
-   User=<username>
-   ExecStart=/bin/bash -c 'tmux list-panes -a -F "#{pane_id}" | while read p; do tmux send-keys -t "$p" "/exit" Enter; done'
-
-   [Install]
-   WantedBy=sleep.target
-   ```
-   Then enable: `sudo systemctl enable claude-sleep`
-
-#### Laptop tools (`files/laptop/`):
-
-Each tool has a self-contained installer that reads `USERNAME` / `SERVER_NAME` / `ROOST_DIR_NAME` from `.env`, renders the systemd units, and enables them.
-
-**Off-site btrfs backup** (`btrfs-backup.sh`): Pull-based incremental backup. The laptop SSHes to the server, runs `btrfs send`, and pipes to local `btrfs receive`. First run does a full send; subsequent runs are incremental from the last known snapshot. Keeps 7 most recent snapshots on the laptop, prunes older ones. Alerts via ntfy on failure.
-
-Prerequisites: btrfs partition mounted at `/backup/roost/`, Tailscale connected.
-
-```bash
-./files/laptop/install-btrfs-backup.sh
-```
-
-**GitHub ruleset sync** (`gh-ruleset-sync.sh`): Periodic re-application of the "Protect main" ruleset across all your GitHub repos. Closes the gap where repos created between `./deploy.sh` runs are unprotected. Skips forks and archived repos. Alerts via ntfy only if any repo fails after a retry.
-
-Prerequisites: `gh` CLI authenticated so `gh auth token` succeeds non-interactively (run `gh auth login --insecure-storage` if you've been using the system keyring -- a system systemd unit has no access to gnome-keyring), `jq` installed, Tailscale connected (so the installer can derive `NTFY_URL` from the server's tailnet IP).
-
-```bash
-./files/laptop/install-gh-ruleset-sync.sh
-```
-
-**Drop folder** (`drop-watch.sh`): Uses `inotifywait` to watch `~/drop/` and auto-rsyncs to the server on change. Runs as a systemd *user* service (not system-wide) so it has access to the user's SSH keys and home directory.
-
-```bash
-./files/laptop/install-drop-watch.sh
-```
-
-#### Phone setup (GrapheneOS / Android):
-
-1. **Tailscale**: Install from F-Droid, join your tailnet
-2. **Termux**: Install from F-Droid (not Google Play)
-   - On GrapheneOS you may need "exploit protection compatibility mode" for Termux
-   - `pkg install et openssh`
-   - Connect (drops into the tmux window picker; `ROOST_CLIENT` gives stable session rejoining across reconnects):
-     ```bash
-     et <username>@<tailscale-ip> --command='bash -lc "ROOST_CLIENT=pixel agents"'
-     ```
-   - Or add a `cc` function to `~/.bashrc` on the phone (also opts out of et's telemetry):
-     ```bash
-     cc() { ET_NO_TELEMETRY=1 et <username>@<tailscale-ip> --command='bash -lc "ROOST_CLIENT=pixel agents"' "$@"; }
-     ```
-3. **ntfy**: Install from F-Droid
-   - Settings > General > Manage Users: add user `phone` for server `http://<tailscale-ip>:2586`
-     (password in `~/services/.ntfy-phone-pass` on the server)
-   - Subscribe to topic: `claude-<username>`
+The repo's manifest (inside `files/scripts/roost-apply.sh`) lists every managed file; `roost-apply list` prints it and `roost-apply --help` lists the reload flags.
 
 ## Travel VPN
 
-GFW-resistant remote access: Xray multi-path stack (VLESS+WS behind Cloudflare, VLESS+gRPC+REALITY direct, Shadowsocks-2022) with an optional ProtonVPN egress layer toggleable without re-deploying. sing-box on phone + laptop picks the fastest working path via urltest; a dual-stack fwmark + kill-switch confines the `xray` user (and Tailscale-exit-node forwarded traffic) to `wg-proton` whenever `vpn` is on. See `plans/travel-vpn-architecture.md` for the full design and rationale.
+GFW-resistant remote access with an optional ProtonVPN egress, switched on and off without a redeploy. Four Xray paths run side by side: **A** VLESS+WebSocket behind Cloudflare, **B** VLESS+gRPC+REALITY direct, **C** Shadowsocks-2022, **D** VLESS+XTLS-Vision over TLS. sing-box on the phone and laptop picks the fastest working path (urltest). When `vpn` is on, a dual-stack kill-switch confines travel traffic and Tailscale-exit-node traffic to the Proton tunnel. Design and state: `files/travel/CLAUDE.md`; rationale: `plans/add-stealth-protocols.md`. Server verbs: `roost-net --help`; laptop scripts: `--help` on each.
 
 ### Use modes
 
@@ -319,109 +181,74 @@ GFW-resistant remote access: Xray multi-path stack (VLESS+WS behind Cloudflare, 
 ### Pre-departure (2+ weeks before)
 
 ```bash
-# 1. Drop one or more Proton WireGuard profiles on the server (e.g. NetShield
-#    on vs off). Each goes under /etc/roost-travel/proton-profiles/<name>.conf
-#    as a raw download — no hand-editing required; `vpn profile` strips and
-#    re-injects Table/PostUp/PreDown/DNS at synth time.
-sudo install -m 0600 -o root -g root ~/netshield.conf \
-    /etc/roost-travel/proton-profiles/netshield.conf
-sudo install -m 0600 -o root -g root ~/clean.conf \
-    /etc/roost-travel/proton-profiles/clean.conf
-# Activate one (synthesizes /etc/wireguard/wg-proton.conf):
+# 1. Put one or more raw Proton WireGuard downloads on the server, then activate one
+sudo install -m 0600 -o root -g root ~/netshield.conf /etc/roost-travel/proton-profiles/netshield.conf
+sudo install -m 0600 -o root -g root ~/clean.conf /etc/roost-travel/proton-profiles/clean.conf
 roost-net vpn profile netshield
 
-# 2. Install sing-box for Android from GitHub releases
-#    github.com/SagerNet/sing-box-for-android/releases (not F-Droid; may lag)
+# 2. Install sing-box for Android from github.com/SagerNet/sing-box-for-android/releases (F-Droid may lag)
 
-# 3. Generate and distribute client configs (run on laptop)
-./files/laptop/travel-clients.sh android --send-tailscale pixel-7a   # send to phone over Tailscale
-./files/laptop/travel-clients.sh laptop > ~/.config/sing-box/travel.json
-./files/laptop/travel-clients.sh ssh >> ~/.ssh/config
+# 3. On the laptop: client configs, the laptop tunnel, and the daily Cloudflare IP refresh for Path A
+./files/laptop/travel-clients.sh android --send-tailscale pixel-7a
+./files/laptop/install-travel.sh
+./files/laptop/install-cf-ip-refresh.sh
+./files/laptop/travel-clients.sh ssh >> ~/.ssh/config   # `ssh roost-travel`, only while the tunnel is up
 
 # 4. Test at home for a week
 roost-net travel on
 ./files/laptop/roost-net-fw.sh open
 roost-net vpn on
 ./files/laptop/travel-test.sh
-./files/laptop/travel-test.sh --simulate-gfw  # blocks UDP locally, verifies TCP paths
+./files/laptop/travel-test.sh --simulate-gfw   # blocks UDP locally, verifies the TCP paths
 
-# 5. Print Hetzner 2FA recovery codes, store in physical wallet
-# 6. Pre-install ProtonVPN Android app with Stealth as independent fallback
-# 7. Revert to dormant state before packing
+# 5. Print the Hetzner 2FA recovery codes and keep them on paper
+# 6. Install the ProtonVPN Android app with Stealth as an independent fallback
+# 7. Back to dormant before packing
 roost-net vpn off
 ./files/laptop/roost-net-fw.sh close
 roost-net travel off
 ```
 
+Path D needs a one-time certificate first: `files/travel/CLAUDE.md`, "Path D provisioning".
+
 ### Departure day
 
 ```bash
-# Server (via Tailscale SSH)
-roost-net travel on    # deploys CF fragment, reloads cloudflared, opens UFW
-roost-net vpn on       # enables wg-quick@wg-proton (survives reboot)
+# Server (over Tailscale)
+roost-net travel on    # tunnel fragment, UFW ports
+roost-net vpn on       # Proton egress, survives reboots
 
 # Laptop
-./files/laptop/roost-net-fw.sh open   # opens 443/tcp, 51820/tcp+udp on Hetzner FW
-./files/laptop/travel-test.sh         # final verification
+./files/laptop/roost-net-fw.sh open   # Hetzner firewall: 443/tcp, 51820/tcp+udp, 8443/tcp
+./files/laptop/travel-test.sh
+roost-travel on
 
-# Phone: activate sing-box app (system VPN indicator appears).
-# urltest auto-selects the fastest path (normally Path A).
+# Phone: start the sing-box profile; urltest picks a path (normally A)
 ```
+
+On the server, an in-country `apt upgrade && reboot` restores this state on its own.
 
 ### If something degrades mid-trip
 
-- **Path A slow or dead** -- urltest switches to B or C automatically; no action required.
-- **urltest keeps picking a slow path** -- pin a known-good one with `roost-net path <a|b|c|d>` on the server, then re-fetch client configs (`roost-travel config` on the laptop). `roost-net path auto` restores urltest selection.
-- **All three degraded** -- check sing-box logs on phone. Fallback: ProtonVPN Android app with Stealth (independent of Roost; browse-only, no SSH).
-- **Server unreachable entirely** -- from laptop, `./files/laptop/roost-net-fw.sh close` (stops advertising a broken endpoint); then Hetzner Cloud Console via 2FA + printed recovery codes.
+- **One path slow or dead:** urltest moves to another; nothing to do.
+- **urltest keeps picking a slow path:** pin a good one with `roost-net path <a|b|c|d>` on the server, then re-fetch the client configs (`roost-travel config` on the laptop, `travel-clients.sh android --send-tailscale <phone>` for the phone). `roost-net path auto` undoes it.
+- **Path A slow on this network:** `roost-travel ips` on the laptop re-picks the Cloudflare IPs it uses.
+- **Every path degraded:** read the sing-box logs on the phone (`roost-travel logs` on the laptop). Fallback: the ProtonVPN app with Stealth (browsing only, no SSH).
+- **Server unreachable:** `./files/laptop/roost-net-fw.sh close` from the laptop, then the Hetzner Cloud Console with 2FA and the printed recovery codes.
+
+Procedures for fixes while in-country: `docs/runbooks/singbox-client-deploy.md` (ship a client-render change) and `docs/runbooks/path-d-vision.md` (Path D certificate, listener, abuse).
 
 ### After return
 
 ```bash
 ./files/laptop/roost-net-fw.sh close
-# Server (via Tailscale, now working again)
+roost-travel off
+# Server (over Tailscale again)
 roost-net vpn off
 roost-net travel off
 ```
 
-### Server-side CLI (`roost-net`)
-
-| Command | Purpose |
-|---|---|
-| `roost-net status` | Toggles, service states, egress IP (raw + via-Proton) |
-| `roost-net travel on` / `off` | Enable/disable the CF fragment + UFW rules for 443/tcp + 51820/tcp+udp |
-| `roost-net vpn on` / `off` | Enable/disable `wg-quick@wg-proton` + keepalive timer; verifies egress is external (not our Hetzner IP) on activation |
-| `roost-net path [a\|b\|c\|d\|auto]` | Pin client configs to one Xray path, or `auto` for urltest selection; render-time only, re-fetch client configs to apply |
-| `roost-net test` | Assertions (masked fwmark, kill-switch REJECT, external egress) |
-| `roost-net client {android\|laptop\|ssh}` | Emit sing-box or SSH config from `/etc/roost-travel/state.env` |
-| `roost-net rotate-keys` | Regenerate `state.env` (UUID + REALITY keypair + shortIds + SS-2022 password); restart xray |
-
-### Laptop scripts (`files/laptop/`)
-
-- `roost-net-fw.sh {open,close,status}` -- toggle Hetzner cloud firewall for travel ports (dual-stack). Firewall identity is `${SERVER_NAME}-fw`.
-- `travel-clients.sh {android,laptop,ssh} [--save PATH | --send-tailscale PEER]` -- SSHes to server, calls `roost-net client <mode>`. Without flags prints to stdout; `--save` writes to a 0600 file; `--send-tailscale` saves + `tailscale file cp` to a peer. No QR option -- SFA's QR scanner expects URI profiles (vless://, ss://, sing-box://import-remote-profile?url=...) and rejects raw JSON.
-- `travel-test.sh [--simulate-gfw] [--tailscale-check]` -- end-to-end reachability + routing assertions, locally simulatable GFW conditions.
-- `roost-travel.sh {on|off|status|logs|config}` + `roost-travel.service` -- systemd-managed sing-box tunnel for the laptop. See *Laptop tunnel: sing-box + roost-travel* below.
-
-### Laptop tunnel: sing-box + roost-travel
-
-`roost-travel` is a systemctl wrapper around sing-box that runs the laptop side of the tunnel. One-shot install:
-
-```bash
-./files/laptop/install-travel.sh
-```
-
-Installs the sing-box CLI, the wrapper, the systemd unit, and fetches your config. Then `roost-travel {on|off|status|logs|config}`; `on` persists across reboots (`enable --now`), `off` unpersists. `./files/laptop/travel-clients.sh ssh >> ~/.ssh/config` adds the `ssh roost-travel` alias (routes through sing-box's SOCKS5 inbound on `127.0.0.1:54321` -- only works while the tunnel is up).
-
-### Runbooks
-
-Procedures that get re-run live in `docs/runbooks/`: `singbox-client-deploy.md` (shipping a client-render change while in-country) and `path-d-vision.md` (Path D cert/listener/abuse troubleshooting). Design and state reference for the server pieces: `files/travel/CLAUDE.md`.
-
-### Reboot behavior
-
-`xray.service` is enabled at install. When `vpn=on`, `wg-quick@wg-proton.service` is also enabled (via `systemctl enable --now`), so an `apt upgrade && reboot` in-country restores full state automatically. `xray-boot-guard` (ExecStartPre) blocks Xray startup until `wg-proton` + the kill-switch REJECT rule are both present, eliminating the boot-order leak window.
-
-## Architecture
+## How It Fits Together
 
 ```
 Public Internet                         Private (Tailscale)
@@ -434,19 +261,13 @@ app.example.dev ──────→ Cloudflare ──→ cloudflared ──→
                         └── Glances (monitoring)
 ```
 
-Cloudflare Tunnel handles public web apps with zero open ports.
-Tailscale handles all private access (admin, notifications, monitoring).
-Sensitive services never touch the public internet.
+Cloudflare Tunnel carries the public web apps with no open ports; Tailscale carries all private access (admin, notifications, monitoring). Public SSH is open only while `deploy.sh` runs.
 
-### Security Hardening
+**Security:** the server is `tag:server` on the tailnet, and the ACLs stop it from initiating connections to your other devices, which limits the blast radius if a prompt injection compromises a Claude session. Git uses SSH only (one ed25519 key for auth and signing), no personal access token lives on the server, `gh` has its own OAuth login, and branch rulesets block force-push and deletion on `main`.
 
-**Tailscale ACLs:** The server is registered with `tag:server`. ACLs block the server from initiating connections to personal devices, limiting blast radius if a prompt injection compromises a Claude session.
+**Claude Code settings:** agent teams off, auto-compaction on, and session transcripts never cleaned up (`cleanupPeriodDays: 99999`).
 
-**GitHub credentials:** pushes use SSH only (one ed25519 key for auth and commit signing) and no personal access token lives on the server; `gh` has its own OAuth login. Branch rulesets prevent force push and deletion on main.
-
-### Directory Structure (on server)
-
-The directory name `roost` is configurable via `ROOST_DIR_NAME` in `.env`.
+**On the server** (`roost` is `ROOST_DIR_NAME` in `.env`):
 
 ```
 ~/roost/                    Managed root directory
@@ -458,85 +279,27 @@ The directory name `roost` is configurable via `ROOST_DIR_NAME` in `.env`.
 │   ├── lib/                Shared shell code (_hook-env.sh, cloudflare-assemble.sh)
 │   ├── skills/             Skills
 │   └── projects/           Session transcripts (auto-managed)
-├── cloudflared/            Cloudflare Tunnel fragments
-│   └── apps/               Per-app ingress YAML fragments
+├── cloudflared/apps/       Per-app ingress YAML fragments
+├── drop/                   The drop folder (served read-only)
 └── code/                   Project repositories
 
-~/.bashrc.d/
-└── roost.sh                Shell configuration (PATH, tmux, agent helpers)
+~/.bashrc.d/roost.sh        Shell configuration (PATH, tmux, agent helpers)
 ```
-
-### Claude Code Configuration
-
-The deployed `settings.json` includes:
-
-- **Agent teams** off (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=0`)
-- **Session transcripts** never cleaned up (`cleanupPeriodDays: 99999`)
-- **Auto-compaction** on (`autoCompactEnabled: true`)
-
-## Updating Config After Deploy
-
-After the initial deploy, use `roost-apply` on the server to deploy changed files and reload services without re-running `deploy.sh`.
-
-### roost-apply
-
-**Subcommand mode** (manifest-based file deployment):
-
-```bash
-roost-apply                             # Show diff of all changed files (default)
-roost-apply diff                        # Same as above
-roost-apply diff files/hooks/notify.sh  # Diff a specific file
-roost-apply push                        # Deploy all changed files and reload services
-roost-apply push files/ram-monitor.timer  # Deploy a specific file
-roost-apply push -y                     # Skip confirmation prompt
-roost-apply list                        # List all managed files in the manifest
-```
-
-Push shows a diff preview and asks for confirmation. It groups `systemctl daemon-reload` and batches service restarts.
-
-**Flag mode** (direct service reload, for app-specific configs not in the manifest):
-
-```bash
-roost-apply --all            # Reload everything
-roost-apply --caddy          # Reload Caddy only
-roost-apply --cloudflare     # Assemble fragments and restart cloudflared
-roost-apply --ntfy           # Restart ntfy
-roost-apply --systemd        # Daemon-reload + restart changed systemd units
-roost-apply --cron           # Reinstall crontab
-```
-
-The repo is the canonical source for base infrastructure configs. Server-specific app configs go in the dedicated locations described under "Add your first web app" and are not tracked in the repo.
 
 ## Recovery
 
 | Layer | Tool | Granularity | Speed |
 |-------|------|-------------|-------|
-| Full filesystem | btrfs snapshots (snapper) | Hourly | Seconds |
-| Off-site backup | btrfs send/receive to laptop (`files/laptop/btrfs-backup.sh`) | Daily | Minutes |
+| Full filesystem | btrfs snapshots (snapper: 24 hourly, 7 daily, 2 weekly) | Hourly | Seconds |
+| Off-site backup | btrfs send/receive to the laptop | Daily | Minutes |
 | Disaster recovery | Hetzner backups | Daily | Minutes (reboot) |
 | Claude Code sessions | `session reboot` snapshot + `roost-session-resume.service` | Per reboot | Seconds |
 
-Snapper retention: 24 hourly, 7 daily, 2 weekly (no monthly or yearly). Regenerable trees (`~/.cache`, toolchains under `~/.local/share`, VS Code server builds, Codex packages, `~/roost/drop`) are nested subvolumes and are not in the snapshots or the off-site backup.
-
-Rollback a btrfs snapshot: `snapper list`, then `snapper rollback <number>`, then reboot.
+Roll back: `snapper list`, `snapper rollback <number>`, reboot. Regenerable trees (caches, toolchains, VS Code server builds, `~/roost/drop`; the list is in `files/setup/snapper.sh`) are nested subvolumes and are in neither the snapshots nor the backup.
 
 ## Auto-updates
 
-A daily cron job (2:50am, so it finishes before the 3:00 hourly snapshot)
-updates all installed tools whose latest release has cleared the cooldown,
-then runs the disk cleanup. It sends an ntfy summary
-only when something was updated or failed, or a major version bump is
-waiting; a run that changed nothing is silent. Rollback is snapper's hourly
-timeline (the job takes no snapshot of its own).
-
-Updated tools: Claude Code, Codex CLI, claude-code-tools, claude-code-transcripts,
-aichat-search, Go, fnm, Node.js, uv, gitleaks, dufs, rclone,
-PrivateBin, acme.sh, agent-browser, and OS packages.
-
-Safeguards:
-- New releases must be at least 7 days old before being applied (cooldown)
-- Major version bumps are blocked and reported via ntfy (manual upgrade required)
-- Logs are written to journald (query with `journalctl -t roost/auto-update`)
+A daily job at 2:50am (done before the 3:00 snapshot) updates Claude Code, Codex CLI, claude-code-tools, claude-code-transcripts, aichat-search, Go, fnm, Node.js, uv, gitleaks, dufs, rclone, PrivateBin, acme.sh, agent-browser and the OS packages, then cleans regenerable disk. A release must be 7 days old before it is applied, and major version bumps are held back and reported for a manual upgrade. It sends ntfy only when something changed or failed; rollback is the hourly snapshot. Log: `journalctl -t roost/auto-update`.
 
 ## Costs
 
@@ -552,32 +315,14 @@ Safeguards:
 
 ## Server Availability
 
-Hetzner shared vCPU plans (CX family) are frequently out of stock. If you can't
-create or upgrade to your desired server type, use the availability watcher to
-get notified when capacity opens up. It queries the Hetzner datacenter API
-(read-only, no servers are created).
-
-The script uses your active `hcloud` context for auth. Set one up with
-`hcloud context create <name>` if you haven't already.
-
-**Watch only** (get a push notification, then act manually):
+Hetzner's shared-vCPU (CX) plans are often out of stock. `extras/hetzner-watch.sh` polls the datacenter API (read-only, using your active `hcloud` context) and notifies you when capacity opens; with `--run` it deploys as soon as it does:
 
 ```bash
-NTFY_URL=https://ntfy.sh/your-secret-topic \
-  ./extras/hetzner-watch.sh --poll 300
+NTFY_URL=https://ntfy.sh/<random-topic> ./extras/hetzner-watch.sh --poll 300                    # notify only
+NTFY_URL=https://ntfy.sh/<random-topic> ./extras/hetzner-watch.sh --poll 300 --run ./deploy.sh   # notify and deploy
 ```
 
-**Watch and deploy** (automatically create the server when available):
-
-```bash
-NTFY_URL=https://ntfy.sh/your-secret-topic \
-  ./extras/hetzner-watch.sh --poll 300 --run ./deploy.sh
-```
-
-Subscribe to the topic in the [ntfy app](https://ntfy.sh/) on your phone.
-Pick a random topic name so it stays private.
-
-To upgrade an existing server instead of provisioning a new one:
+Subscribe to that topic in the ntfy app; a random name keeps it private. You can start on a smaller plan (e.g. CX33, 4 vCPU / 8GB) and resize later; everything survives:
 
 ```bash
 hcloud server shutdown <server-name>
@@ -585,30 +330,14 @@ hcloud server change-type --server <server-name> --type cx43 --keep-disk
 hcloud server poweron <server-name>
 ```
 
-You can start with a smaller plan (e.g. CX33, 4 vCPU / 8GB) and upgrade later.
-Everything survives the resize.
-
 ## Troubleshooting
 
-**Tailscale IP changed:**
-Update the Caddyfile (`sudo nano /etc/caddy/Caddyfile`), then run `roost-apply --caddy`.
-Restart Glances (`sudo systemctl restart glances`).
-Or re-run `deploy.sh` to update everything.
+**Tailscale IP changed:** `roost-apply push files/Caddyfile files/et.cfg` re-renders both with the new IP; `files/apps.caddy` names the IP literally, so edit it and push it too; then `sudo systemctl restart glances`. Or re-run `deploy.sh`.
 
-**Cloudflare Tunnel not working:**
-Check `journalctl -u cloudflared`.
-Verify `/etc/cloudflared/config.yml` has the correct tunnel ID and credentials path.
-Make sure DNS is routed (use the Cloudflare API; see "Add your first web app" above).
-Note: there is no `cert.pem` on the server; tunnels are created via API token.
+**Cloudflare Tunnel not working:** `journalctl -u cloudflared`; check the tunnel ID and credentials path in `/etc/cloudflared/config.yml` and that the hostname has its CNAME ([Add a web app](#add-a-web-app), step 4).
 
-**Services not starting after reboot:**
-If Tailscale needs re-authentication (key expiry), Caddy will wait
-60 seconds then fail. Re-authenticate Tailscale (`tailscale up`), then
-restart the failed services (`sudo systemctl restart caddy`).
+**Services not starting after a reboot:** if Tailscale needs re-authentication (key expiry), Caddy waits 60 seconds for a Tailscale IP, then fails. Run `tailscale up`, then `sudo systemctl restart caddy`.
 
-**Claude Code OAuth expired:**
-Scheduled tasks and headless `claude -p` will fail. Task failures will
-alert via ntfy. SSH in and run `claude` interactively to re-authenticate.
+**Claude Code login expired:** scheduled tasks and headless `claude -p` fail (task failures arrive by ntfy). Run `claude` interactively on the server to log in again.
 
-**deploy.sh failed partway through:**
-The script is idempotent. Fix the issue and re-run it.
+**deploy.sh failed partway through:** fix the cause and re-run it.
