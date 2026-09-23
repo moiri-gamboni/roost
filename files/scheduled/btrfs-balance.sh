@@ -9,6 +9,11 @@
 # root went RO this way at df=75%). Relocating part-empty data chunks returns
 # their slack to the unallocated pool. Data chunks only: balancing metadata
 # would shrink the very pool this protects; dlimit bounds the weekly I/O.
+#
+# A higher -dusage is not an escalation path: on chunks averaging 92% full
+# (2026-08-31), -dusage=90 relocated 15 chunks and LOST 0.3GiB of unallocated
+# to the metadata chunk the relocation itself needed. When this relocates
+# nothing, the space is pinned by snapshots; health-check.sh prunes them.
 HOOK_DROP_TO_SUDO_USER=1
 source "$(dirname "$0")/../lib/_hook-env.sh"
 

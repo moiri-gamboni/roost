@@ -7,6 +7,8 @@
 # No snapshot of its own: snapper's hourly timeline is the rollback point, and a
 # pinned pre-update snapshot per run would hold every superseded toolchain and
 # every dangling Docker layer the cleanup at the end is there to reclaim.
+# Xray-core is deliberately not updated here: its restart would drop the
+# in-country travel-VPN user at their peak time; `./deploy.sh` re-runs update it.
 HOOK_DROP_TO_SUDO_USER=1
 source "$(dirname "$0")/../lib/_hook-env.sh"
 
