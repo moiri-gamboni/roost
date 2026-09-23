@@ -43,8 +43,9 @@ else
     ok "dufs service running"
 fi
 
-# Drop the superseded interim HTTP fragment, if a previous version left one.
-rm -f /etc/caddy/apps-enabled/drop.caddy
+# Drop superseded copies of the site: the interim HTTP fragment, and the site's
+# name before it joined the other tailnet :443 sites as tailnet-drop.caddy.
+rm -f /etc/caddy/apps-enabled/drop.caddy /etc/caddy/sites-enabled/drop.caddy
 
 # --- Caddy site for drop.$DOMAIN ---
 # Needs the *.$DOMAIN wildcard cert (Path D Vision cert). vision-cert-init.sh
@@ -65,7 +66,7 @@ if ! id -nG caddy | tr ' ' '\n' | grep -qx xray; then
     info "Added caddy to group xray (wildcard cert read access)"
 fi
 
-CADDY_SITE="/etc/caddy/sites-enabled/drop.caddy"
+CADDY_SITE="/etc/caddy/sites-enabled/tailnet-drop.caddy"
 CADDY_CONTENT="https://drop.${DOMAIN} {
     tls $VISION_CERT $VISION_KEY
     reverse_proxy 127.0.0.1:5000 {
