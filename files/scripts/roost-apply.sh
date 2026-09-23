@@ -136,6 +136,7 @@ files/private/granola-digest.sh|$ROOST_DIR/claude/scripts/granola-digest.sh|plai
 files/private/drive-mirror-refresh.sh|$ROOST_DIR/claude/scripts/drive-mirror-refresh.sh|plain+x|
 files/travel/travel-health.sh|$ROOST_DIR/claude/scheduled/health-check-apps.sh|plain+x|
 files/private/health-check-apps-private.sh|$ROOST_DIR/claude/scheduled/health-check-apps-private.sh|plain+x|
+files/private/health-check-attention-queue.sh|$ROOST_DIR/claude/scheduled/health-check-attention-queue.sh|plain+x|
 files/shell/bashrc.sh|$HOME_DIR/.bashrc.d/roost.sh|plain|
 files/private/global-CLAUDE.md|$ROOST_DIR/claude/CLAUDE.md|plain|
 files/private/apart-env.sh|$HOME_DIR/.config/apart/env|plain+600|
