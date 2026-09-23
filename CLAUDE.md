@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guidance for work **in this repo**. Box-wide facts for sessions anywhere (layout, network, hooks, gotchas) live in the deployed global CLAUDE.md (source `files/private/global-CLAUDE.md`, Infrastructure section). Subsystem detail lives next to the code: `files/CLAUDE.md` and the `CLAUDE.md` in `files/hooks/`, `scripts/`, `scheduled/`, `travel/`, `beeper/`, `laptop/`, `private/`, loaded when you work there. Reusable procedures: `docs/runbooks/`. The human-facing setup guide and travel playbook: `README.md`.
+Guidance for work **in this repo**. Box-wide facts for sessions anywhere (layout, network, hooks, gotchas) live in the deployed global CLAUDE.md (source `files/private/global-CLAUDE.md`, Infrastructure section). Subsystem detail lives next to the code: `files/CLAUDE.md` and the `CLAUDE.md` in `files/hooks/`, `scripts/`, `scheduled/`, `travel/`, `beeper/`, `laptop/`, loaded when you work there (`private/` has a README instead). Reusable procedures: `docs/runbooks/`. The human-facing setup guide and travel playbook: `README.md`.
 
 ## Project Overview
 
