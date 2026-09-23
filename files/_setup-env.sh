@@ -29,4 +29,5 @@ eval "$@"' _ "$@"
 # --- Logging helpers (shared with deploy.sh) ---
 info() { echo "  [*] $1"; }
 ok()   { echo "  [+] $1"; }
+warn() { echo "  [!] $1"; }
 skip() { echo "  [-] $1 (already done)"; }
