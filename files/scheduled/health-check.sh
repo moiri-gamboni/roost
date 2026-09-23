@@ -55,8 +55,11 @@ date +%s > "$OOM_STATE"
 # (the startup banner also starts with "sending SIGTERM", hence "to process").
 # An unreadable journal (unparseable state file, sudo refused) must not read
 # as "no kills": that is the one outcome this block exists to prevent.
+# The window's start goes to the log, not FAILURES: it changes every run, and
+# FAILURES is hashed for the cooldown.
 if ! OOM_JOURNAL=$(sudo -n journalctl -u earlyoom --since "@$OOM_SINCE" -o cat --no-pager); then
-    FAILURES="$FAILURES\n- earlyoom journal unreadable (since @$OOM_SINCE)"
+    logger -t "$_HOOK_TAG" "FAIL: earlyoom journal unreadable (kills since @$OOM_SINCE not checked)"
+    FAILURES="$FAILURES\n- earlyoom journal unreadable (kills not checked)"
 else
     OOM_KILLS=$(grep -E '^sending SIG(TERM|KILL) to process' <<<"$OOM_JOURNAL" | sed -E 's/ uid [0-9]+//; s/: badness [0-9]+,//')
     if [ -n "$OOM_KILLS" ]; then
