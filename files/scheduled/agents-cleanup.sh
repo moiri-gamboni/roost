@@ -175,5 +175,3 @@ else
     logger -t "$_HOOK_TAG" "summary deleted=$deleted kept=$kept skipped=$skipped"
 fi
 
-# Composite session worktrees whose Claude process is gone: integrate + remove.
-"$HOME/bin/agent-worktree" gc || true
