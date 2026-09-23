@@ -136,7 +136,7 @@ Base configs stay generic; server-specific app configs go where the base configs
 | Caddy Tailscale-only apps | `/etc/caddy/apps-enabled/<app>.caddy` | `handle_path` fragments imported by `sites-enabled/apps.caddy` |
 | Cloudflare ingress | `~/roost/cloudflared/apps/<app>.yml` | Ingress rule lines, assembled by `cloudflare-assemble.sh` (`roost-apply --cloudflare`) |
 | App cron jobs | `/etc/cron.d/${ROOST_DIR_NAME}-apps` | Filenames must not contain dots |
-| App health checks | `~/roost/claude/scheduled/health-check-apps.sh` | Sourced by `health-check.sh`; same `check()`/`check_service()` helpers; deployed from `files/travel/travel-health.sh`, so append there (currently travel-vpn + PrivateBin checks + the roughdraft-write-guard liveness probe) |
+| App health checks | `~/roost/claude/scheduled/health-check-apps.sh` | Sourced by `health-check.sh`; same `check()`/`check_service()` helpers; deployed from `files/travel/travel-health.sh`, so append there (currently travel-vpn + PrivateBin checks + the roughdraft-write-guard liveness probe). Private checks follow in `health-check-apps-private.sh`, which sources the attention-queue dead-man `health-check-attention-queue.sh` |
 
 **Tailscale-only static apps** share `:8090` with path routing: drop a `.caddy` file in `apps-enabled/` with `handle_path /<name>/* { root * /path/to/files; file_server }`, `roost-apply --caddy`, and it's at `http://<tailscale-ip>:8090/<name>/`. Files must be readable by the `caddy` user.
 
