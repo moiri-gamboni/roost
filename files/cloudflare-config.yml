@@ -2,7 +2,8 @@ tunnel: ${TUNNEL_ID}
 credentials-file: /etc/cloudflared/${TUNNEL_ID}.json
 
 ingress:
-  # Public apps (add entries, then run: cloudflared tunnel route dns ${TUNNEL_NAME} <hostname>)
-  # - hostname: app.example.com
-  #   service: http://localhost:80
+  # Public apps are not added here: each gets a fragment in ~/roost/cloudflared/apps/
+  # pointing at a loopback Caddy site (service: http://127.0.0.1:<port>), plus a
+  # proxied CNAME to the tunnel (README, "Add a web app"). No cert.pem on the
+  # server, so `cloudflared tunnel route dns` does not work here.
   - service: http_status:404
