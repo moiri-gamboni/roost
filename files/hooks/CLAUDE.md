@@ -20,6 +20,7 @@ Rules shared by the guards:
 | PreToolUse (Agent) | `redelegation-guard.sh` | Inside a subagent only: denies its first spawn when that spawn is alone in its message and its prompt carries ≥80% of the brief's vocabulary |
 | SubagentStart | `subagent-context.sh` | Tells each subagent that it is one and that its brief is its own to execute |
 | SessionStart | `agent-browser-session.sh` | Writes `export AGENT_BROWSER_SESSION=<session id>` to `$CLAUDE_ENV_FILE`, so each session drives its own agent-browser Chrome |
+| (session CLI) | `session-switch-notify.sh` | Named by `SESSION_SWITCH_NOTIFY` in `files/session.conf`; pushes the CLI's one-line sentence through `ntfy_send`: default priority when the automatic switcher moved the box to another login, high when the statusline refused to vault a blank live credential. The CLI rate-limits it and runs it detached, after its lock is released |
 | (PreCompact, not wired) | `reflect.sh` + `reflect.md` | Deployed but unused (the reflection system is off); prints the prompt file |
 
 The rest of the wiring comes from elsewhere. The `session` clone (`~/roost/code/session`, wired by its `install.sh`, README = contract) provides `session --hook` (UserPromptSubmit), the `--rewake-waiter` auto-resume pair (UserPromptSubmit and StopFailure, `asyncRewake`), the lifecycle modes on Stop, StopFailure, SessionEnd, SubagentStart/Stop, PostCompact and Notification, and the statusline. `files/scripts/agent-worktree.sh` provides WorktreeCreate and SessionEnd.
