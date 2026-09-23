@@ -9,7 +9,7 @@ After running the deploy script you will have:
 - Hardened Ubuntu 24.04 with btrfs snapshots and automatic security updates
 - Private networking via Tailscale (SSH gated by Hetzner cloud firewall, no public HTTP/HTTPS ports)
 - Public web apps via Cloudflare Tunnel (zero open HTTP/HTTPS ports)
-- Claude Code with agent teams, session persistence, and push notifications
+- Claude Code with session persistence and push notifications
 - Session search and lineage tracking (claude-code-tools)
 - Push notifications to your phone (ntfy)
 - System monitoring (Glances) with automated health alerts
@@ -191,7 +191,7 @@ done
 | Caddy routes | `/etc/caddy/sites-enabled/<app>.caddy` |
 | Cloudflare ingress | `~/roost/cloudflared/apps/<app>.yml` |
 | Cron jobs | `/etc/cron.d/${ROOST_DIR_NAME}-apps` (filenames must not contain dots) |
-| Health checks | `~/roost/claude/hooks/health-check-apps.sh` (sourced by the main health check if present) |
+| Health checks | `~/roost/claude/scheduled/health-check-apps.sh` (sourced by the main health check if present) |
 
 PrivateBin (`files/setup/privatebin.sh`) is a repo-managed worked example of this pattern: loopback Caddy site on `:8095`, ingress fragment `privatebin.yml`, proxied CNAME `paste.<domain>` ensured by deploy.sh.
 
@@ -392,7 +392,7 @@ roost-net travel off
 | `roost-net travel on` / `off` | Enable/disable the CF fragment + UFW rules for 443/tcp + 51820/tcp+udp |
 | `roost-net vpn on` / `off` | Enable/disable `wg-quick@wg-proton` + keepalive timer; verifies egress is external (not our Hetzner IP) on activation |
 | `roost-net path [a\|b\|c\|d\|auto]` | Pin client configs to one Xray path, or `auto` for urltest selection; render-time only, re-fetch client configs to apply |
-| `roost-net test` | Plan §4.2 assertions (masked fwmark, kill-switch REJECT, external egress) |
+| `roost-net test` | Assertions (masked fwmark, kill-switch REJECT, external egress) |
 | `roost-net client {android\|laptop\|ssh}` | Emit sing-box or SSH config from `/etc/roost-travel/state.env` |
 | `roost-net rotate-keys` | Regenerate `state.env` (UUID + REALITY keypair + shortIds + SS-2022 password); restart xray |
 
@@ -442,7 +442,7 @@ Sensitive services never touch the public internet.
 
 **Tailscale ACLs:** The server is registered with `tag:server`. ACLs block the server from initiating connections to personal devices, limiting blast radius if a prompt injection compromises a Claude session.
 
-**GitHub credential scoping:** Fine-grained PATs exclude Administration, Workflows, Webhooks, Secrets, and Codespaces permissions. A compromised session cannot modify branch rulesets, inject CI secrets, or exfiltrate code via webhooks. Branch rulesets prevent force push and deletion on main.
+**GitHub credentials:** pushes use SSH only (one ed25519 key for auth and commit signing) and no personal access token lives on the server; `gh` has its own OAuth login. Branch rulesets prevent force push and deletion on main.
 
 ### Directory Structure (on server)
 
@@ -452,9 +452,11 @@ The directory name `roost` is configurable via `ROOST_DIR_NAME` in `.env`.
 ~/roost/                    Managed root directory
 ├── claude/                 Claude Code config (CLAUDE_CONFIG_DIR)
 │   ├── settings.json       Hooks, cleanup policy
-│   ├── hooks/              Hook scripts + utilities (roost-apply, cloudflare-assemble)
+│   ├── hooks/              Event hooks
+│   ├── scripts/            CLIs, symlinked into ~/bin (roost-apply, roost-net, agent-worktree)
+│   ├── scheduled/          Cron and timer jobs
+│   ├── lib/                Shared shell code (_hook-env.sh, cloudflare-assemble.sh)
 │   ├── skills/             Skills
-│   ├── locks/              Session lock files
 │   └── projects/           Session transcripts (auto-managed)
 ├── cloudflared/            Cloudflare Tunnel fragments
 │   └── apps/               Per-app ingress YAML fragments
@@ -468,9 +470,9 @@ The directory name `roost` is configurable via `ROOST_DIR_NAME` in `.env`.
 
 The deployed `settings.json` includes:
 
-- **Agent teams** enabled (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`)
+- **Agent teams** off (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=0`)
 - **Session transcripts** never cleaned up (`cleanupPeriodDays: 99999`)
-- **Auto-compaction** disabled (`autoCompactEnabled: false`)
+- **Auto-compaction** on (`autoCompactEnabled: true`)
 
 ## Updating Config After Deploy
 
@@ -527,8 +529,8 @@ only when something was updated or failed, or a major version bump is
 waiting; a run that changed nothing is silent. Rollback is snapper's hourly
 timeline (the job takes no snapshot of its own).
 
-Updated tools: Claude Code, claude-code-tools, claude-code-transcripts,
-aichat-search, Go, fnm, Node.js, uv, gitleaks, dufs,
+Updated tools: Claude Code, Codex CLI, claude-code-tools, claude-code-transcripts,
+aichat-search, Go, fnm, Node.js, uv, gitleaks, dufs, rclone,
 PrivateBin, acme.sh, agent-browser, and OS packages.
 
 Safeguards:
