@@ -4,8 +4,9 @@
 # snapper snapshots and the off-site backup, Beeper Server pinned and verified
 # against the feed's sha512, the egress policy, and the systemd units, enabled
 # here because roost-apply push never enables anything. Beeper Server and the
-# bridge are enabled but not started: both need a login first, and the bridge
-# needs bbctl and mautrix-slack built from their pinned tags, all by hand
+# bridges are enabled but not started: they need a login first, and the bridges
+# need bbctl, mautrix-slack and mautrix-discord built from their pinned tags, all
+# by hand
 # (docs/runbooks/attention-queue.md). Every step is check-then-act.
 source "$(dirname "$0")/../_setup-env.sh"
 
@@ -100,6 +101,14 @@ for pair in "beeper-egress.sh:/usr/local/sbin/beeper-egress:0755" "egress-hosts:
     fi
 done
 
+# --- libolm: mautrix-discord v0.7.7 links it (its mautrix-go predates the pure-Go backend) ---
+if dpkg-query -W -f='${Status}\n' libolm3 2>&1 | grep -qx 'install ok installed'; then
+    skip "libolm3 installed"
+else
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -q libolm3
+    ok "libolm3 installed"
+fi
+
 # --- units ---
 export USERNAME HOME_DIR
 CHANGED=false
@@ -127,7 +136,7 @@ for unit in beeper-egress.service beeper-egress-ensure.timer; do
         ok "$unit enabled and started"
     fi
 done
-for unit in beeper-server.service attention-bridge@slack.service; do
+for unit in beeper-server.service attention-bridge@slack.service attention-bridge@discord.service; do
     if systemctl is-enabled --quiet "$unit"; then
         skip "$unit enabled"
     else
