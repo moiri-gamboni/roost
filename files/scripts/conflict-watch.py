@@ -11,33 +11,28 @@ never blocks a write — and credits it to a session by walking the writer's par
 outermost registered claude process; the proc connector's fork events keep that chain for
 writers that exit before their event is read (`sed -i`). A write into a unit another open session
 holds puts a notice in both sessions' inboxes; the hook (hooks/conflict-watch-hook.sh) hands them
-to the model, asks before an Edit/Write there, denies a first Bash command naming it, and asks
-before a repo-wide git command (`hook-git`). If the daemon is down nothing is watched and
-nothing is blocked; the health check alerts.
+to the model and warns before an Edit/Write there, a Bash command naming it, or a repo-wide git
+command that would change files another session wrote (`hook-git`). A warning is a deny, once per
+session, unit and hold; the retry passes. Nothing ever raises a permission prompt. If the daemon
+is down nothing is watched and nothing is blocked; the health check alerts.
 
     conflict-watch status                  which session holds which unit, and the counters
     conflict-watch release [UNIT|PATH ...] [--session NAME|ID]
                                            drop this session's holds (all of them without units)
-    conflict-watch allow UNIT|PATH         after the user approved it: work beside the holder
+    conflict-watch allow UNIT|PATH         the user said go ahead: work beside the holder, unflagged
     conflict-watch unit PATH               the unit a path belongs to
     conflict-watch run                     the daemon (root, conflict-watch.service)"""
-import argparse
 import collections
-import ctypes
-import errno
 import fnmatch
 import json
 import os
-import pwd
-import resource
-import select
 import shlex
-import signal
-import socket
-import struct
 import subprocess
 import sys
 import time
+
+# The hook runs this script before repo-wide git commands, so start-up time is user-visible:
+# modules only the daemon or the argument parser need are imported where they are used.
 
 
 class Rules:
@@ -278,12 +273,11 @@ class Attributor:
 #   holds.tsv        the daemon's published holds, read by the hook on every relevant call
 #   state.json       the daemon's full state (per-file writes, counters); reloaded on restart
 #   inbox/<sid>      notices for a session; the daemon appends, the hook takes the whole file
-#   asks/<sid>       Edit asks awaiting the user (tool_use_id, unit, holder, since)
-#   grants/<sid>     units the user let this session into (unit, holder, since|*)
-#   acks/<sid>       units a Bash command of this session was already stopped at (unit, holder, since)
+#   grants/<sid>     units the user let this session into (unit, holder, since|*): `allow`
+#   acks/<sid>       holds this session was already warned about (unit, holder, since)
 #   requests/        release requests from the CLI
 
-SUBDIRS = ("inbox", "asks", "grants", "acks", "requests")
+SUBDIRS = ("inbox", "grants", "acks", "requests")
 
 
 def fmt_age(seconds):
@@ -313,13 +307,39 @@ def read_grants(run, sid):
 
 def add_grant(run, sid, unit, holders):
     """Let session `sid` into `unit` past each (holder, since) — and each holder past `sid` there:
-    the user approved the two working side by side, so neither is asked about the other again."""
+    the user approved the two working side by side, so neither is warned about the other again."""
     with open(os.path.join(run, "grants", sid), "a") as f:
         for holder, since in holders:
             f.write(f"{unit}\t{holder}\t{since}\n")
     for holder, _ in holders:
         with open(os.path.join(run, "grants", holder), "a") as f:
             f.write(f"{unit}\t{sid}\t*\n")
+
+
+def read_cleared(run, sid):
+    """{(unit, holder): {since, …}} this session was already warned about (acks) or let into by
+    the user (grants); since "*" covers any hold."""
+    out = read_grants(run, sid)
+    try:
+        with open(os.path.join(run, "acks", sid)) as f:
+            for line in f:
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) == 3:
+                    out.setdefault((parts[0], parts[1]), set()).add(parts[2])
+    except FileNotFoundError:
+        pass
+    return out
+
+
+def add_acks(run, sid, holds):
+    """Record that this session was warned about each (unit, holder, since): the retry passes."""
+    with open(os.path.join(run, "acks", sid), "a") as f:
+        for unit, holder, since in holds:
+            f.write(f"{unit}\t{holder}\t{since}\n")
+
+
+def cleared_hold(cleared, unit, holder, since):
+    return granted(cleared, unit, holder, since)
 
 
 def granted(grants, unit, holder, since):
@@ -443,7 +463,7 @@ class Watch:
         grants = read_grants(self.run, session.sid)
         unapproved = [(sid, r) for sid, r in others if not granted(grants, unit, sid, r["since"])]
         if unapproved and not by_claude:
-            # an Edit/Write by the claude process went through the hook's ask already
+            # an Edit/Write by the claude process passed the hook's warning already
             self._notify(session.sid, ("stop", unit), self._stop_text(session, path, unit, kind, unapproved, comm, open_sids))
         for sid, r in others:
             if (sid, session.sid, unit) not in self.told:
@@ -551,7 +571,7 @@ class Watch:
             for sid in [s for s in self.holds[u] if s not in open_sids]:
                 self.release(sid, u)
         now = time.time()
-        for d in ("inbox", "asks", "grants", "acks"):
+        for d in ("inbox", "grants", "acks"):
             for name in os.listdir(os.path.join(self.run, d)):
                 sid = name.lstrip(".").split(".")[0]
                 p = os.path.join(self.run, d, name)
@@ -598,7 +618,7 @@ def log(msg):
 FAN_CLASS_NOTIF, FAN_CLOEXEC, FAN_NONBLOCK, FAN_UNLIMITED_QUEUE = 0x0, 0x1, 0x2, 0x10
 FAN_MARK_ADD, FAN_MARK_MOUNT = 0x1, 0x10
 FAN_CLOSE_WRITE, FAN_Q_OVERFLOW = 0x8, 0x4000
-EVENT = struct.Struct("=IBBHQii")         # fanotify_event_metadata: len, vers, reserved, metadata_len, mask, fd, pid
+EVENT = "=IBBHQii"                        # fanotify_event_metadata: len, vers, reserved, metadata_len, mask, fd, pid
 NETLINK_CONNECTOR, CN_IDX_PROC, PROC_CN_MCAST_LISTEN = 11, 1, 1
 PROC_EVENT_FORK, PROC_EVENT_EXIT = 0x1, 0x80000000
 
@@ -606,6 +626,7 @@ PROC_EVENT_FORK, PROC_EVENT_EXIT = 0x1, 0x80000000
 def fanotify_open(mount_path):
     """A notification-only group (never a permission group: a dead or slow daemon must not be
     able to block a write) with a close-after-write mark on the mount holding `mount_path`."""
+    import ctypes
     libc = ctypes.CDLL("libc.so.6", use_errno=True)
     libc.fanotify_mark.argtypes = [ctypes.c_int, ctypes.c_uint, ctypes.c_uint64, ctypes.c_int, ctypes.c_char_p]
     fd = libc.fanotify_init(FAN_CLASS_NOTIF | FAN_CLOEXEC | FAN_NONBLOCK | FAN_UNLIMITED_QUEUE,
@@ -620,6 +641,8 @@ def fanotify_open(mount_path):
 
 
 def proc_connector_open():
+    import socket
+    import struct
     s = socket.socket(socket.AF_NETLINK, socket.SOCK_DGRAM, NETLINK_CONNECTOR)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 << 20)
     s.bind((os.getpid(), CN_IDX_PROC))
@@ -641,6 +664,8 @@ class Daemon:
         self.settling = []      # (time, event fd, session, by claude, writer) awaiting settle()
 
     def drain_lineage(self, sock):
+        import errno
+        import struct
         now = time.time()
         while True:
             try:
@@ -669,6 +694,8 @@ class Daemon:
                 off += (nl_len + 3) & ~3
 
     def drain_writes(self, fan, nl):
+        import struct
+        event = struct.Struct(EVENT)
         while True:
             self.drain_lineage(nl)      # a writer's fork is queued before its write: read forks first, every batch
             try:
@@ -676,8 +703,8 @@ class Daemon:
             except BlockingIOError:
                 return
             off = 0
-            while off + EVENT.size <= len(buf):
-                ev_len, _, _, _, mask, efd, pid = EVENT.unpack_from(buf, off)
+            while off + event.size <= len(buf):
+                ev_len, _, _, _, mask, efd, pid = event.unpack_from(buf, off)
                 off += ev_len
                 if mask & FAN_Q_OVERFLOW:
                     self.watch.count("fanotify_overflow")
@@ -740,6 +767,9 @@ class Daemon:
             self.watch.record(session, path, by_claude=by_claude, comm=comm)
 
     def run(self):
+        import resource
+        import select
+        import signal
         soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
         resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))      # settling writes hold their fds
         fan = fanotify_open(self.rules.root)
@@ -883,10 +913,38 @@ def cmd_unit(cfg, rules, registry, args):
     return 0
 
 
-# Repo-wide git commands: `sweep` ones act on every changed file in the tree (they stage, stash or
-# discard other people's uncommitted work); `move` ones rewrite the checkout under whoever works in it.
+# Repo-wide git commands, by what they can change: `sweep` ones act on every uncommitted file in
+# the tree (they stage, stash or discard other people's work), `paths` ones discard the changes to
+# the paths they name, `move` ones rewrite the checkout to another commit.
+VALUE_OPTS = {
+    "merge": {"-m", "-F", "-s", "-X", "--message", "--file", "--strategy", "--strategy-option", "--into-name"},
+    "rebase": {"-s", "-X", "-x", "--strategy", "--strategy-option", "--exec"},
+    "pull": {"-s", "-X", "--strategy", "--strategy-option", "--depth"},
+    "checkout": {"-b", "-B", "--orphan", "--conflict"},
+    "switch": {"-c", "-C", "--create", "--force-create", "--orphan", "--conflict"},
+    "restore": {"-s", "--source"},
+}
+
+
+def positionals(sub, args):
+    """The non-option arguments, skipping the values of options that take one."""
+    out, skip = [], False
+    takes = VALUE_OPTS.get(sub, set())
+    for a in args:
+        if skip:
+            skip = False
+        elif a == "--":
+            continue
+        elif a.startswith("-"):
+            skip = a in takes
+        else:
+            out.append(a)
+    return out
+
+
 def classify_git(tokens):
-    """(kind, repo dir option list) for a tokenized command that runs git, else None."""
+    """(kind, repo dir option list, subcommand, its arguments) for a tokenized command that runs a
+    repo-wide git command, else None."""
     i = 0
     while i < len(tokens) and "=" in tokens[i] and not tokens[i].startswith("-"):
         i += 1                                  # VAR=value prefixes
@@ -905,31 +963,41 @@ def classify_git(tokens):
     if i >= len(tokens):
         return None
     sub, args = tokens[i], tokens[i + 1:]
-    opts = [a for a in args if a.startswith("-")]
+    opts = set(a for a in args if a.startswith("-"))
     everything = {".", ":/", ":/*", "*"}
-    if sub == "add" and ({"-A", "--all", "-u", "--update"} & set(opts) or everything & set(args)):
-        return "sweep", dirs
-    if sub == "commit" and any(o in ("-a", "--all") or (not o.startswith("--") and "a" in o[1:] and o[1:].isalpha()) for o in opts):
-        return "sweep", dirs
-    if sub == "stash" and not (args and args[0] in ("list", "show")):
-        return "sweep", dirs
-    if sub == "checkout":
+    kind = None
+    if sub == "add" and ({"-A", "--all", "-u", "--update"} & opts or everything & set(args)):
+        kind = "sweep"
+    elif sub == "commit" and any(o in ("-a", "--all") or (not o.startswith("--") and "a" in o[1:] and o[1:].isalpha()) for o in opts):
+        kind = "sweep"
+    elif sub == "stash" and not (args and args[0] in ("list", "show")):
+        kind = "sweep"
+    elif sub == "checkout":
         if "--" in args:
-            return ("sweep", dirs) if everything & set(args[args.index("--") + 1:]) else None
-        if everything & set(args) or {"-f", "--force"} & set(opts):
-            return "sweep", dirs
-        if {"-b", "-B", "--orphan"} & set(opts):
-            return None
-        return ("move", dirs) if any(not a.startswith("-") for a in args) else None
-    if sub == "restore" and everything & set(args):
-        return "sweep", dirs
-    if sub == "reset" and "--hard" in opts:
-        return "sweep", dirs
-    if sub == "clean" and any(o.startswith("-") and not o.startswith("--") and "f" in o or o == "--force" for o in opts):
-        return "sweep", dirs
-    if sub in ("switch", "pull", "merge", "rebase") and not {"--abort", "--continue", "--quit"} & set(opts):
-        return "move", dirs
-    return None
+            paths = args[args.index("--") + 1:]
+            kind = "sweep" if everything & set(paths) else ("paths" if paths else None)
+        elif everything & set(args) or {"-f", "--force"} & opts:
+            kind = "sweep"
+        elif {"-b", "-B", "--orphan"} & opts:
+            kind = "move" if positionals(sub, args) else None     # a start point moves the checkout
+        elif positionals(sub, args):
+            kind = "move"
+    elif sub == "switch":
+        pos = positionals(sub, args)
+        if {"-c", "-C", "--create", "--force-create", "--orphan"} & opts:
+            kind = "move" if pos else None
+        elif pos:
+            kind = "move"
+    elif sub == "restore" and not ("--staged" in opts and not {"-W", "--worktree"} & opts):
+        pos = positionals(sub, args)
+        kind = "sweep" if everything & set(pos) else ("paths" if pos else None)
+    elif sub == "reset" and "--hard" in opts:
+        kind = "sweep"
+    elif sub == "clean" and any(o.startswith("-") and not o.startswith("--") and "f" in o or o == "--force" for o in opts):
+        kind = "sweep"
+    elif sub in ("pull", "merge", "rebase") and not {"--abort", "--continue", "--quit", "--skip"} & opts:
+        kind = "move"
+    return (kind, dirs, sub, args) if kind else None
 
 
 def split_segments(command):
@@ -953,14 +1021,96 @@ def split_segments(command):
     return segs
 
 
+def git_lines(repo, *args):
+    """Output lines of a git command in `repo`, or None when it fails."""
+    r = subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True, timeout=20)
+    return [l for l in r.stdout.split("\0" if "-z" in args else "\n") if l] if r.returncode == 0 else None
+
+
+def dirty_files(top):
+    entries = git_lines(top, "status", "--porcelain", "-z", "--untracked-files=all") or []
+    out, i = set(), 0
+    while i < len(entries):
+        e = entries[i]
+        if len(e) > 3:
+            out.add(os.path.join(top, e[3:]))
+            if e[0] in "RC":                    # a rename carries its source as the next entry
+                i += 1
+        i += 1
+    return out
+
+
+def move_targets(sub, args):
+    """(refs, diff form) a move command takes the checkout to, or None when that cannot be told
+    from the command alone. merge/rebase/pull bring in what changed on the incoming side since the
+    merge base (HEAD...ref); checkout/switch replace HEAD's tree with the target's (HEAD ref)."""
+    pos = positionals(sub, args)
+    if sub in ("checkout", "switch"):
+        if len(pos) != 1 and not ({"-b", "-B", "--orphan", "-c", "-C", "--create", "--force-create"} & set(args) and pos):
+            return None
+        return ["@{-1}" if pos[-1] == "-" else pos[-1]], "direct"
+    if sub == "merge":
+        return (pos or ["@{u}"]), "incoming"
+    if sub == "rebase":
+        if {"--onto", "--root", "-i", "--interactive"} & set(args) or len(pos) > 1:
+            return None
+        return (pos or ["@{u}"]), "incoming"
+    if sub == "pull":                           # compared with what is fetched already
+        if not pos:
+            return ["@{u}"], "incoming"
+        return ([f"{pos[0]}/{pos[1]}"], "incoming") if len(pos) == 2 else None
+    return None
+
+
+def affected_files(top, d, kind, sub, args):
+    """The files under `top` the command would change, or None when that cannot be computed
+    cheaply (then every file another session wrote there counts)."""
+    if kind == "sweep":
+        return dirty_files(top)
+    if kind == "paths":
+        specs = [os.path.normpath(os.path.join(d, p)) for p in positionals(sub, args[args.index("--") + 1:] if "--" in args else args)]
+        return {f for f in dirty_files(top)
+                if any(f == sp or f.startswith(sp + "/") or fnmatch.fnmatchcase(f, sp) for sp in specs)}
+    t = move_targets(sub, args)
+    if t is None:
+        return None
+    refs, form = t
+    out = set()
+    for ref in refs:
+        if git_lines(top, "rev-parse", "--verify", "--quiet", ref + "^{commit}") is None:
+            if sub == "checkout" and len(refs) == 1 and os.path.exists(os.path.join(d, ref)):
+                return {f for f in dirty_files(top) if f == os.path.normpath(os.path.join(d, ref))}  # checkout <path>
+            return None
+        names = git_lines(top, "diff", "--name-only", "-z", f"HEAD...{ref}" if form == "incoming" else "HEAD", *([ref] if form == "direct" else []))
+        if names is None:
+            return None
+        out |= {os.path.join(top, n) for n in names}
+    return out
+
+
+def owned_by(path, top):
+    """True when `top` is the repo holding `path`: no directory between them has its own .git."""
+    if not path.startswith(top + "/"):
+        return False
+    d = os.path.dirname(path)
+    while len(d) > len(top):
+        if os.path.lexists(os.path.join(d, ".git")):
+            return False
+        d = os.path.dirname(d)
+    return True
+
+
 def hook_git(cfg, rules, registry, payload, self_sids):
-    """PreToolUse(Bash): ask before a repo-wide git command in a repo where another open session has work."""
+    """PreToolUse(Bash): stop, once, a repo-wide git command that would change files another open
+    session wrote. Returns the hook's decision fields, or None to let it run."""
     st = read_state(cfg["run"])
     if st is None:
         return None
     command = (payload.get("tool_input") or {}).get("command") or ""
     base = payload.get("cwd") or os.getcwd()
+    sid = payload.get("session_id") or ""
     sessions = registry.by_sid(force=True)
+    cleared = read_cleared(cfg["run"], sid)
     now = time.time()
     for toks in split_segments(command):
         if toks and toks[0] == "cd" and len(toks) > 1:
@@ -969,52 +1119,46 @@ def hook_git(cfg, rules, registry, payload, self_sids):
         c = classify_git(toks)
         if c is None:
             continue
-        kind, dirs = c
+        kind, dirs, sub, args = c
         d = base
         for x in dirs:
             d = os.path.normpath(os.path.join(d, os.path.expanduser(x)))
-        r = subprocess.run(["git", "-C", d, "rev-parse", "--show-toplevel"], capture_output=True, text=True)
-        if r.returncode != 0:
+        top = git_lines(d, "rev-parse", "--show-toplevel")
+        if not top:
             continue
-        top = r.stdout.strip()
-        dirty = None
-        if kind == "sweep":
-            s = subprocess.run(["git", "-C", top, "status", "--porcelain", "-z", "--untracked-files=all"],
-                               capture_output=True, text=True)
-            dirty = set()
-            entries = s.stdout.split("\0")
-            i = 0
-            while i < len(entries):
-                e = entries[i]
-                if len(e) > 3:
-                    dirty.add(os.path.join(top, e[3:]))
-                    if e[0] in "RC":            # a rename carries its source as the next entry
-                        i += 1
-                i += 1
-        found = []
+        top = top[0]
+        candidates = []                         # (session, unit, hold, its files in this repo), not yet warned about
         for unit, h in st["holds"].items():
-            if not (unit == top or unit.startswith(top + "/")):
+            if not (unit == top or unit.startswith(top + "/") or top.startswith(unit + "/")):
                 continue
-            for sid, rec in h.items():
-                if sid in self_sids or sid not in sessions:
+            for hsid, rec in h.items():
+                if hsid in self_sids or hsid not in sessions or cleared_hold(cleared, unit, hsid, rec["since"]):
                     continue
-                files = sorted(p for p in rec["files"] if dirty is None or p in dirty)
+                files = [p for p in rec["files"] if owned_by(p, top)]
                 if files:
-                    found.append((sessions[sid], rec, files))
+                    candidates.append((sessions[hsid], unit, rec, files))
+        if not candidates:
+            continue
+        affected = affected_files(top, d, kind, sub, args)
+        found = [(s, u, rec, sorted(f for f in files if affected is None or f in affected))
+                 for s, u, rec, files in candidates]
+        found = [x for x in found if x[3]]
         if not found:
             continue
+        add_acks(cfg["run"], sid, [(u, s.sid, rec["since"]) for s, u, rec, _ in found])
         who = "; ".join(f"'{s.name}' ({s.status}, last wrote there {fmt_age(now - rec['last'])} ago) wrote "
-                        f"{len(files)} {'uncommitted ' if kind == 'sweep' else ''}file(s) here: "
                         + ", ".join(os.path.relpath(p, top) for p in files[:15]) + (" …" if len(files) > 15 else "")
-                        for s, rec, files in found)
-        verb = "acts on every changed file in" if kind == "sweep" else "rewrites the checkout of"
-        names = " or ".join(f"'{s.name}'" for s, _, _ in found)
-        reason = (f"Conflict watch: `{' '.join(toks)}` {verb} {top}, where another open session is working: {who}. "
-                  "Approve to run it anyway.")
-        ctx = (f"Conflict watch: `{' '.join(toks)}` {verb} {top}, where another open session is working: {who}. "
-               "The user was asked to approve it. If it was denied: stage, commit or restore only your own files, "
-               f"by path; for anything wider, ask the user whether to message {names} (SendMessage) to coordinate.")
-        return {"permissionDecision": "ask", "permissionDecisionReason": reason, "additionalContext": ctx}
+                        for s, _, rec, files in found)
+        names = " or ".join(f"'{s.name}'" for s, _, _, _ in found)
+        repo_unit = any(u == top for _, u, _, _ in found)
+        worktree = (f", or to move your work into a worktree of this repo (`agent-worktree isolate {top}`) and "
+                    "continue there" if repo_unit else "")
+        reason = (f"Conflict watch: `{' '.join(toks)}` would change files in {top} that another open session "
+                  f"wrote: {who}. Stopped once, as a warning. Do not decide this yourself, whatever that "
+                  f"session's idle time: ask the user whether to message {names} (SendMessage) to "
+                  f"coordinate{worktree}. Committing, staging or restoring only your own files by path is "
+                  "always fine. If the user says to go ahead, re-run the command: it passes now.")
+        return {"permissionDecision": "deny", "permissionDecisionReason": reason}
     return None
 
 
@@ -1044,14 +1188,17 @@ def cmd_hook_git(cfg, rules, registry, args):
     if out is None and not extra:
         return 0
     out = out or {}
-    if extra:
-        out["additionalContext"] = (extra + "\n\n" + out.get("additionalContext", "")).strip()
+    if extra and out.get("permissionDecision") == "deny":
+        out["permissionDecisionReason"] += "\n\n" + extra      # a deny drops additionalContext
+    elif extra:
+        out["additionalContext"] = extra
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", **out}}))
     return 0
 
 
 def cmd_run(cfg, rules, registry, args):
     st = os.stat(cfg["registry"])
+    import pwd
     owner = (st.st_uid, st.st_gid, pwd.getpwuid(st.st_uid).pw_dir)
     os.umask(0o007)
     Daemon(rules, registry, cfg["run"], owner).run()
@@ -1059,6 +1206,7 @@ def cmd_run(cfg, rules, registry, args):
 
 
 def main(argv=None):
+    import argparse
     ap = argparse.ArgumentParser(prog="conflict-watch", description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("run", help="the daemon (root, under systemd)")
@@ -1066,7 +1214,8 @@ def main(argv=None):
     p = sub.add_parser("release", help="drop holds: this session's (default) or --session's; no units = all of them")
     p.add_argument("units", nargs="*", metavar="UNIT_OR_PATH")
     p.add_argument("--session", help="a session id, id prefix or name (ListAgents)")
-    p = sub.add_parser("allow", help="after the user approved it: work in a unit another session holds")
+    p = sub.add_parser("allow", help="once the user said go ahead: work in a unit another session holds, "
+                                     "without its warnings or notices (both ways)")
     p.add_argument("unit", metavar="UNIT_OR_PATH")
     p = sub.add_parser("unit", help="the unit a path belongs to")
     p.add_argument("path")

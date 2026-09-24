@@ -394,9 +394,10 @@ class GitClassification(unittest.TestCase):
         "git commit -a -m x": "sweep", "git commit -am x": "sweep", "git commit -m 'fix -a flag'": None,
         "git commit -m x": None,
         "git stash": "sweep", "git stash push": "sweep", "git stash list": None,
-        "git checkout -- .": "sweep", "git checkout .": "sweep", "git checkout -- a.py": None,
+        "git checkout -- .": "sweep", "git checkout .": "sweep", "git checkout -- a.py": "paths",
         "git checkout main": "move", "git checkout -b new": None,
-        "git restore .": "sweep", "git restore a.py": None,
+        "git restore .": "sweep", "git restore a.py": "paths", "git restore --staged a.py": None,
+        "git switch -c new": None, "git switch -c new main": "move",
         "git reset --hard": "sweep", "git reset HEAD~1": None,
         "git clean -fd": "sweep", "git clean -n": None,
         "git switch main": "move", "git pull": "move", "git rebase main": "move", "git rebase --continue": None,
@@ -412,29 +413,47 @@ class GitClassification(unittest.TestCase):
     def test_segments_and_directories(self):
         segs = cw.split_segments("cd sub && git -C inner add -A; echo 'a;b'")
         self.assertEqual(segs, [["cd", "sub"], ["git", "-C", "inner", "add", "-A"], ["echo", "a;b"]])
-        self.assertEqual(cw.classify_git(segs[1]), ("sweep", ["inner"]))
+        self.assertEqual(cw.classify_git(segs[1])[:2], ("sweep", ["inner"]))
 
 
 class GitCheck(WatchFixture):
-    """The PreToolUse(Bash) check before a repo-wide git command."""
+    """The PreToolUse(Bash) check before a repo-wide git command: stopped once, with a warning,
+    when it would change files another open session wrote; the retry passes."""
 
     def setUp(self):
         super().setUp()
-        git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init", cwd=self.repo)
+        git("commit", "-q", "--allow-empty", "-m", "init", cwd=self.repo)
         self.cfg = {"run": self.run}
 
-    def check(self, command, sid="T", cwd=None):
+    def check(self, command, sid="T", cwd=None, retry=False):
+        """The hook's decision on a first attempt (no earlier warning), or on a retry."""
+        if not retry:
+            for f in (os.path.join(self.run, "acks", sid),):
+                if os.path.exists(f):
+                    os.remove(f)
         payload = {"session_id": sid, "cwd": cwd or self.repo, "tool_input": {"command": command}}
         return cw.hook_git(self.cfg, self.rules, self.registry, payload, {sid})
 
-    def test_asks_listing_the_other_sessions_uncommitted_files(self):
+    def test_warns_once_listing_the_other_sessions_uncommitted_files(self):
         write(f"{self.repo}/s.py")
         self.write("S", f"{self.repo}/s.py")
         self.watch.flush()
         out = self.check("git add -A && git commit -m wip")
-        self.assertEqual(out["permissionDecision"], "ask")
+        self.assertEqual(out["permissionDecision"], "deny")
         self.assertIn("name-S", out["permissionDecisionReason"])
         self.assertIn("s.py", out["permissionDecisionReason"])
+        self.assertIn("SendMessage", out["permissionDecisionReason"])
+        self.assertIsNone(self.check("git add -A && git commit -m wip", retry=True))    # the retry passes
+
+    def test_a_new_hold_warns_again(self):
+        write(f"{self.repo}/s.py")
+        self.write("S", f"{self.repo}/s.py")
+        self.watch.flush()
+        self.check("git add -A")
+        self.watch.release("S", self.repo)
+        self.write("S", f"{self.repo}/s.py")                     # held again: a new hold
+        self.watch.flush()
+        self.assertIsNotNone(self.check("git add -A", retry=True))
 
     def test_files_the_holder_already_committed_do_not_count(self):
         write(f"{self.repo}/s.py")
@@ -465,13 +484,72 @@ class GitCheck(WatchFixture):
         self.watch.flush()
         self.assertIsNotNone(self.check("cd code/server && git stash", cwd=self.root))
 
-    def test_a_branch_switch_asks_whenever_someone_works_in_the_repo(self):
-        write(f"{self.repo}/s.py")
-        self.write("S", f"{self.repo}/s.py")
-        git("add", "s.py", cwd=self.repo)
-        git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "s", cwd=self.repo)
+    def commit(self, *files, msg="c"):
+        for f in files:
+            write(f"{self.repo}/{f}", f"{f} {msg}\n")
+        git("add", *files, cwd=self.repo)
+        git("commit", "-q", "-m", msg, cwd=self.repo)
+
+    def branch(self, name, *files):
+        """A branch off HEAD whose one commit changes `files`; HEAD stays where it was."""
+        head = git("rev-parse", "--abbrev-ref", "HEAD", cwd=self.repo).strip()
+        git("checkout", "-q", "-b", name, cwd=self.repo)
+        self.commit(*files, msg=name)
+        git("checkout", "-q", head, cwd=self.repo)
+
+    def held(self, *files):
+        for f in files:
+            self.write("S", f"{self.repo}/{f}")
         self.watch.flush()
-        self.assertEqual(self.check("git switch -c x; git checkout main")["permissionDecision"], "ask")
+
+    def test_a_nested_repos_files_never_count(self):
+        # files/private is its own repo: nothing run in code/server can touch it
+        write(f"{self.repo}/files/private/g.md")
+        self.held("files/private/g.md")
+        self.assertIsNone(self.check("git merge no-such-ref"))          # unknown ref: every held file counts…
+        self.assertIsNone(self.check("git add -A"))                     # …but only the repo's own
+
+    def test_a_merge_that_touches_none_of_the_held_files_passes(self):
+        self.commit("s.py")
+        self.held("s.py")
+        self.branch("feat", "other.py")
+        self.assertIsNone(self.check("git merge feat"))
+        self.assertIsNone(self.check("git merge --no-ff -m 'merge feat' feat"))
+
+    def test_a_merge_touching_a_held_file_warns_naming_it(self):
+        self.commit("s.py", "t.py")
+        self.held("s.py", "t.py")
+        self.branch("feat", "s.py", "other.py")
+        out = self.check("git merge feat")
+        self.assertEqual(out["permissionDecision"], "deny")
+        self.assertIn("s.py", out["permissionDecisionReason"])
+        self.assertNotIn("t.py", out["permissionDecisionReason"])
+
+    def test_a_rebase_and_a_branch_switch_count_what_they_change(self):
+        self.commit("s.py")
+        self.held("s.py")
+        self.branch("touches", "s.py")
+        self.branch("spares", "x.py")
+        self.assertIsNotNone(self.check("git rebase touches"))
+        self.assertIsNone(self.check("git rebase spares"))
+        self.assertIsNotNone(self.check("git checkout touches"))
+        self.assertIsNone(self.check("git switch spares"))
+        self.assertIsNone(self.check("git switch -c x; git checkout -"))   # no file changes
+
+    def test_a_ref_that_cannot_be_resolved_still_warns(self):
+        self.commit("s.py")
+        self.held("s.py")
+        self.assertIsNotNone(self.check("git merge no-such-ref"))
+        self.assertIsNotNone(self.check("git pull"))                     # no upstream to compare with
+
+    def test_checkout_or_restore_of_paths_counts_only_those_paths(self):
+        self.commit("s.py", "t.py")
+        write(f"{self.repo}/s.py", "changed\n"); write(f"{self.repo}/t.py", "changed\n")
+        self.held("s.py")
+        self.assertIsNone(self.check("git checkout -- t.py"))
+        self.assertIsNotNone(self.check("git checkout -- s.py"))
+        self.assertIsNotNone(self.check("git restore s.py"))
+        self.assertIsNone(self.check("cd code/server && git restore t.py", cwd=self.root))
 
 
 if __name__ == "__main__":
