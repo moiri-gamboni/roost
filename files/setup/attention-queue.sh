@@ -5,8 +5,8 @@
 # against the feed's sha512, the egress policy, and the systemd units, enabled
 # here because roost-apply push never enables anything. Beeper Server and the
 # bridges are enabled but not started: they need a login first, and the bridges
-# need bbctl, mautrix-slack and mautrix-discord built from their pinned tags, all
-# by hand
+# need bbctl, mautrix-slack, mautrix-discord and matrimail built from their
+# pinned commits, all by hand
 # (docs/runbooks/attention-queue.md). Every step is check-then-act.
 source "$(dirname "$0")/../_setup-env.sh"
 
@@ -109,12 +109,23 @@ else
     ok "libolm3 installed"
 fi
 
+# --- matrimail's key: encrypts the stored Gmail refresh token. Created once and
+#     never rewritten: a new passphrase makes every stored credential unreadable ---
+if [ -e /etc/attention-queue/matrimail.env ]; then
+    skip "matrimail passphrase file exists"
+else
+    install -d -m 700 /etc/attention-queue
+    ( umask 077; { printf 'MATRIMAIL_PASSPHRASE='; openssl rand -base64 48 | tr -d '\n'; printf '\nMATRIMAIL_LOG_LEVEL=info\n'; } > /etc/attention-queue/matrimail.env )
+    ok "matrimail passphrase file created"
+fi
+
 # --- units ---
 export USERNAME HOME_DIR
 CHANGED=false
-for unit in beeper-egress.service beeper-egress-ensure.service beeper-egress-ensure.timer beeper-server.service attention-bridge@.service; do
+for unit in beeper-egress.service beeper-egress-ensure.service beeper-egress-ensure.timer beeper-server.service attention-bridge@.service attention-bridge@email.service.d/matrimail.conf; do
     RENDERED=$(envsubst '$USERNAME $HOME_DIR' < "$REMOTE_DIR/files/beeper/$unit")
     TARGET=/etc/systemd/system/$unit
+    mkdir -p "$(dirname "$TARGET")"
     if [ -f "$TARGET" ] && [ "$(cat "$TARGET")" = "$RENDERED" ]; then
         skip "$unit already configured"
     else
@@ -136,7 +147,7 @@ for unit in beeper-egress.service beeper-egress-ensure.timer; do
         ok "$unit enabled and started"
     fi
 done
-for unit in beeper-server.service attention-bridge@slack.service attention-bridge@discord.service; do
+for unit in beeper-server.service attention-bridge@slack.service attention-bridge@discord.service attention-bridge@email.service; do
     if systemctl is-enabled --quiet "$unit"; then
         skip "$unit enabled"
     else
