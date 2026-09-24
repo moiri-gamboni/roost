@@ -151,6 +151,11 @@
             "type": "command",
             "command": "~/roost/claude/hooks/redelegation-guard.sh",
             "timeout": 6
+          },
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/light-subagents-to-codex.sh",
+            "timeout": 5
           }
         ]
       }

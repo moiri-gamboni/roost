@@ -127,6 +127,7 @@ files/hooks/truncation-guard.sh|$ROOST_DIR/claude/hooks/truncation-guard.sh|plai
 files/hooks/roughdraft-write-guard.sh|$ROOST_DIR/claude/hooks/roughdraft-write-guard.sh|plain+x|
 files/hooks/fork-context-guard.sh|$ROOST_DIR/claude/hooks/fork-context-guard.sh|plain+x|
 files/hooks/redelegation-guard.sh|$ROOST_DIR/claude/hooks/redelegation-guard.sh|plain+x|
+files/hooks/light-subagents-to-codex.sh|$ROOST_DIR/claude/hooks/light-subagents-to-codex.sh|plain+x|
 files/hooks/subagent-context.sh|$ROOST_DIR/claude/hooks/subagent-context.sh|plain+x|
 files/hooks/agent-browser-session.sh|$ROOST_DIR/claude/hooks/agent-browser-session.sh|plain+x|
 files/hooks/session-switch-notify.sh|$ROOST_DIR/claude/hooks/session-switch-notify.sh|plain+x|
