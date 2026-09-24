@@ -254,7 +254,7 @@ class WatchFixture(RegistryFixture):
         return self.registry.by_sid(force=True)[sid]
 
     def write(self, sid, path, by_claude=False):
-        self.watch.record(self.sess(sid), path, by_claude=by_claude, comm="sed")
+        self.watch.record(self.sess(sid), path, by_claude=by_claude, comm="a `sed` process")
 
     def inbox(self, sid):
         p = os.path.join(self.run, "inbox", sid)
