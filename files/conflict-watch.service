@@ -1,0 +1,25 @@
+[Unit]
+Description=conflict-watch: which Claude Code session is writing in which folder or repo
+Documentation=file://$HOME_DIR/$ROOST_DIR_NAME/claude/scripts/conflict-watch.py
+After=local-fs.target
+
+[Service]
+# Root for fanotify (CAP_SYS_ADMIN) and the proc connector (CAP_NET_ADMIN). Notification events
+# only: a dead or stuck daemon never blocks a write; the hook sees the daemon gone and goes quiet.
+Environment=CLAUDE_CONFIG_DIR=$HOME_DIR/$ROOST_DIR_NAME/claude
+ExecStart=/usr/bin/python3 $HOME_DIR/$ROOST_DIR_NAME/claude/scripts/conflict-watch.py run
+Restart=always
+RestartSec=2
+# Holds live in /run/conflict-watch; kept across a restart (sessions outlive it), gone on stop
+# and at reboot (the sessions are too).
+RuntimeDirectory=conflict-watch
+RuntimeDirectoryMode=2770
+RuntimeDirectoryPreserve=restart
+Nice=5
+MemoryMax=256M
+# Each watched write's fd is held for a moment until its file is named (renames settle); a burst
+# such as a checkout needs many at once.
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

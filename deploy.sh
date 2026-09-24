@@ -1096,6 +1096,14 @@ remote_script "setup/earlyoom.sh"
 ok "earlyoom kills the largest process before a swap thrash takes the box down"
 
 # ============================================
+# Conflict watch
+# ============================================
+
+section "Conflict watch"
+remote_script "setup/conflict-watch.sh"
+ok "conflict-watch records which session writes where (script and hook arrive with roost-apply push)"
+
+# ============================================
 # Attention Sampler
 # ============================================
 
