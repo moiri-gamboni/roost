@@ -225,7 +225,7 @@ Academic research workstation. The two main surfaces are Google Docs (the user's
 
 - **Notes and documents live in Google Docs.** Read notes with `gdoc cat` (arrives as markdown), locate with `gdoc find`/`gdoc ls`. Deliver anything written for the user — syntheses, digests, drafts — to Docs (`gdoc new` / `gdoc write` from a markdown file).
 - **Review loop:** put the draft in Docs, the user comments there (desktop or phone); read comments with `gdoc comments`, respond with `gdoc comment --quote`, edit with `gdoc edit`, iterate.
-- **Paper intake → summaries:** per the zotero skill — iterate items missing the `ai-summary` child note, `pdftotext | claude -p --model claude-sonnet-5`, write the note back. Summaries stay in Zotero as child notes (they're data: bulk re-readable via the API); resumable by construction. Bulk runs burn this account's rate-limit windows, so plan large backlogs as chunks.
+- **Paper intake → summaries:** per the zotero skill — iterate items missing the `ai-summary` child note, `pdftotext | claude -p --model opus --effort medium`, write the note back. Summaries stay in Zotero as child notes (they're data: bulk re-readable via the API); resumable by construction. Bulk runs burn this account's rate-limit windows, so plan large backlogs as chunks.
 - **Synthesis:** run over the Zotero summary notes, not the PDFs — cluster, add `dc:relation` links between items — and write the human-facing result to Docs, citing items as `zotero://select/library/items/<KEY>` links so the user can jump from prose to paper.
 - **Web research:** WebSearch/WebFetch are built in; reach for agent-browser or `curl | html2markdown` when a page resists plain fetching.
 

@@ -17,7 +17,7 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 # because a sample only ever reports the last keystroke of the minute it ran in.
 
 # Daily brief of yesterday's Claude Code work (sessions, time, commits),
-# summarized by sonnet at max effort from day-sliced session-CLI logs; ntfy'd
+# summarized by Opus at medium effort from day-sliced session-CLI logs; ntfy'd
 # as plain text and archived to ~/$ROOST_DIR_NAME/claude/usage/briefs/.
 40 6 * * * $USERNAME flock -n $HOME_DIR/.locks/session-daily-brief $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/session-daily-brief.sh
 
@@ -48,17 +48,7 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 # Vision inbound. Skips silently if /var/log/xray/access.log doesn't exist.
 30 5 * * * $USERNAME flock -n $HOME_DIR/.locks/vision-abuse-watch $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/vision-abuse-watch.sh
 
-# Agents-list cleanup — DISABLED. Reverted to built-in `claude agents`
-# behavior. To re-enable, uncomment both lines below and roost-apply push.
-# The scripts themselves remain deployed at ~/$ROOST_DIR_NAME/claude/scheduled/.
-# Tag agents-cleanup-v1 marks the working version, in case of revert.
-#
-# Minute-tick: touch ~/$ROOST_DIR_NAME/claude/last-connection-activity if any
-# SSH (22) or ET (2022) connection is alive. Used by agents-cleanup.sh as a
-# "is the user around" gate. No flock — operation is idempotent and trivial.
-#* * * * * $USERNAME $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/track-ssh-activity.sh
-#
-# Daily agents-list cleanup (3:30am): drop done/stopped/failed/crashed sessions
-# idle ≥48 weekday hours, only if a connection-activity marker is ≤24h old.
-# Uses rm -rf jobs/<id> — preserves transcripts and worktrees.
-#30 3 * * * $USERNAME flock -n $HOME_DIR/.locks/agents-cleanup $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/agents-cleanup.sh
+# Session worktrees whose Claude died without a SessionEnd (a crash, a killed
+# tmux pane): fast-forward what finished cleanly and drop it; anything dirty,
+# diverged or whose root still exists is kept (3:35am).
+35 3 * * * $USERNAME flock -n $HOME_DIR/.locks/agent-worktree-gc $HOME_DIR/bin/agent-worktree gc
