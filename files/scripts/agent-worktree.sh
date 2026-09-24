@@ -29,8 +29,16 @@
 # commits, fast-forwarded into the branch it came from when that is a pure ff
 # and the live checkout accepts it, and kept (with an ntfy summary) otherwise.
 #
+# On demand, a session can also take one repo out of the live checkout: `isolate` (run from the
+# session's Bash, typically after the conflict watch reports another session working in that
+# repo) adds a worktree of just that repo at $AGENT_WORKTREES_DIR/<repo>/s-<session id prefix>/,
+# populated like a composite tree's sub-repo (ignored state linked or copied, nested repos shared
+# live). It goes into the session's record with no root, so the same SessionEnd finish integrates
+# it; several isolated repos in one session share the record and the branch name.
+#
 # Modes:
 #   agent-worktree create           WorktreeCreate hook — JSON {name,cwd,session_id} on stdin, prints root
+#   agent-worktree isolate [PATH]   from a session's Bash: a worktree of the repo holding PATH (default cwd)
 #   agent-worktree finish [NAME]    SessionEnd hook (JSON on stdin) or by name
 #   agent-worktree gc               finish every tree whose Claude process is gone
 #   agent-worktree list             trees and their state
@@ -228,6 +236,43 @@ cmd_create() {
     echo "$root"
 }
 
+# isolate [PATH] — from inside a session: a worktree of the one repo holding PATH (default the cwd),
+# for when another session is working in the live checkout. Recorded in the session's record with
+# no root, so SessionEnd's finish integrates it like a composite tree's sub worktree.
+cmd_isolate() {
+    local sid=${CLAUDE_CODE_SESSION_ID:-} target=${1:-$PWD} repo rec name wt
+    [ -n "$sid" ] || die "isolate runs inside a Claude Code session (no CLAUDE_CODE_SESSION_ID)"
+    [ -d "$target" ] || target=$(dirname "$target")
+    repo=$(git -C "$target" rev-parse --show-toplevel 2>&1) || die "$target is not inside a git repository"
+    rec="$RECORDS/$sid"
+    mkdir -p "$RECORDS"
+    if [ -f "$rec" ]; then
+        name=$(sed -n 's/^name=//p' "$rec")
+        wt=$(awk -F'\t' -v r="$repo" '$1 == "wt" && $3 == r {print $4; exit}' "$rec")
+        if [ -n "$wt" ] && [ -d "$wt" ]; then report_isolated "$repo" "$wt" "$name"; return 0; fi
+    else
+        name="s-${sid:0:8}"
+        { echo "name=$name"; echo "repo=$repo"; echo "root="; echo "substore="
+          echo "pid=$(claude_pid)"; echo "created=$(date -Is)"; } > "$rec"
+    fi
+    wt="$BASE/$(basename "$repo")/$name"
+    [ -e "$wt" ] && die "$wt already exists"
+    mkdir -p "$(dirname "$wt")"
+    add_worktree "$repo" "$wt" "worktree-$name"
+    populate "$repo" "$wt" "$name" 1                   # depth 1: nested repos are shared live, not copied
+    printf 'wt\t%s\t%s\t%s\t%s\t%s\n' "$repo" "$repo" "$wt" \
+        "$(git -C "$repo" symbolic-ref --short -q HEAD || true)" "$(git -C "$repo" rev-parse HEAD)" >> "$rec"
+    log "isolated $repo for session $sid at $wt"
+    report_isolated "$repo" "$wt" "$name"
+}
+
+report_isolated() {  # report_isolated REPO WT NAME
+    local src; src=$(git -C "$1" symbolic-ref --short -q HEAD || echo "a detached HEAD")
+    printf 'worktree: %s\nbranch: worktree-%s (from %s)\n' "$2" "$3" "$src"
+    printf 'Work there from now on (paths under %s instead of %s) and commit on that branch. ' "$2" "$1"
+    printf 'When this session ends, the commits fast-forward into %s if it has not moved on; otherwise the branch is kept and the user is notified.\n' "$src"
+}
+
 # --- integration -----------------------------------------------------------
 
 # integrate REL REAL WT SRC BASE → prints one of: clean merged kept:<reason>
@@ -293,21 +338,26 @@ finish_record() {
     if [ ${#kept[@]} -gt 0 ]; then
         log "$NAME: $summary"
         sed -i '/^state=/d' "$rec"; echo "state=kept" >> "$rec"
+        notify "agent-worktree: work kept" "worktree $NAME: $summary (agent-worktree list)"
     else
         [ -n "$summary" ] && log "$NAME: $summary"
         rm -f "$rec"
     fi
 }
 
-# A finish that itself blew up is invisible (it runs after the session closed),
-# so that — and only that — warrants a push notification.
+# notify TITLE MESSAGE — a push notification; finish runs after the session closed, so work left
+# behind or a finish that blew up would otherwise go unseen. AGENT_WORKTREE_NOTIFY=0 silences it.
+notify() {
+    [ "${AGENT_WORKTREE_NOTIFY:-1}" = 1 ] || return 0
+    # shellcheck disable=SC1091
+    ( . "$(dirname "$(readlink -f "$0")")/../lib/_hook-env.sh" && ntfy_send -t "$1" -p "${3:-default}" "$2" ) || true
+}
+
 finish_or_alert() {
     local rec=$1
     finish_record "$rec" && return 0
     local n; n=$(sed -n 's/^name=//p' "$rec" 2>/dev/null || echo '?')
-    # shellcheck disable=SC1091
-    . "$(dirname "$(readlink -f "$0")")/../lib/_hook-env.sh" \
-        && ntfy_send -t "agent-worktree finish failed" -p high "worktree $n: agent-worktree finish failed; see journalctl -t $TAG and agent-worktree list"
+    notify "agent-worktree finish failed" "worktree $n: agent-worktree finish failed; see journalctl -t $TAG and agent-worktree list" high
     return 1
 }
 
@@ -355,6 +405,7 @@ cmd_list() {
 
 case "${1:-}" in
     create) cmd_create ;;
+    isolate) shift; cmd_isolate "$@" ;;
     finish) shift; cmd_finish "$@" ;;
     gc)     cmd_gc ;;
     list)   cmd_list ;;
