@@ -1,0 +1,16 @@
+[Unit]
+# Five minutes: the allowlist's address sets did not change once in a day of
+# one-minute resolution (captures/dns-churn.tsv in the attention-queue clone),
+# so this is a self-heal bound for a flushed OUTPUT chain, not a DNS refresh.
+# The health check probes the policy on the same period and runs ensure itself
+# when the probe fails.
+Description=Beeper egress reconciliation (5m)
+Requires=beeper-egress-ensure.service
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+Unit=beeper-egress-ensure.service
+
+[Install]
+WantedBy=timers.target
