@@ -41,15 +41,16 @@ else
 fi
 
 # Vision (Path D) cert expiry probe. Only runs if the cert exists at all,
-# so this stays silent until the operator runs vision-cert-init.sh. The
+# so this stays silent until the operator runs vision-cert-init.sh. The cert
+# dir is 0750 root:xray and this runs as the user, hence sudo -n. The
 # weekly renewal timer should refresh the cert ~30d before expiry; alarm
 # at <30d means renewal has been failing or the timer is disabled.
 _travel_vision_cert=/etc/roost-travel/vision-cert/fullchain.cer
-if [ -f "$_travel_vision_cert" ]; then
-    if openssl x509 -checkend $(( 30 * 86400 )) -noout -in "$_travel_vision_cert" >/dev/null 2>&1; then
+if sudo -n test -f "$_travel_vision_cert"; then
+    if sudo -n openssl x509 -checkend $(( 30 * 86400 )) -noout -in "$_travel_vision_cert" >/dev/null; then
         logger -t "$_HOOK_TAG" "OK: Vision cert is valid for >30 days"
     else
-        _expiry=$(openssl x509 -enddate -noout -in "$_travel_vision_cert" 2>/dev/null | cut -d= -f2-)
+        _expiry=$(sudo -n openssl x509 -enddate -noout -in "$_travel_vision_cert" | cut -d= -f2-)
         logger -t "$_HOOK_TAG" "FAIL: Vision cert expires within 30 days (notAfter=$_expiry)"
         FAILURES="$FAILURES\n- Vision cert expires within 30 days (notAfter=$_expiry); check vision-cert-renew.timer"
     fi

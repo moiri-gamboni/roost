@@ -167,20 +167,20 @@ files/ntfy-server.yml|/etc/ntfy/server.yml|plain|restart:ntfy
 files/et.cfg|/etc/et.cfg|envsubst:TAILSCALE_IP|restart:et
 files/caddy-tailscale.conf|/etc/systemd/system/caddy.service.d/tailscale.conf|plain|daemon-reload
 files/caddy-secrets.conf|/etc/systemd/system/caddy.service.d/secrets.conf|plain|daemon-reload,restart:caddy
-files/dufs.service|/etc/systemd/system/dufs.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload,restart:dufs
-files/glances.service|/etc/systemd/system/glances.service|envsubst:USERNAME|daemon-reload,restart:glances
+files/dufs.service|/etc/systemd/system/dufs.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload,enable:dufs.service,restart:dufs
+files/glances.service|/etc/systemd/system/glances.service|envsubst:USERNAME|daemon-reload,enable:glances.service,restart:glances
 files/ram-monitor.service|/etc/systemd/system/ram-monitor.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
-files/ram-monitor.timer|/etc/systemd/system/ram-monitor.timer|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload,restart:ram-monitor.timer
+files/ram-monitor.timer|/etc/systemd/system/ram-monitor.timer|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload,enable:ram-monitor.timer,restart:ram-monitor.timer
 files/earlyoom.default|/etc/default/earlyoom|plain|restart:earlyoom
 files/session-focus-tick.service|/etc/systemd/system/session-focus-tick.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
-files/session-focus-tick.timer|/etc/systemd/system/session-focus-tick.timer|plain|daemon-reload,restart:session-focus-tick.timer
+files/session-focus-tick.timer|/etc/systemd/system/session-focus-tick.timer|plain|daemon-reload,enable:session-focus-tick.timer,restart:session-focus-tick.timer
 files/cron-roost|/etc/cron.d/$ROOST_DIR_NAME|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|
 files/tmux.conf|$HOME_DIR/.tmux.conf|plain|run:tmux source-file ~/.tmux.conf
 files/sshd/50-clip-forward.conf|/etc/ssh/sshd_config.d/50-clip-forward.conf|plain|restart:ssh
 files/apparmor/agent-browser-chrome|/etc/apparmor.d/agent-browser-chrome|envsubst:HOME_DIR|run:sudo apparmor_parser -r /etc/apparmor.d/agent-browser-chrome
 files/tailscaled-iptables.conf|/etc/systemd/system/tailscaled.service.d/iptables-pin.conf|plain|daemon-reload,restart:tailscaled
-files/notion-webhook.service|/etc/systemd/system/notion-webhook.service|plain|daemon-reload,restart:notion-webhook
-files/granola-webhook.service|/etc/systemd/system/granola-webhook.service|plain|daemon-reload,restart:granola-webhook
+files/notion-webhook.service|/etc/systemd/system/notion-webhook.service|plain|daemon-reload,enable:notion-webhook.service,restart:notion-webhook
+files/granola-webhook.service|/etc/systemd/system/granola-webhook.service|plain|daemon-reload,enable:granola-webhook.service,restart:granola-webhook
 files/travel/xray.service|/etc/systemd/system/xray.service|plain|daemon-reload,restart:xray
 files/travel/xray-boot-guard|/usr/local/bin/xray-boot-guard|plain+x|restart:xray
 files/travel/xray-logrotate.conf|/etc/logrotate.d/xray|plain|
@@ -198,8 +198,8 @@ files/travel/proton.conf.example|/etc/roost-travel/proton.conf.example|plain|
 files/travel/travel-cloudflare.yml.tmpl|/etc/roost-travel/travel-cloudflare.yml|envsubst:DOMAIN|
 files/travel/vision-cert-init.sh|/etc/roost-travel/vision-cert-init.sh|plain+x|
 files/travel/vision-cert-renew.service|/etc/systemd/system/vision-cert-renew.service|plain|daemon-reload
-files/travel/vision-cert-renew.timer|/etc/systemd/system/vision-cert-renew.timer|plain|daemon-reload,restart:vision-cert-renew.timer
-files/travel/ntfy-cert-renew@.service|/etc/systemd/system/ntfy-cert-renew@.service|plain|daemon-reload
+files/travel/vision-cert-renew.timer|/etc/systemd/system/vision-cert-renew.timer|plain|daemon-reload,enable:vision-cert-renew.timer,restart:vision-cert-renew.timer
+files/travel/ntfy-cert-renew@.service|/etc/systemd/system/ntfy-cert-renew@.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
 files/travel/vision-fallback.caddy|/etc/caddy/sites-enabled/vision-fallback.caddy|plain|reload-or-restart:caddy
 files/privatebin/conf.php|/etc/privatebin/conf.php|plain|
 files/privatebin/php-fpm-pool.conf|/etc/php/8.3/fpm/pool.d/privatebin.conf|plain|restart:php8.3-fpm
@@ -210,7 +210,7 @@ files/private/caddy-sites/app.caddy|/etc/caddy/sites-enabled/app.caddy|plain|rel
 files/private/caddy-sites/analytics.caddy|/etc/caddy/sites-enabled/analytics.caddy|envsubst:TAILSCALE_IP|reload-or-restart:caddy
 files/private/caddy-sites/tailnet-scratch.caddy|/etc/caddy/sites-enabled/tailnet-scratch.caddy|plain|reload-or-restart:caddy
 files/private/caddy-sites/tailnet-workout.caddy|/etc/caddy/sites-enabled/tailnet-workout.caddy|plain|reload-or-restart:caddy
-files/private/gp-picker.service|/etc/systemd/system/gp-picker.service|envsubst:USERNAME,HOME_DIR|daemon-reload,restart:gp-picker
+files/private/gp-picker.service|/etc/systemd/system/gp-picker.service|envsubst:USERNAME,HOME_DIR|daemon-reload,enable:gp-picker.service,restart:gp-picker
 files/private/caddy-sites/apps-picker.caddy|/etc/caddy/apps-enabled/picker.caddy|plain|reload-or-restart:caddy
 files/private/cron-mirrors|/etc/cron.d/$ROOST_DIR_NAME-mirrors|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|
 MANIFEST_B
