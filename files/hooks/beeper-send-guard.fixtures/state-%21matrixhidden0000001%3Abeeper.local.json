@@ -1,0 +1,26 @@
+[
+  {
+    "state_key": "@moiri-gamboni:beeper.com",
+    "sender": "@moiri-gamboni:beeper.com",
+    "type": "m.room.member",
+    "origin_server_ts": 1790249640843,
+    "event_id": "$redacted",
+    "room_id": "!matrixhidden0000001:beeper.local",
+    "content": {
+      "com.beeper.exclude_from_timeline": true,
+      "membership": "join"
+    }
+  },
+  {
+    "state_key": "@friend:beeper.com",
+    "sender": "@friend:beeper.com",
+    "type": "m.room.member",
+    "origin_server_ts": 1790249640975,
+    "event_id": "$redacted",
+    "room_id": "!matrixhidden0000001:beeper.local",
+    "content": {
+      "membership": "join",
+      "displayname": "Friend"
+    }
+  }
+]

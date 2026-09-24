@@ -1,0 +1,18 @@
+[
+  {
+    "state_key": "@moiri-gamboni:beeper.com",
+    "sender": "@moiri-gamboni:beeper.com",
+    "type": "m.room.member",
+    "origin_server_ts": 1790162776037,
+    "event_id": "$redacted",
+    "room_id": "!boardroomNoServer_Example-01",
+    "content": {
+      "displayname": "moiri-gamboni",
+      "membership": "join"
+    },
+    "unsigned": {
+      "age": 89536761,
+      "com.beeper.hs.order": 882848959
+    }
+  }
+]

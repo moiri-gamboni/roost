@@ -100,6 +100,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/conflict-watch-hook.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "Notification": [
@@ -126,6 +136,11 @@
             "type": "command",
             "command": "~/roost/claude/hooks/notion-write-guard.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/beeper-send-guard.sh",
+            "timeout": 15
           }
         ]
       },
@@ -158,6 +173,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/conflict-watch-hook.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "WorktreeCreate": [
@@ -186,6 +211,15 @@
             "asyncRewake": true,
             "rewakeMessage": "Claude usage limits (auto-resume waiter):",
             "rewakeSummary": "usage waiter: fresh window — auto-resuming"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/conflict-watch-hook.sh",
+            "timeout": 10
           }
         ]
       }
@@ -238,6 +272,18 @@
             "type": "command",
             "command": "bash /home/moiri/roost/code/session/session --compact-mark || true",
             "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/conflict-watch-hook.sh",
+            "timeout": 10
           }
         ]
       }
