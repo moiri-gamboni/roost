@@ -8,8 +8,8 @@ HOOK="$here/conflict-watch-hook.sh"
 T=$(mktemp -d "${TMPDIR:-/tmp}/cwh-test.XXXX")
 export CONFLICT_WATCH_RUN="$T/run" CONFLICT_WATCH_REGISTRY="$T/sessions"
 ROOT="$T/roost"
-pids=()
-trap 'kill "${pids[@]}" 2>&1 | grep -v "No such process"; rm -rf "$T"' EXIT
+# session() runs inside $(...), so its stand-in pids are kept in a file the trap can read
+trap 'xargs -r kill < "$T/pids" 2>&1 | grep -v "No such process"; rm -rf "$T"' EXIT
 
 fail=0
 ok()  { printf '  ok   %s\n' "$*"; }
@@ -20,7 +20,7 @@ start_of() { local st; read -r st < "/proc/$1/stat"; st=${st##*) }; set -- $st; 
 
 # session SID NAME STATUS → pid of a live process registered as that session
 session() {
-    sleep 600 > /dev/null 2>&1 & local pid=$!; pids+=("$pid")
+    sleep 600 > /dev/null 2>&1 & local pid=$!; echo "$pid" >> "$T/pids"
     printf '{"pid":%s,"sessionId":"%s","name":"%s","status":"%s","procStart":"%s"}\n' \
         "$pid" "$1" "$2" "$3" "$(start_of "$pid")" > "$CONFLICT_WATCH_REGISTRY/$pid.json"
     echo "$pid"
