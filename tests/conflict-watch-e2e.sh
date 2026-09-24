@@ -104,7 +104,8 @@ check "B was told after the fact to stop and ask" grep -q "this session just wro
 check "A was told B wrote in its repo" grep -q "wrote $REPO3/b.py inside $REPO3, which this session holds" "$TA"
 check "after A released repo 2, B's Edit there went through" grep -q "return 3" "$REPO2/a.py"
 check "and was not warned" bash -c "! grep -q 'this edit is in $REPO2,' '$TB'"
-check "B never met a permission prompt" bash -c "! grep -q 'permissionDecision.:.ask' '$TB'"
+check "B never met a permission prompt" bash -c "! grep -qE 'permissionDecision[^a-z]{1,6}ask' '$TB'"
+check "(the warnings came back as refused tool calls)" grep -q '"is_error":true.*Stopped once, as a warning\|Stopped once, as a warning.*"is_error":true' "$TB"
 echo "== counters"; python3 -c "import json; print(' ', json.load(open('$RUN/state.json'))['stats'])"
 echo "== B's report"; printf '%s\n' "$B" | sed 's/^/  | /'
 echo "== A's report"; printf '%s\n' "$A" | sed 's/^/  | /'
