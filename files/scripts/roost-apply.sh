@@ -124,6 +124,7 @@ files/scripts/agent-worktree.sh|$ROOST_DIR/claude/scripts/agent-worktree.sh|plai
 files/roost-session-resume.service|$HOME_DIR/.config/systemd/user/roost-session-resume.service|plain|run:systemctl --user daemon-reload && systemctl --user enable roost-session-resume.service
 files/hooks/shellcheck-edit.sh|$ROOST_DIR/claude/hooks/shellcheck-edit.sh|plain+x|
 files/hooks/notion-write-guard.sh|$ROOST_DIR/claude/hooks/notion-write-guard.sh|plain+x|
+files/hooks/beeper-send-guard.sh|$ROOST_DIR/claude/hooks/beeper-send-guard.sh|plain+x|
 files/hooks/truncation-guard.sh|$ROOST_DIR/claude/hooks/truncation-guard.sh|plain+x|
 files/hooks/roughdraft-write-guard.sh|$ROOST_DIR/claude/hooks/roughdraft-write-guard.sh|plain+x|
 files/hooks/fork-context-guard.sh|$ROOST_DIR/claude/hooks/fork-context-guard.sh|plain+x|

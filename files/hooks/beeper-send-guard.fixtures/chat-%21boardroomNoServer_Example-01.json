@@ -1,0 +1,40 @@
+{
+  "id": "!boardroomNoServer_Example-01",
+  "localChatID": "1",
+  "accountID": "matrix",
+  "network": "Beeper (Matrix)",
+  "title": "Apart — waiting on me",
+  "description": "",
+  "imgURL": null,
+  "type": "group",
+  "isReadOnly": false,
+  "participants": {
+    "items": [
+      {
+        "id": "@moiri-gamboni:beeper.com",
+        "username": "moiri-gamboni:beeper.com",
+        "fullName": "moiri-gamboni",
+        "cannotMessage": false,
+        "isSelf": true,
+        "isAdmin": false,
+        "isPending": false,
+        "isNetworkBot": false
+      }
+    ],
+    "hasMore": false,
+    "total": 1
+  },
+  "lastActivity": "2026-09-23T15:07:41.702Z",
+  "unreadCount": 0,
+  "unreadMentionsCount": 0,
+  "lastReadMessageSortKey": "882998355",
+  "draft": null,
+  "reminder": null,
+  "snooze": null,
+  "isArchived": false,
+  "isMarkedUnread": false,
+  "isMuted": false,
+  "isPinned": false,
+  "isLowPriority": false,
+  "messageExpirySeconds": null
+}

@@ -1,0 +1,39 @@
+{
+  "id": "!matrixhidden0000001:beeper.local",
+  "localChatID": "1",
+  "accountID": "matrix",
+  "network": "Beeper (Matrix)",
+  "title": "Side room",
+  "description": "",
+  "imgURL": null,
+  "type": "single",
+  "isReadOnly": false,
+  "participants": {
+    "items": [
+      {
+        "id": "@moiri-gamboni:beeper.com",
+        "username": "moiri-gamboni:beeper.com",
+        "cannotMessage": false,
+        "isSelf": true,
+        "isAdmin": true,
+        "isPending": false,
+        "isNetworkBot": false
+      }
+    ],
+    "hasMore": false,
+    "total": 1
+  },
+  "lastActivity": "2026-09-24T11:38:31.612Z",
+  "unreadCount": 2,
+  "unreadMentionsCount": 0,
+  "lastReadMessageSortKey": "6741",
+  "draft": null,
+  "reminder": null,
+  "snooze": null,
+  "isArchived": false,
+  "isMarkedUnread": false,
+  "isMuted": false,
+  "isPinned": false,
+  "isLowPriority": false,
+  "messageExpirySeconds": null
+}

@@ -1,0 +1,48 @@
+{
+  "id": "!personDM000000000001:beeper.local",
+  "localChatID": "1",
+  "accountID": "slack",
+  "network": "Slack",
+  "title": "Pat Example",
+  "description": "",
+  "imgURL": null,
+  "type": "single",
+  "isReadOnly": false,
+  "participants": {
+    "items": [
+      {
+        "id": "@sh-slack_t01example-upat:beeper.local",
+        "fullName": "Pat Example",
+        "imgURL": null,
+        "cannotMessage": false,
+        "isSelf": false,
+        "isAdmin": false,
+        "isPending": false,
+        "isNetworkBot": false
+      },
+      {
+        "id": "@moiri-gamboni:beeper.com",
+        "cannotMessage": false,
+        "isSelf": true,
+        "isAdmin": false,
+        "isPending": false,
+        "isNetworkBot": false
+      }
+    ],
+    "hasMore": false,
+    "total": 2
+  },
+  "lastActivity": "2026-09-22T20:09:13.664Z",
+  "unreadCount": 1,
+  "unreadMentionsCount": 0,
+  "lastReadMessageSortKey": "608",
+  "draft": null,
+  "reminder": null,
+  "snooze": null,
+  "isArchived": false,
+  "isMarkedUnread": false,
+  "isMuted": false,
+  "isPinned": false,
+  "isLowPriority": false,
+  "messageExpirySeconds": null
+}

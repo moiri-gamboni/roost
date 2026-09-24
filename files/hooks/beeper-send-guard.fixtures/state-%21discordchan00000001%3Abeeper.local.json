@@ -1,0 +1,40 @@
+[
+  {
+    "state_key": "@moiri-gamboni:beeper.com",
+    "sender": "@moiri-gamboni:beeper.com",
+    "type": "m.room.member",
+    "origin_server_ts": 1790246087314,
+    "event_id": "$redacted",
+    "room_id": "!discordchan00000001:beeper.local",
+    "content": {
+      "com.beeper.exclude_from_timeline": true,
+      "fi.mau.double_puppet_source": "mautrix-discord",
+      "membership": "join"
+    },
+    "unsigned": {
+      "prev_content": {
+        "fi.mau.will_auto_accept": true,
+        "membership": "invite"
+      },
+      "prev_sender": "@sh-discordbot:beeper.local",
+      "replaces_state": "$nKuLd2Yx-klZkUNNNHFMWcPz3uDs-XpPvvbPOxPBFUM:beeper.local"
+    }
+  },
+  {
+    "state_key": "@sh-discordbot:beeper.local",
+    "sender": "@sh-discordbot:beeper.local",
+    "type": "m.room.member",
+    "origin_server_ts": 1790246087035,
+    "event_id": "$redacted",
+    "room_id": "!discordchan00000001:beeper.local",
+    "content": {
+      "avatar_url": "mxc://maunium.net/nIdEykemnwdisvHbpxflpDlC",
+      "com.beeper.bridge.is_bridge_bot": true,
+      "com.beeper.bridge.network": "discord",
+      "com.beeper.bridge.service": "discordgo",
+      "com.beeper.exclude_from_timeline": true,
+      "displayname": "Discord bridge bot",
+      "membership": "join"
+    }
+  }
+]
