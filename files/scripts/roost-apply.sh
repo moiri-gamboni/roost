@@ -216,6 +216,8 @@ files/private/caddy-sites/tailnet-workout.caddy|/etc/caddy/sites-enabled/tailnet
 files/private/gp-picker.service|/etc/systemd/system/gp-picker.service|envsubst:USERNAME,HOME_DIR|daemon-reload,restart:gp-picker
 files/private/caddy-sites/apps-picker.caddy|/etc/caddy/apps-enabled/picker.caddy|plain|reload-or-restart:caddy
 files/private/cron-mirrors|/etc/cron.d/$ROOST_DIR_NAME-mirrors|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|
+files/private/notion-mirror-nightly.service|/etc/systemd/system/notion-mirror-nightly.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
+files/private/notion-mirror-nightly.timer|/etc/systemd/system/notion-mirror-nightly.timer|plain|daemon-reload,enable:notion-mirror-nightly.timer,restart:notion-mirror-nightly.timer
 MANIFEST_B
 }
 
