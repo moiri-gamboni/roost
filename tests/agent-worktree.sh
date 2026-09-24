@@ -11,6 +11,7 @@ T=$(mktemp -d "${TMPDIR:-/tmp}/aw-test.XXXX")
 export AGENT_WORKTREES_DIR="$T/trees"
 trap 'rm -rf "$T"' EXIT
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
+export AGENT_WORKTREE_NOTIFY=0      # kept trees would otherwise push to the phone
 
 fail=0
 ok()   { printf '  ok   %s\n' "$*"; }
@@ -121,6 +122,37 @@ printf '{"name":"seven","cwd":"%s","session_id":"sid-seven"}' "$P/docs" \
 pid=$(sed -n 's/^pid=//p' "$AGENT_WORKTREES_DIR/.sessions/sid-seven")
 check "recorded pid is empty (no claude ancestor) or a live process named claude" \
     bash -c "[ -z '$pid' ] || [ \"\$(cat /proc/$pid/comm)\" = claude ]"
+
+echo "== isolate: one repo's worktree for the calling session, on demand"
+X="$T/code/xrepo"; mkdir -p "$X/src" "$X/.venv" "$X/vendor"; git -C "$X" init -q -b main
+printf '.venv/\n.env\nvendor/nested/\n' > "$X/.gitignore"; echo x > "$X/src/x.py"; echo r > "$X/vendor/README"; commit_all "$X" init
+echo v > "$X/.venv/lib"; echo K=1 > "$X/.env"; echo wip > "$X/src/wip.py"
+XN="$X/vendor/nested"; mkdir -p "$XN"; git -C "$XN" init -q -b main; echo n > "$XN/n"; commit_all "$XN" init
+isolate() { CLAUDE_CODE_SESSION_ID=$1 "$AW" isolate "${2:-$X/src}" 2>"$T/isolate.err"; }
+out=$(isolate sid-iso) || bad "isolate exited $?"
+WT=$(sed -n 's/^worktree: //p' <<<"$out")
+check "prints the worktree path" [ -n "$WT" ]
+check "a worktree of the repo, not a composite tree" [ "$(git -C "$WT" rev-parse --show-toplevel)" = "$WT" ]
+check "on its own branch from the live HEAD" bash -c "[ \"\$(git -C '$WT' rev-parse HEAD)\" = \"\$(git -C '$X' rev-parse main)\" ] && [[ \$(git -C '$WT' branch --show-current) == worktree-* ]]"
+check "ignored state: .venv symlinked, .env copied, WIP absent" bash -c "[ -L '$WT/.venv' ] && [ -f '$WT/.env' ] && [ ! -L '$WT/.env' ] && [ ! -e '$WT/src/wip.py' ]"
+check "a nested repo is shared live, not checked out" [ "$(readlink "$WT/vendor/nested")" = "$XN" ]
+check "fresh tree is clean" [ -z "$(git -C "$WT" status --porcelain)" ]
+check "a second call returns the same tree" [ "$(isolate sid-iso | sed -n 's/^worktree: //p')" = "$WT" ]
+check "record has no root, one wt line for the repo" bash -c "grep -qx 'root=' '$AGENT_WORKTREES_DIR/.sessions/sid-iso' && [ \"\$(grep -c '^wt' '$AGENT_WORKTREES_DIR/.sessions/sid-iso')\" = 1 ]"
+Y="$T/code/yrepo"; mkdir -p "$Y"; git -C "$Y" init -q -b main; echo y > "$Y/y"; commit_all "$Y" init
+WY=$(isolate sid-iso "$Y" | sed -n 's/^worktree: //p')
+check "a second repo in the same session joins the same record" bash -c "[ -d '$WY' ] && [ \"\$(grep -c '^wt' '$AGENT_WORKTREES_DIR/.sessions/sid-iso')\" = 2 ]"
+echo s > "$WT/src/s.py"; commit_all "$WT" "isolated work"
+echo '{"session_id":"sid-iso"}' | "$AW" finish 2>"$T/finish.err" || bad "finish exited $?"
+check "at session end the work fast-forwards into the live branch" [ "$(git -C "$X" log -1 --format=%s main)" = "isolated work" ]
+check "the live checkout got the file, its WIP untouched" bash -c "[ -f '$X/src/s.py' ] && [ -f '$X/src/wip.py' ]"
+check "both trees and the record are gone" bash -c "[ ! -e '$WT' ] && [ ! -e '$WY' ] && [ ! -e '$AGENT_WORKTREES_DIR/.sessions/sid-iso' ]"
+WT=$(isolate sid-iso2 | sed -n 's/^worktree: //p')
+echo d > "$WT/src/d.py"; commit_all "$WT" "diverging"; echo m > "$X/m"; commit_all "$X" "live moved on"
+echo '{"session_id":"sid-iso2"}' | "$AW" finish 2>"$T/finish.err" || bad "finish exited $?"
+check "when the live branch moved on, the tree is kept" bash -c "[ -d '$WT' ] && grep -qx 'state=kept' '$AGENT_WORKTREES_DIR/.sessions/sid-iso2'"
+check "and the live branch is untouched" [ "$(git -C "$X" log -1 --format=%s main)" = "live moved on" ]
+check "outside a session it refuses" bash -c "! env -u CLAUDE_CODE_SESSION_ID '$AW' isolate '$X' 2>/dev/null"
 
 echo "== list runs"
 ROOT=$(create six); "$AW" list >"$T/list.out" 2>&1 || bad "list exited $?"; check "list names the tree" grep -q '^six ' "$T/list.out"
