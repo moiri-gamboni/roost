@@ -236,6 +236,14 @@ class Attribution(RegistryFixture):
         lin.expire(now=111)
         self.assertIsNone(lin.parent(99999999))
 
+    def test_a_pid_forked_again_keeps_its_new_parent_past_the_old_exit(self):
+        lin = cw.Lineage(grace=10)
+        lin.fork(1, 99999999)
+        lin.exit(99999999, now=100)
+        lin.fork(2, 99999999)                   # the pid is reused
+        lin.expire(now=200)
+        self.assertEqual(lin.parent(99999999), 2)
+
 
 class WatchFixture(RegistryFixture):
     """Two open sessions, S and T, and a Watch writing into a scratch run directory."""
