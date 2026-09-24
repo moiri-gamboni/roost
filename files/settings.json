@@ -39,7 +39,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "claude-fable-5-1[1m]",
+  "model": "opus[1m]",
   "hooks": {
     "SessionStart": [
       {
@@ -254,12 +254,14 @@
     "playground@claude-plugins-official": true,
     "plugin-dev@claude-plugins-official": true,
     "praxis@praxis-marketplace": true,
-    "serena@claude-plugins-official": true,
     "diataxis@diataxis-skill": true,
     "tasksync@apart-tools": true,
     "outbox@apart-tools": true,
     "session@apart-tools": true,
-    "granola-mirror@apart-tools": true
+    "granola-mirror@apart-tools": true,
+    "bash-lsp@roost": true,
+    "pyright-lsp@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "apart-tools": {
@@ -273,6 +275,12 @@
         "source": "git",
         "url": "git@github.com:moiri-gamboni/diataxis-skill.git"
       }
+    },
+    "roost": {
+      "source": {
+        "source": "directory",
+        "path": "/home/moiri/roost/claude/roost-plugins"
+      }
     }
   },
   "feedbackSurveyRate": 0,
@@ -282,6 +290,9 @@
   "effortLevel": "xhigh",
   "modelSettings": {
     "claude-fable-5-1": {
+      "effortLevel": "high"
+    },
+    "claude-opus-5-5": {
       "effortLevel": "high"
     }
   },
