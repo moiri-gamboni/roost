@@ -1,0 +1,44 @@
+[
+  {
+    "state_key": "@moiri-gamboni:beeper.com",
+    "sender": "@moiri-gamboni:beeper.com",
+    "type": "m.room.member",
+    "origin_server_ts": 1790249640843,
+    "event_id": "$redacted",
+    "room_id": "!control000000000001:beeper.local",
+    "content": {
+      "com.beeper.exclude_from_timeline": true,
+      "membership": "join"
+    }
+  },
+  {
+    "state_key": "@sh-emailbot:beeper.local",
+    "sender": "@sh-emailbot:beeper.local",
+    "type": "m.room.member",
+    "origin_server_ts": 1790249640975,
+    "event_id": "$redacted",
+    "room_id": "!control000000000001:beeper.local",
+    "content": {
+      "avatar_url": "mxc://maunium.net/YgtkucQxWlKJxwMBJR6Ggz5w",
+      "com.beeper.bridge.is_bridge_bot": true,
+      "com.beeper.bridge.network": "email",
+      "com.beeper.bridge.service": "email",
+      "displayname": "Matrimail bridge bot",
+      "membership": "join"
+    },
+    "unsigned": {
+      "prev_content": {
+        "avatar_url": "mxc://maunium.net/YgtkucQxWlKJxwMBJR6Ggz5w",
+        "com.beeper.bridge.is_bridge_bot": true,
+        "com.beeper.bridge.network": "email",
+        "com.beeper.bridge.service": "email",
+        "com.beeper.exclude_from_timeline": true,
+        "displayname": "Matrimail bridge bot",
+        "is_direct": true,
+        "membership": "invite"
+      },
+      "prev_sender": "@moiri-gamboni:beeper.com",
+      "replaces_state": "$qoma53Mp_FBkXWhiSPgn1FVvi7GugLWzxrgZSSDiFu0:beeper.local"
+    }
+  }
+]

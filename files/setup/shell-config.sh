@@ -101,15 +101,9 @@ chown -R "$USERNAME:$USERNAME" "$HOME_DIR/.config/systemd"
 loginctl enable-linger "$USERNAME"
 as_user "systemctl --user daemon-reload && systemctl --user enable roost-session-resume.service"
 echo "  [+] Session restore-after-reboot enabled"
-# granola-digest ships from files/private/, so skip when it isn't deployed
-# (public-repo-only checkouts won't have it). The granola mirror tooling itself
-# (granola/granola-transcripts/granola-refresh) lives in its own clone; its
-# symlinks, like every other clone-based CLI's, are wired by the private
-# claude-plugins.sh.
-if [ -f "$ROOST_DIR/claude/scripts/granola-digest.sh" ]; then
-    ln -sf "$ROOST_DIR/claude/scripts/granola-digest.sh" "$HOME_DIR/bin/granola-digest"
-    chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/granola-digest"
-fi
+# The granola mirror tooling (granola/granola-transcripts/granola-refresh) lives
+# in its own clone; its symlinks, like every other clone-based CLI's, are wired
+# by the private claude-plugins.sh.
 
 # --- Git identity ---
 if [ -n "${GIT_USER_NAME:-}" ] && [ -n "${GIT_USER_EMAIL:-}" ]; then
