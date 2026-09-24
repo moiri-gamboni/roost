@@ -10,11 +10,12 @@ Environment=CLAUDE_CONFIG_DIR=$HOME_DIR/$ROOST_DIR_NAME/claude
 ExecStart=/usr/bin/python3 $HOME_DIR/$ROOST_DIR_NAME/claude/scripts/conflict-watch.py run
 Restart=always
 RestartSec=2
-# Holds live in /run/conflict-watch; kept across a restart (sessions outlive it), gone on stop
-# and at reboot (the sessions are too).
-RuntimeDirectory=conflict-watch
-RuntimeDirectoryMode=2770
-RuntimeDirectoryPreserve=restart
+# Holds live in /run/conflict-watch, which the daemon creates itself (root, the user's group,
+# setgid 2770): kept across a restart (sessions outlive it), gone at reboot (the sessions are
+# too). Not RuntimeDirectory=: systemd re-owns that directory's contents to root at every start,
+# and the hook, running as the user, must keep appending to its per-session files. A stopped
+# daemon takes its published holds with it, so the hook goes quiet.
+ExecStopPost=/bin/rm -f /run/conflict-watch/holds.tsv
 Nice=5
 MemoryMax=256M
 # Each watched write's fd is held for a moment until its file is named (renames settle); a burst
