@@ -45,7 +45,7 @@ Every failure below also shows up as a line in the `Service health alert` ntfy w
 
   At the first login the email of an existing Beeper account logged straight in, with no signup step (reply shape: `attention-queue/captures/v1-app-setup-response-redacted.json`). Then `aq pass --dry-run` must exit 0.
 - **From the phone?** No: the calls run on the box. A Claude session over SSH can run them; the code lands in the account's mailbox.
-- **Meanwhile.** The bridge is unaffected (it does not use this token); messages keep flowing into Beeper. The board goes stale and nudges stop until the pass runs again.
+- **Meanwhile.** The bridge is unaffected (it does not use this token); messages keep flowing into Beeper. The board goes stale until the pass runs again.
 
 ## The bridge manager login (`bbctl`)
 
