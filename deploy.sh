@@ -1104,6 +1104,14 @@ remote_script "setup/attention-queue.sh"
 ok "Beeper Server, egress policy and bridge units enabled (logins and bridge builds: docs/runbooks/attention-queue.md)"
 
 # ============================================
+# Conflict watch
+# ============================================
+
+section "Conflict watch"
+remote_script "setup/conflict-watch.sh"
+ok "conflict-watch records which session writes where (script and hook arrive with roost-apply push)"
+
+# ============================================
 # Attention Sampler
 # ============================================
 

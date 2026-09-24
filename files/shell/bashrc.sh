@@ -302,15 +302,17 @@ _ensure_tmux() {
     return 2  # new session created, need attach (shell window already exists)
 }
 
-# Launch an interactive Claude session in a tmux window. In a git repo the
-# session gets its own worktree by default (claude --worktree; the box-wide
-# WorktreeCreate hook builds a composite tree under ~/roost/worktrees/ —
-# nested repos included — and SessionEnd integrates it back; agent-worktree.sh).
+# Launch an interactive Claude session in a tmux window, working directly in the
+# directory. Sessions share the live folders; the conflict watch
+# (hooks/conflict-watch-hook.sh) stops one before it edits where another is
+# working, and a session that needs isolation takes it then: `agent-worktree
+# isolate` for one repo, or `-w` (claude --worktree) for a composite tree of
+# the launch repo and every nested repo (agent-worktree.sh).
 # Usage: agent [path] [claude-args...]
-#   agent                           # cwd; own worktree if cwd is a git repo
+#   agent                           # cwd
 #   agent ~/roost/code/myapp        # that dir
-#   agent ~/roost/code/myapp -c     # continue last session (skips the worktree)
-#   agent -N|--no-worktree          # run directly in the directory
+#   agent ~/roost/code/myapp -c     # continue last session
+#   agent -w                        # in its own composite worktree
 agent() {
     local dir="$PWD"
     local -a claude_args=()
@@ -327,43 +329,17 @@ agent() {
     fi
     claude_args=("$@")
 
-    # Strip agent-level flags; everything else passes through to claude.
-    local no_worktree=0 arg
+    # Everything passes through to claude, except -N/--no-worktree: running in
+    # the directory is what agent does, and claude would reject the flag.
+    local arg
     local -a _pass=()
     for arg in "${claude_args[@]}"; do
         case "$arg" in
-            -N|--no-worktree) no_worktree=1 ;;
+            -N|--no-worktree) ;;
             *) _pass+=("$arg") ;;
         esac
     done
     claude_args=("${_pass[@]}")
-
-    # Fresh sessions in a git repo get their own worktree. Skipped for
-    # continue/resume (a resumed worktree session returns to its worktree on
-    # its own), when the caller passed -w/--worktree explicitly, and in repos
-    # opted out via `git config agent.noWorktree true` — workspace-style repos
-    # (gitignored sub-repos, chronically dirty) where a worktree of tracked
-    # HEAD is a stale skeleton, not an isolated copy.
-    local use_worktree=0
-    if (( ! no_worktree )); then
-        use_worktree=1
-        for arg in "${claude_args[@]}"; do
-            case "$arg" in
-                -c|--continue|-r|--resume|-w|--worktree|--worktree=*)
-                    use_worktree=0; break ;;
-            esac
-        done
-        if (( use_worktree )); then
-            local in_repo
-            in_repo=$(git -C "$dir" rev-parse --is-inside-work-tree 2>&1) || true
-            [[ "$in_repo" == true ]] || use_worktree=0
-        fi
-        if (( use_worktree )); then
-            local optout
-            optout=$(git -C "$dir" config --bool --get agent.noWorktree 2>&1) || true
-            [[ "$optout" == true ]] && use_worktree=0
-        fi
-    fi
 
     # Window name defaults to basename of the directory
     local base_name
@@ -391,13 +367,6 @@ agent() {
     for arg in "${claude_args[@]}"; do
         cmd_parts+=("$(printf '%q' "$arg")")
     done
-    # Appended last so a positional initial prompt can't be consumed as the
-    # optional worktree name. The echo covers the seconds the WorktreeCreate
-    # hook spends building the tree, during which claude shows nothing.
-    if (( use_worktree )); then
-        cmd_parts=(cd "$(printf '%q' "$dir")" '&&' echo 'preparing worktree...' '&&' "${cmd_parts[@]:3}")
-        cmd_parts+=(--worktree)
-    fi
 
     _ensure_tmux
     local state=$?

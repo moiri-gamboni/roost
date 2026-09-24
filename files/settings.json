@@ -95,6 +95,28 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/conflict-watch-hook.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/conflict-watch-hook.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "Notification": [
@@ -153,6 +175,16 @@
             "timeout": 6
           }
         ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/conflict-watch-hook.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "WorktreeCreate": [
@@ -181,6 +213,15 @@
             "asyncRewake": true,
             "rewakeMessage": "Claude usage limits (auto-resume waiter):",
             "rewakeSummary": "usage waiter: fresh window — auto-resuming"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/conflict-watch-hook.sh",
+            "timeout": 10
           }
         ]
       }

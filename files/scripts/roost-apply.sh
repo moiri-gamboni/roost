@@ -121,6 +121,8 @@ files/scheduled/btrfs-balance.sh|$ROOST_DIR/claude/scheduled/btrfs-balance.sh|pl
 files/scripts/roost-apply.sh|$ROOST_DIR/claude/scripts/roost-apply.sh|plain+x|
 files/scripts/roost-net.sh|$ROOST_DIR/claude/scripts/roost-net.sh|plain+x|
 files/scripts/agent-worktree.sh|$ROOST_DIR/claude/scripts/agent-worktree.sh|plain+x|
+files/scripts/conflict-watch.py|$ROOST_DIR/claude/scripts/conflict-watch.py|plain+x|restart:conflict-watch
+files/conflict-watch.conf|$ROOST_DIR/claude/conflict-watch.conf|plain|restart:conflict-watch
 files/roost-session-resume.service|$HOME_DIR/.config/systemd/user/roost-session-resume.service|plain|run:systemctl --user daemon-reload && systemctl --user enable roost-session-resume.service
 files/hooks/shellcheck-edit.sh|$ROOST_DIR/claude/hooks/shellcheck-edit.sh|plain+x|
 files/hooks/notion-write-guard.sh|$ROOST_DIR/claude/hooks/notion-write-guard.sh|plain+x|
@@ -132,6 +134,7 @@ files/hooks/redelegation-guard.sh|$ROOST_DIR/claude/hooks/redelegation-guard.sh|
 files/hooks/subagent-context.sh|$ROOST_DIR/claude/hooks/subagent-context.sh|plain+x|
 files/hooks/agent-browser-session.sh|$ROOST_DIR/claude/hooks/agent-browser-session.sh|plain+x|
 files/hooks/session-switch-notify.sh|$ROOST_DIR/claude/hooks/session-switch-notify.sh|plain+x|
+files/hooks/conflict-watch-hook.sh|$ROOST_DIR/claude/hooks/conflict-watch-hook.sh|plain+x|
 files/agent-browser-config.json|$HOME_DIR/.agent-browser/config.json|plain|
 files/claude-plugins/.claude-plugin/marketplace.json|$ROOST_DIR/claude/roost-plugins/.claude-plugin/marketplace.json|plain|
 files/claude-plugins/bash-lsp/.claude-plugin/plugin.json|$ROOST_DIR/claude/roost-plugins/bash-lsp/.claude-plugin/plugin.json|plain|
@@ -177,6 +180,7 @@ files/glances.service|/etc/systemd/system/glances.service|envsubst:USERNAME|daem
 files/ram-monitor.service|/etc/systemd/system/ram-monitor.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
 files/ram-monitor.timer|/etc/systemd/system/ram-monitor.timer|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload,restart:ram-monitor.timer
 files/earlyoom.default|/etc/default/earlyoom|plain|restart:earlyoom
+files/conflict-watch.service|/etc/systemd/system/conflict-watch.service|envsubst:HOME_DIR,ROOST_DIR_NAME|daemon-reload,restart:conflict-watch
 files/session-focus-tick.service|/etc/systemd/system/session-focus-tick.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
 files/session-focus-tick.timer|/etc/systemd/system/session-focus-tick.timer|plain|daemon-reload,restart:session-focus-tick.timer
 files/cron-roost|/etc/cron.d/$ROOST_DIR_NAME|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|
