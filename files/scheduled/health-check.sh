@@ -55,8 +55,11 @@ date +%s > "$OOM_STATE"
 # (the startup banner also starts with "sending SIGTERM", hence "to process").
 # An unreadable journal (unparseable state file, sudo refused) must not read
 # as "no kills": that is the one outcome this block exists to prevent.
+# The window's start goes to the log, not FAILURES: it changes every run, and
+# FAILURES is hashed for the cooldown.
 if ! OOM_JOURNAL=$(sudo -n journalctl -u earlyoom --since "@$OOM_SINCE" -o cat --no-pager); then
-    FAILURES="$FAILURES\n- earlyoom journal unreadable (since @$OOM_SINCE)"
+    logger -t "$_HOOK_TAG" "FAIL: earlyoom journal unreadable (kills since @$OOM_SINCE not checked)"
+    FAILURES="$FAILURES\n- earlyoom journal unreadable (kills not checked)"
 else
     OOM_KILLS=$(grep -E '^sending SIG(TERM|KILL) to process' <<<"$OOM_JOURNAL" | sed -E 's/ uid [0-9]+//; s/: badness [0-9]+,//')
     if [ -n "$OOM_KILLS" ]; then
@@ -104,8 +107,9 @@ fi
 # the steady-state pass) and the alert says what it reclaimed. A balance only
 # returns slack from part-empty data chunks; when it reclaims nothing the
 # chunks are full of live extents — in practice files that snapshots still
-# pin — and the remedy is pruning history: the oldest timeline snapshots go,
-# three per hour at most, until headroom is back. Never the off-site backup's pinned
+# pin — and the remedy is pruning history or moving data off the filesystem:
+# the oldest timeline snapshots go, three per hour at most, until headroom is
+# back. Never the off-site backup's pinned
 # parent (its cleanup algorithm is empty) and never number/important ones —
 # those are the rollback points, and a fs that needs more than this is a
 # runaway writer, which the alert is for.
@@ -151,7 +155,10 @@ if [ "${#UNALLOC_LOW[@]}" -gt 0 ]; then
             logger -t "$_HOOK_TAG" "Pruned snapshots on $mnt:${PRUNED:- none} (unallocated ${UNALLOC_LOW[$mnt]}GiB -> ${AFTER:-?}GiB)"
         fi
         if [ "${AFTER:-0}" -lt 5 ]; then
-            FAILURES="$FAILURES\n- btrfs unallocated ${AFTER:-?}GiB on $mnt, was ${UNALLOC_LOW[$mnt]}GiB (read-only-flip risk; $BALANCE_NOTE; pruned snapshots:${PRUNED:- none this hour}; what remains is held by live files or the pinned/number snapshots: snapper list, or move data off)"
+            # The figures change every run; they go to the journal so the
+            # failure text, which keys the hourly re-notify, stays the same.
+            logger -t "$_HOOK_TAG" "Btrfs unallocated still low on $mnt: ${AFTER:-?}GiB, was ${UNALLOC_LOW[$mnt]}GiB ($BALANCE_NOTE; pruned snapshots:${PRUNED:- none this hour})"
+            FAILURES="$FAILURES\n- btrfs unallocated under 5GiB on $mnt after balance and snapshot pruning (read-only-flip risk; figures: journalctl -t $_HOOK_TAG; what remains is held by live files or the pinned/number snapshots: snapper list, or move data off)"
         elif [ -n "$PRUNED" ]; then
             ntfy_send -t "btrfs headroom restored" -p "default" "$mnt: unallocated ${UNALLOC_LOW[$mnt]}GiB -> ${AFTER}GiB after pruning snapshots$PRUNED ($BALANCE_NOTE)"
         fi

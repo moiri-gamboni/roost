@@ -45,7 +45,7 @@ roost-apply --caddy|--cloudflare|--xray|--all|…   # reload services directly (
   - `lib/` → `~/roost/claude/lib/`: `_hook-env.sh` (hook JSON input, `ntfy_send`, rate limiting, logging), `cloudflare-assemble.sh`, `tmux-main-guard.sh`
   - `skills/` → `~/roost/claude/skills/`: one directory per skill, each `SKILL.md` self-describing
   - `shell/bashrc.sh` → `~/.bashrc.d/roost.sh` — PATH, tmux, the `agent`/`agents`/`attach` helpers (their contract is in the global CLAUDE.md). Running shells re-source it at their next prompt after a deploy changes it
-  - `travel/` (travel VPN server pieces), `beeper/` (default-deny egress for Beeper Server), `laptop/` (runs on the laptop, installed by its own `install-*.sh`) — each with its own `CLAUDE.md`
+  - `travel/` (travel VPN server pieces), `beeper/` (the attention queue's Beeper Server: egress allowlist, `beeper-egress`/`beeper-server`/`attention-bridge@` units; runbook `docs/runbooks/attention-queue.md`), `laptop/` (runs on the laptop, installed by its own `install-*.sh`) — each with its own `CLAUDE.md`
   - `private/` — a separate git repo (`roost-private`, gitignored here, deployed through this repo's manifest): the global CLAUDE.md source, private cron, plugins, personal Caddy sites. Commit there, then `roost-apply push`
   - the rest are service configs: `Caddyfile`, `cloudflare-config.yml` (a template; the live tunnel config is assembled from it plus app fragments), `ntfy-server.yml`, `tmux.conf`, `cron-roost`, systemd units, `settings.json`
 - `extras/` — standalone utilities: `hetzner-watch.sh` (server-type availability poller), `vscode-tmux-tabs/` (VS Code extension, see its README)
@@ -64,6 +64,7 @@ Native systemd services, no containers; updates via the daily auto-update and un
 - **dufs** — read-only server for `~/roost/drop/` on `127.0.0.1:5000`, fronted by Caddy at `https://drop.$DOMAIN/` on the Tailscale IP.
 - **PrivateBin** — publicly readable at `https://paste.$DOMAIN/` through the tunnel; the public side is read-only, pastes are created only via loopback `127.0.0.1:8095` (the `pastebin` skill).
 - **notion-webhook**, **granola-webhook** — receivers running from the `~/roost/code/notion-mirror` and `~/roost/code/granola-mirror` clones. An edit to a receiver needs `sudo systemctl restart <unit>`; rollback is revert, then restart.
+- **beeper-server**, **attention-bridge@slack**, **beeper-egress** (+ `beeper-egress-ensure.timer`) — the attention queue: headless Beeper Desktop as the `beeper` user behind a default-deny egress allowlist, the self-hosted Slack bridge, the pass every 15 min from `cron-mirrors`, and a dead-man in the private health checks (`files/beeper/CLAUDE.md`; runbook `docs/runbooks/attention-queue.md`).
 - **earlyoom** — kills the largest process early in a swap thrash (options and the avoid list in `files/earlyoom.default`); Claude sessions are not on the avoid list. Kills are reported by the health check.
 - **glances**, the **ram-monitor** timer.
 
@@ -81,7 +82,7 @@ Base configs stay generic; server-specific app configs go where the base configs
 | Tailscale-only apps | `/etc/caddy/apps-enabled/<app>.caddy` | `handle_path /<name>/* { root * /path; file_server }`, then `roost-apply --caddy`; served at `http://<tailscale-ip>:8090/<name>/`; files must be readable by `caddy` |
 | Cloudflare ingress | `~/roost/cloudflared/apps/<app>.yml` | Ingress rule lines, then `roost-apply --cloudflare` |
 | App cron jobs | `/etc/cron.d/${ROOST_DIR_NAME}-apps` | Filenames must not contain dots |
-| App health checks | `~/roost/claude/scheduled/health-check-apps.sh` | Sourced by `health-check.sh`, same `check()`/`check_service()` helpers; deployed from `files/travel/travel-health.sh`, so add checks there |
+| App health checks | `~/roost/claude/scheduled/health-check-apps.sh` | Sourced by `health-check.sh`, same `check()`/`check_service()` helpers; deployed from `files/travel/travel-health.sh`, so add checks there. Private checks follow in `health-check-apps-private.sh`, which sources the attention queue's dead-man `health-check-attention-queue.sh` |
 
 ## Recovery
 

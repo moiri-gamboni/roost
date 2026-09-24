@@ -1,0 +1,19 @@
+[Unit]
+# Default-deny egress for the beeper user: resolves the allowlist and builds the
+# beeper-egress chains in both families. RemainAfterExit so beeper-server can
+# Require it; the rules themselves are re-applied by the server's ExecStartPre
+# and by beeper-egress-ensure.timer, because a Requires= alone never re-runs
+# them. There is deliberately no ExecStop: `beeper-egress down` is a manual
+# step, since a stopped unit must not mean an unfiltered user.
+Description=Beeper Server egress allowlist (iptables + ip6tables)
+Documentation=file:/home/moiri/roost/code/server/files/beeper/CLAUDE.md
+Wants=network-online.target
+After=network-online.target ufw.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/beeper-egress up
+
+[Install]
+WantedBy=multi-user.target

@@ -236,7 +236,7 @@ On the server, an in-country `apt upgrade && reboot` restores this state on its 
 - **Every path degraded:** read the sing-box logs on the phone (`roost-travel logs` on the laptop). Fallback: the ProtonVPN app with Stealth (browsing only, no SSH).
 - **Server unreachable:** `./files/laptop/roost-net-fw.sh close` from the laptop, then the Hetzner Cloud Console with 2FA and the printed recovery codes.
 
-Procedures for fixes while in-country: `docs/runbooks/singbox-client-deploy.md` (ship a client-render change) and `docs/runbooks/path-d-vision.md` (Path D certificate, listener, abuse).
+Procedures for fixes while in-country: `docs/runbooks/singbox-client-deploy.md` (ship a client-render change) and `docs/runbooks/path-d-vision.md` (Path D certificate, listener, abuse). The attention queue's credentials, Beeper Server rollback and update, and firewall-flush recovery: `docs/runbooks/attention-queue.md`.
 
 ### After return
 

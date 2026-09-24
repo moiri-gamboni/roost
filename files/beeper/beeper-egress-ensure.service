@@ -1,0 +1,7 @@
+[Unit]
+Description=Beeper egress reconciliation (re-resolve, re-apply if drifted)
+After=beeper-egress.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/beeper-egress ensure
