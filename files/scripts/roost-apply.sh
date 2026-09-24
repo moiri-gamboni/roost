@@ -123,6 +123,7 @@ files/roost-session-resume.service|$HOME_DIR/.config/systemd/user/roost-session-
 files/hooks/shellcheck-edit.sh|$ROOST_DIR/claude/hooks/shellcheck-edit.sh|plain+x|
 files/hooks/instruction-file-edit.sh|$ROOST_DIR/claude/hooks/instruction-file-edit.sh|plain+x|
 files/hooks/notion-write-guard.sh|$ROOST_DIR/claude/hooks/notion-write-guard.sh|plain+x|
+files/hooks/beeper-send-guard.sh|$ROOST_DIR/claude/hooks/beeper-send-guard.sh|plain+x|
 files/hooks/truncation-guard.sh|$ROOST_DIR/claude/hooks/truncation-guard.sh|plain+x|
 files/hooks/roughdraft-write-guard.sh|$ROOST_DIR/claude/hooks/roughdraft-write-guard.sh|plain+x|
 files/hooks/fork-context-guard.sh|$ROOST_DIR/claude/hooks/fork-context-guard.sh|plain+x|
@@ -212,6 +213,7 @@ files/beeper/beeper-egress-ensure.service|/etc/systemd/system/beeper-egress-ensu
 files/beeper/beeper-egress-ensure.timer|/etc/systemd/system/beeper-egress-ensure.timer|plain|daemon-reload,restart:beeper-egress-ensure.timer
 files/beeper/beeper-server.service|/etc/systemd/system/beeper-server.service|plain|daemon-reload
 files/beeper/attention-bridge@.service|/etc/systemd/system/attention-bridge@.service|envsubst:USERNAME,HOME_DIR|daemon-reload
+files/beeper/attention-bridge@email.service.d/matrimail.conf|/etc/systemd/system/attention-bridge@email.service.d/matrimail.conf|envsubst:HOME_DIR|daemon-reload
 files/private/caddy-sites/app.caddy|/etc/caddy/sites-enabled/app.caddy|plain|reload-or-restart:caddy
 files/private/caddy-sites/analytics.caddy|/etc/caddy/sites-enabled/analytics.caddy|envsubst:TAILSCALE_IP|reload-or-restart:caddy
 files/private/caddy-sites/tailnet-scratch.caddy|/etc/caddy/sites-enabled/tailnet-scratch.caddy|plain|reload-or-restart:caddy

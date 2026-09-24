@@ -1,0 +1,37 @@
+{
+  "id": "!discordchan00000001:beeper.local",
+  "localChatID": "1",
+  "accountID": "discord",
+  "network": "Discord",
+  "title": "#general",
+  "description": "",
+  "imgURL": null,
+  "type": "group",
+  "isReadOnly": false,
+  "participants": {
+    "items": [
+      {
+        "id": "@moiri-gamboni:beeper.com",
+        "cannotMessage": false,
+        "isSelf": true,
+        "isAdmin": false,
+        "isPending": false,
+        "isNetworkBot": false
+      }
+    ],
+    "hasMore": false,
+    "total": 1
+  },
+  "unreadCount": 0,
+  "unreadMentionsCount": 0,
+  "lastReadMessageSortKey": "6709",
+  "draft": null,
+  "reminder": null,
+  "snooze": null,
+  "isArchived": false,
+  "isMarkedUnread": false,
+  "isMuted": true,
+  "isPinned": false,
+  "isLowPriority": false,
+  "messageExpirySeconds": null
+}
