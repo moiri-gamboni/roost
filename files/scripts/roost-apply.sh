@@ -112,8 +112,6 @@ files/scheduled/run-scheduled-task.sh|$ROOST_DIR/claude/scheduled/run-scheduled-
 files/scheduled/auto-update.sh|$ROOST_DIR/claude/scheduled/auto-update.sh|plain+x|
 files/scheduled/disk-cleanup.sh|$ROOST_DIR/claude/scheduled/disk-cleanup.sh|plain+x|
 files/scheduled/ram-monitor.sh|$ROOST_DIR/claude/scheduled/ram-monitor.sh|plain+x|
-files/scheduled/agents-cleanup.sh|$ROOST_DIR/claude/scheduled/agents-cleanup.sh|plain+x|
-files/scheduled/track-ssh-activity.sh|$ROOST_DIR/claude/scheduled/track-ssh-activity.sh|plain+x|
 files/scheduled/vision-abuse-watch.sh|$ROOST_DIR/claude/scheduled/vision-abuse-watch.sh|plain+x|
 files/scheduled/session-daily-brief.sh|$ROOST_DIR/claude/scheduled/session-daily-brief.sh|plain+x|
 files/scheduled/roughdraft-watch.sh|$ROOST_DIR/claude/scheduled/roughdraft-watch.sh|plain+x|
@@ -125,12 +123,14 @@ files/scripts/conflict-watch.py|$ROOST_DIR/claude/scripts/conflict-watch.py|plai
 files/conflict-watch.conf|$ROOST_DIR/claude/conflict-watch.conf|plain|restart:conflict-watch
 files/roost-session-resume.service|$HOME_DIR/.config/systemd/user/roost-session-resume.service|plain|run:systemctl --user daemon-reload && systemctl --user enable roost-session-resume.service
 files/hooks/shellcheck-edit.sh|$ROOST_DIR/claude/hooks/shellcheck-edit.sh|plain+x|
+files/hooks/instruction-file-edit.sh|$ROOST_DIR/claude/hooks/instruction-file-edit.sh|plain+x|
 files/hooks/notion-write-guard.sh|$ROOST_DIR/claude/hooks/notion-write-guard.sh|plain+x|
 files/hooks/beeper-send-guard.sh|$ROOST_DIR/claude/hooks/beeper-send-guard.sh|plain+x|
 files/hooks/truncation-guard.sh|$ROOST_DIR/claude/hooks/truncation-guard.sh|plain+x|
 files/hooks/roughdraft-write-guard.sh|$ROOST_DIR/claude/hooks/roughdraft-write-guard.sh|plain+x|
 files/hooks/fork-context-guard.sh|$ROOST_DIR/claude/hooks/fork-context-guard.sh|plain+x|
 files/hooks/redelegation-guard.sh|$ROOST_DIR/claude/hooks/redelegation-guard.sh|plain+x|
+files/hooks/light-subagents-to-codex.sh|$ROOST_DIR/claude/hooks/light-subagents-to-codex.sh|plain+x|
 files/hooks/subagent-context.sh|$ROOST_DIR/claude/hooks/subagent-context.sh|plain+x|
 files/hooks/agent-browser-session.sh|$ROOST_DIR/claude/hooks/agent-browser-session.sh|plain+x|
 files/hooks/session-switch-notify.sh|$ROOST_DIR/claude/hooks/session-switch-notify.sh|plain+x|
@@ -149,7 +149,6 @@ files/private/apart-tools-env|$HOME_DIR/.config/apart-tools/env|plain+600|
 files/private/notion-mirror-env|$HOME_DIR/.config/notion-mirror/env|plain+600|
 files/private/notion-mirror-changelog-context.md|$HOME_DIR/.config/notion-mirror/changelog-context.md|plain+600|
 files/private/public-scrub-check.sh|$ROOST_DIR/claude/scripts/public-scrub-check.sh|plain+x|
-files/skills/antiphon/SKILL.md|$ROOST_DIR/claude/skills/antiphon/SKILL.md|plain|
 files/agents/effort-low.md|$ROOST_DIR/claude/agents/effort-low.md|plain|
 files/agents/effort-medium.md|$ROOST_DIR/claude/agents/effort-medium.md|plain|
 files/agents/effort-high.md|$ROOST_DIR/claude/agents/effort-high.md|plain|
@@ -168,28 +167,28 @@ MANIFEST_A
     # Category B: System files (root needed, may require service restarts)
     cat <<'MANIFEST_B'
 files/Caddyfile|/etc/caddy/Caddyfile|envsubst:TAILSCALE_IP,DOMAIN|reload-or-restart:caddy
-files/apps.caddy|/etc/caddy/sites-enabled/apps.caddy|plain|reload-or-restart:caddy
+files/apps.caddy|/etc/caddy/sites-enabled/apps.caddy|envsubst:TAILSCALE_IP|reload-or-restart:caddy
 files/cloudflare-config.yml|/etc/cloudflared/config.yml.base|envsubst:TUNNEL_ID,TUNNEL_NAME|run:~/roost/claude/lib/cloudflare-assemble.sh,restart:cloudflared
 files/cloudflare-config.yml|$HOME_DIR/.cloudflared/config.yml|envsubst:TUNNEL_ID,TUNNEL_NAME|
 files/ntfy-server.yml|/etc/ntfy/server.yml|plain|restart:ntfy
 files/et.cfg|/etc/et.cfg|envsubst:TAILSCALE_IP|restart:et
 files/caddy-tailscale.conf|/etc/systemd/system/caddy.service.d/tailscale.conf|plain|daemon-reload
 files/caddy-secrets.conf|/etc/systemd/system/caddy.service.d/secrets.conf|plain|daemon-reload,restart:caddy
-files/dufs.service|/etc/systemd/system/dufs.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload,restart:dufs
-files/glances.service|/etc/systemd/system/glances.service|envsubst:USERNAME|daemon-reload,restart:glances
+files/dufs.service|/etc/systemd/system/dufs.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload,enable:dufs.service,restart:dufs
+files/glances.service|/etc/systemd/system/glances.service|envsubst:USERNAME|daemon-reload,enable:glances.service,restart:glances
 files/ram-monitor.service|/etc/systemd/system/ram-monitor.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
-files/ram-monitor.timer|/etc/systemd/system/ram-monitor.timer|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload,restart:ram-monitor.timer
+files/ram-monitor.timer|/etc/systemd/system/ram-monitor.timer|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload,enable:ram-monitor.timer,restart:ram-monitor.timer
 files/earlyoom.default|/etc/default/earlyoom|plain|restart:earlyoom
 files/conflict-watch.service|/etc/systemd/system/conflict-watch.service|envsubst:HOME_DIR,ROOST_DIR_NAME|daemon-reload,restart:conflict-watch
 files/session-focus-tick.service|/etc/systemd/system/session-focus-tick.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
-files/session-focus-tick.timer|/etc/systemd/system/session-focus-tick.timer|plain|daemon-reload,restart:session-focus-tick.timer
+files/session-focus-tick.timer|/etc/systemd/system/session-focus-tick.timer|plain|daemon-reload,enable:session-focus-tick.timer,restart:session-focus-tick.timer
 files/cron-roost|/etc/cron.d/$ROOST_DIR_NAME|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|
 files/tmux.conf|$HOME_DIR/.tmux.conf|plain|run:tmux source-file ~/.tmux.conf
 files/sshd/50-clip-forward.conf|/etc/ssh/sshd_config.d/50-clip-forward.conf|plain|restart:ssh
 files/apparmor/agent-browser-chrome|/etc/apparmor.d/agent-browser-chrome|envsubst:HOME_DIR|run:sudo apparmor_parser -r /etc/apparmor.d/agent-browser-chrome
 files/tailscaled-iptables.conf|/etc/systemd/system/tailscaled.service.d/iptables-pin.conf|plain|daemon-reload,restart:tailscaled
-files/notion-webhook.service|/etc/systemd/system/notion-webhook.service|plain|daemon-reload,restart:notion-webhook
-files/granola-webhook.service|/etc/systemd/system/granola-webhook.service|plain|daemon-reload,restart:granola-webhook
+files/notion-webhook.service|/etc/systemd/system/notion-webhook.service|plain|daemon-reload,enable:notion-webhook.service,restart:notion-webhook
+files/granola-webhook.service|/etc/systemd/system/granola-webhook.service|plain|daemon-reload,enable:granola-webhook.service,restart:granola-webhook
 files/travel/xray.service|/etc/systemd/system/xray.service|plain|daemon-reload,restart:xray
 files/travel/xray-boot-guard|/usr/local/bin/xray-boot-guard|plain+x|restart:xray
 files/travel/xray-logrotate.conf|/etc/logrotate.d/xray|plain|
@@ -207,8 +206,8 @@ files/travel/proton.conf.example|/etc/roost-travel/proton.conf.example|plain|
 files/travel/travel-cloudflare.yml.tmpl|/etc/roost-travel/travel-cloudflare.yml|envsubst:DOMAIN|
 files/travel/vision-cert-init.sh|/etc/roost-travel/vision-cert-init.sh|plain+x|
 files/travel/vision-cert-renew.service|/etc/systemd/system/vision-cert-renew.service|plain|daemon-reload
-files/travel/vision-cert-renew.timer|/etc/systemd/system/vision-cert-renew.timer|plain|daemon-reload,restart:vision-cert-renew.timer
-files/travel/ntfy-cert-renew@.service|/etc/systemd/system/ntfy-cert-renew@.service|plain|daemon-reload
+files/travel/vision-cert-renew.timer|/etc/systemd/system/vision-cert-renew.timer|plain|daemon-reload,enable:vision-cert-renew.timer,restart:vision-cert-renew.timer
+files/travel/ntfy-cert-renew@.service|/etc/systemd/system/ntfy-cert-renew@.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
 files/travel/vision-fallback.caddy|/etc/caddy/sites-enabled/vision-fallback.caddy|plain|reload-or-restart:caddy
 files/privatebin/conf.php|/etc/privatebin/conf.php|plain|
 files/privatebin/php-fpm-pool.conf|/etc/php/8.3/fpm/pool.d/privatebin.conf|plain|restart:php8.3-fpm
@@ -225,7 +224,7 @@ files/private/caddy-sites/app.caddy|/etc/caddy/sites-enabled/app.caddy|plain|rel
 files/private/caddy-sites/analytics.caddy|/etc/caddy/sites-enabled/analytics.caddy|envsubst:TAILSCALE_IP|reload-or-restart:caddy
 files/private/caddy-sites/tailnet-scratch.caddy|/etc/caddy/sites-enabled/tailnet-scratch.caddy|plain|reload-or-restart:caddy
 files/private/caddy-sites/tailnet-workout.caddy|/etc/caddy/sites-enabled/tailnet-workout.caddy|plain|reload-or-restart:caddy
-files/private/gp-picker.service|/etc/systemd/system/gp-picker.service|envsubst:USERNAME,HOME_DIR|daemon-reload,restart:gp-picker
+files/private/gp-picker.service|/etc/systemd/system/gp-picker.service|envsubst:USERNAME,HOME_DIR|daemon-reload,enable:gp-picker.service,restart:gp-picker
 files/private/caddy-sites/apps-picker.caddy|/etc/caddy/apps-enabled/picker.caddy|plain|reload-or-restart:caddy
 files/private/cron-mirrors|/etc/cron.d/$ROOST_DIR_NAME-mirrors|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|
 files/private/notion-mirror-nightly.service|/etc/systemd/system/notion-mirror-nightly.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
