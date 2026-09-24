@@ -410,6 +410,15 @@ agent() {
         printf '%(%F %T)T pid=%s outside-tmux: group=%s name=%s state=%s\n' \
             -1 "$$" "$group" "$name" "$state" >> "$HOME/.roost-agent.log"
         tmux new-window -t '=main' -n "$name" "${cmd_parts[*]}"
+        # No terminal (a timer or a cron job): there is nothing to attach, so the
+        # window stays in `main`, made its current window, for the next client that
+        # attaches.
+        if [[ ! -t 0 || ! -t 1 ]]; then
+            tmux select-window -t "=main:$name"
+            printf '%(%F %T)T pid=%s no-terminal: window left in main, not attached\n' \
+                -1 "$$" >> "$HOME/.roost-agent.log"
+            return 0
+        fi
         # `new-session -t main` stays a fuzzy target on purpose: that flag also
         # accepts a session *group* name, which is what keeps this working when
         # `main` itself is briefly missing. `=main` would defeat the group lookup

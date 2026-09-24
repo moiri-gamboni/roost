@@ -149,6 +149,10 @@ files/private/apart-tools-env|$HOME_DIR/.config/apart-tools/env|plain+600|
 files/private/notion-mirror-env|$HOME_DIR/.config/notion-mirror/env|plain+600|
 files/private/notion-mirror-changelog-context.md|$HOME_DIR/.config/notion-mirror/changelog-context.md|plain+600|
 files/private/public-scrub-check.sh|$ROOST_DIR/claude/scripts/public-scrub-check.sh|plain+x|
+files/private/skills/plan-day/SKILL.md|$ROOST_DIR/claude/skills/plan-day/SKILL.md|plain|
+files/private/plan-day-launch.sh|$ROOST_DIR/claude/scripts/plan-day-launch.sh|plain+x|
+files/private/plan-day.service|/etc/systemd/system/plan-day.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
+files/private/plan-day.timer|/etc/systemd/system/plan-day.timer|plain|daemon-reload,run:sudo systemctl enable --now plan-day.timer
 files/agents/effort-low.md|$ROOST_DIR/claude/agents/effort-low.md|plain|
 files/agents/effort-medium.md|$ROOST_DIR/claude/agents/effort-medium.md|plain|
 files/agents/effort-high.md|$ROOST_DIR/claude/agents/effort-high.md|plain|
