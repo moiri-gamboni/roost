@@ -42,6 +42,10 @@ fi
 
 check_service "cloudflared"
 
+# The conflict watch fails silent by design (its hook goes quiet when the daemon is gone), so
+# this is the only place its absence shows.
+check_service "conflict-watch"
+
 # earlyoom stands between a swap thrash and the kernel's OOM killer (files/
 # earlyoom.default). It logs each kill to its own journal and nothing else
 # reports it, so replay the kills since the last run here. The window is kept
