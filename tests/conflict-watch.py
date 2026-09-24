@@ -283,12 +283,17 @@ class HoldLifecycle(WatchFixture):
         self.write("T", f"{self.task}/body-draft.md")
         t = self.inbox("T")
         self.assertIn("Stop changing anything", t)
-        self.assertIn("name-S", t)
+        self.assertIn('"name-S"', t)                                   # the name in double quotes
+        self.assertIn('SendMessage to: "name-S"', t)                   # the address SendMessage takes
+        self.assertIn("session S", t)                                  # and the session id
+        self.assertIn("session peers", t)                              # where to look it up
+        self.assertNotIn("'name-S'", t)
         self.assertIn("busy", t)
         self.assertIn(f"{self.task}/body-draft.md", t)
         self.assertNotIn("agent-worktree isolate", t)           # a task folder: no worktree offer
         s = self.inbox("S")
-        self.assertIn("name-T", s)
+        self.assertIn('SendMessage to: "name-T"', s)
+        self.assertIn("session T", s)
         self.assertIn("conflict-watch release", s)
 
     def test_a_repo_unit_offers_the_worktree(self):
@@ -385,6 +390,40 @@ class HoldLifecycle(WatchFixture):
         self.assertEqual(lines[0], f"#daemon\t{os.getpid()}")
         unit, kind, sid, pid, start, since, name, last, lastfile = lines[1].split("\t")
         self.assertEqual((unit, kind, sid, int(pid), name, lastfile), (self.task, "folder", "S", self.s_pid, "name-S", f"{self.task}/task.md"))
+
+
+class UnitArguments(Fixture):
+    """`conflict-watch release/allow/unit PATH` resolve a path to the unit the daemon would."""
+
+    def test_a_nested_repo_directory_is_its_own_unit(self):
+        self.assertEqual(cw.unit_arg(self.rules, f"{self.root}/code/server/files/private"),
+                         f"{self.root}/code/server/files/private")
+
+    def test_a_repo_directory_and_a_file_in_it(self):
+        self.assertEqual(cw.unit_arg(self.rules, f"{self.root}/code/server"), f"{self.root}/code/server")
+        self.assertEqual(cw.unit_arg(self.rules, f"{self.root}/code/server/files/x.sh"), f"{self.root}/code/server")
+        self.assertEqual(cw.unit_arg(self.rules, f"{self.root}/code/server/files/private/g.md"),
+                         f"{self.root}/code/server/files/private")
+
+    def test_a_task_folder(self):
+        os.makedirs(f"{self.root}/apart-research/tasks/t9")
+        self.assertEqual(cw.unit_arg(self.rules, f"{self.root}/apart-research/tasks/t9"), f"{self.root}/apart-research/tasks/t9")
+
+
+class GitMaterialising(unittest.TestCase):
+    """Writes git makes while laying committed content into the tree hold nothing."""
+
+    def test_commands_that_write_committed_content(self):
+        for argv in (["git", "merge", "--ff-only", "b"], ["git", "-C", "/x", "pull"], ["/usr/bin/git", "checkout", "main"],
+                     ["git", "switch", "-"], ["git", "-c", "a=b", "rebase", "main"], ["git", "reset", "--hard"],
+                     ["git", "restore", "a.py"], ["git", "cherry-pick", "abc"], ["git", "stash", "apply"],
+                     ["git", "stash", "pop"], ["git", "revert", "abc"], ["git", "--git-dir=/x/.git", "checkout", "b"]):
+            self.assertTrue(cw.git_materialises(argv), argv)
+
+    def test_other_commands_and_other_tools(self):
+        for argv in (["git", "commit", "-m", "x"], ["git", "add", "-A"], ["git", "apply", "p.diff"], ["git", "mv", "a", "b"],
+                     ["git", "status"], ["sed", "-i", "s/a/b/", "merge"], ["vim", "checkout"], [], ["git"]):
+            self.assertFalse(cw.git_materialises(argv), argv)
 
 
 class GitClassification(unittest.TestCase):

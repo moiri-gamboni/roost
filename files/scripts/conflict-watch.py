@@ -136,6 +136,33 @@ def proc_cmdline(pid):
         return None
 
 
+# git subcommands that write committed content (a commit, a stash, the index) into the working tree:
+# a merge or fast-forward, a branch switch, a reset. Nobody's work in progress, so they hold nothing.
+GIT_MATERIALISING = {"merge", "pull", "checkout", "switch", "rebase", "reset", "restore", "cherry-pick",
+                     "revert", "stash", "read-tree", "checkout-index", "clone", "worktree"}
+
+
+def git_materialises(argv):
+    """True for a git command line whose subcommand lays committed content into the tree."""
+    if not argv or not os.path.basename(argv[0]).startswith("git"):
+        return False
+    if os.path.basename(argv[0]) != "git":                 # git-merge and the like, run directly
+        return os.path.basename(argv[0])[4:] in GIT_MATERIALISING
+    i = 1
+    while i < len(argv) and argv[i].startswith("-"):
+        i += 2 if argv[i] in ("-C", "-c") else 1            # --git-dir=x and the like take no separate value
+    return i < len(argv) and argv[i] in GIT_MATERIALISING
+
+
+def proc_argv(pid):
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            raw = f.read()
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    return [a.decode(errors="replace") for a in raw.split(b"\0")[:-1]] if raw else None
+
+
 class Session:
     __slots__ = ("pid", "sid", "name", "status", "start")
 
@@ -197,10 +224,21 @@ class Lineage:
         self._parent = {}
         self._exited = {}                   # pid → exit time
         self._order = collections.deque()   # (exit time, pid), oldest first: expiry touches only what expires
+        self._argv = {}                     # pid → command line, for git processes (read at exec)
 
     def fork(self, parent, child):
         self._parent[child] = parent
         self._exited.pop(child, None)
+        self._argv.pop(child, None)
+
+    def exec(self, pid):
+        """A process exec'd: keep its command line if it is git, whose writes may land after it exits."""
+        argv = proc_argv(pid)
+        if argv and os.path.basename(argv[0]).startswith("git"):
+            self._argv[pid] = argv
+
+    def argv(self, pid):
+        return proc_argv(pid) or self._argv.get(pid)
 
     def exit(self, pid, now):
         if pid in self._parent:
@@ -216,6 +254,7 @@ class Lineage:
             if self._exited.get(pid) == t:          # not forked again under the same pid since
                 del self._exited[pid]
                 self._parent.pop(pid, None)
+                self._argv.pop(pid, None)
 
     def __len__(self):
         return len(self._parent)
@@ -278,6 +317,19 @@ class Attributor:
 #   requests/        release requests from the CLI
 
 SUBDIRS = ("inbox", "grants", "acks", "requests")
+
+
+def quoted(name):
+    return '"' + name.replace('"', "'") + '"'
+
+
+def address(name, sid):
+    """What SendMessage takes (the registry name, which ListAgents prints) and the session id,
+    8 characters as `session peers` shows it."""
+    return f"SendMessage to: {quoted(name)}, session {sid[:8]}"
+
+
+PEERS = "(`session peers` lists every open session's name and id.)"
 
 
 def fmt_age(seconds):
@@ -486,27 +538,28 @@ class Watch:
     def _describe(self, sid, rec, open_sids, now):
         s = open_sids.get(sid)
         status = s.status if s else "?"
-        return f"'{rec['name']}' ({status}, last wrote there {fmt_age(now - rec['last'])} ago: {rec['file']})"
+        return (f"{quoted(rec['name'])} ({status}, last wrote there {fmt_age(now - rec['last'])} ago: {rec['file']}; "
+                f"{address(rec['name'], sid)})")
 
     def _stop_text(self, session, path, unit, kind, others, comm, open_sids):
         now = self.now()
         who = "; ".join(self._describe(sid, r, open_sids, now) for sid, r in others)
-        names = " or ".join(f"'{r['name']}'" for _, r in others)
+        names = " or ".join(quoted(r["name"]) for _, r in others)
         worktree = (f", or to move this work into a worktree of that repo with `agent-worktree isolate {unit}` "
                     "and continue there" if kind == "repo" else "")
         return (f"Conflict watch: this session just wrote {path} (by {comm}) inside {unit}, which "
                 f"another open session holds: {who}. Stop changing anything in {unit} and ask the user before "
                 f"you go on there: whether to message {names} (SendMessage) to coordinate{worktree}. This is not "
                 "yours to decide, whatever that session's idle time. If the user approves working there anyway, "
-                f"run `conflict-watch allow {unit}` so your writes are not flagged again.")
+                f"run `conflict-watch allow {unit}` so your writes are not flagged again. {PEERS}")
 
     def _holder_text(self, writer, path, unit, rec, approved):
         what = ("The user approved that session working there." if approved else
                 "That session has been told to stop and ask the user.")
-        return (f"Conflict watch: session '{writer.name}' wrote {path} inside {unit}, which this session holds "
-                f"(you last wrote there {fmt_age(self.now() - rec['last'])} ago). {what} If you are finished in "
-                f"{unit}, run `conflict-watch release {unit}` so others can work there; if you are not, consider "
-                f"messaging '{writer.name}' (SendMessage) to coordinate.")
+        return (f"Conflict watch: session {quoted(writer.name)} ({address(writer.name, writer.sid)}) wrote {path} "
+                f"inside {unit}, which this session holds (you last wrote there {fmt_age(self.now() - rec['last'])} "
+                f"ago). {what} If you are finished in {unit}, run `conflict-watch release {unit}` so others can work "
+                f"there; if you are not, consider messaging {quoted(writer.name)} (SendMessage) to coordinate.")
 
     def _notify(self, sid, key, text):
         """Append a notice to the session's inbox, at most once per key until the hook takes the inbox."""
@@ -620,7 +673,7 @@ FAN_MARK_ADD, FAN_MARK_MOUNT = 0x1, 0x10
 FAN_CLOSE_WRITE, FAN_Q_OVERFLOW = 0x8, 0x4000
 EVENT = "=IBBHQii"                        # fanotify_event_metadata: len, vers, reserved, metadata_len, mask, fd, pid
 NETLINK_CONNECTOR, CN_IDX_PROC, PROC_CN_MCAST_LISTEN = 11, 1, 1
-PROC_EVENT_FORK, PROC_EVENT_EXIT = 0x1, 0x80000000
+PROC_EVENT_FORK, PROC_EVENT_EXEC, PROC_EVENT_EXIT = 0x1, 0x2, 0x80000000
 
 
 def fanotify_open(mount_path):
@@ -685,6 +738,10 @@ class Daemon:
                     _, ptgid, cpid, ctgid = struct.unpack_from("=IIII", buf, off + 52)
                     if cpid == ctgid:
                         self.lineage.fork(ptgid, ctgid)
+                elif what == PROC_EVENT_EXEC:
+                    pid, tgid = struct.unpack_from("=II", buf, off + 52)
+                    if pid == tgid:
+                        self.lineage.exec(tgid)
                 elif what == PROC_EVENT_EXIT:
                     pid, tgid = struct.unpack_from("=II", buf, off + 52)
                     if pid == tgid:
@@ -735,6 +792,9 @@ class Daemon:
         if cmd and self.rules.skip_writer(cmd):
             self.watch.count("skip_writer")
             return False
+        if self.by_git_materialising(pid, session.pid):
+            self.watch.count("git_materialising")
+            return False
         try:
             with open(f"/proc/{pid}/comm") as f:
                 comm = f"a `{f.read().strip()}` process"
@@ -742,6 +802,22 @@ class Daemon:
             comm = "a process that has since exited"
         self.settling.append((time.monotonic(), path, efd, session, how == "claude", comm))
         return True
+
+    def by_git_materialising(self, pid, session_pid):
+        """True when the writer, or a process between it and its session, is git laying committed
+        content into the tree (a checkout hook or `git pull`'s merge child count too)."""
+        p = pid
+        for _ in range(16):
+            if p is None or p <= 1 or p == session_pid:
+                return False
+            if git_materialises(self.lineage.argv(p) or []):
+                return True
+            parent = self.lineage.parent(p)
+            if parent is None:
+                st = proc_stat(p)
+                parent = st[0] if st else None
+            p = parent
+        return False
 
     SETTLE = 0.2
     MAX_SETTLING = 4096         # a burst beyond this is named early rather than hold more fds
@@ -849,8 +925,10 @@ def resolve_session(registry, ref):
 
 
 def unit_arg(rules, arg):
-    path = os.path.abspath(os.path.expanduser(arg))
-    u = rules.unit_of(path) or rules.unit_of(os.path.join(path, ".probe"))
+    """The unit a path names, as the daemon would map a write there: a directory is resolved from
+    inside (a nested repo's directory is that repo, not the one around it)."""
+    path = os.path.abspath(os.path.expanduser(arg)).rstrip("/")
+    u = (rules.unit_of(os.path.join(path, ".probe")) if os.path.isdir(path) else None) or rules.unit_of(path)
     if u is None:
         raise SystemExit(f"conflict-watch: {path} is in no unit")
     return u[0]
@@ -908,7 +986,8 @@ def cmd_allow(cfg, rules, registry, args):
 
 
 def cmd_unit(cfg, rules, registry, args):
-    u = rules.unit_of(os.path.abspath(args.path))
+    path = os.path.abspath(args.path).rstrip("/")
+    u = (rules.unit_of(os.path.join(path, ".probe")) if os.path.isdir(path) else None) or rules.unit_of(path)
     print(f"{u[0]}\t{u[1]}" if u else "none")
     return 0
 
@@ -1146,10 +1225,11 @@ def hook_git(cfg, rules, registry, payload, self_sids):
         if not found:
             continue
         add_acks(cfg["run"], sid, [(u, s.sid, rec["since"]) for s, u, rec, _ in found])
-        who = "; ".join(f"'{s.name}' ({s.status}, last wrote there {fmt_age(now - rec['last'])} ago) wrote "
+        who = "; ".join(f"{quoted(s.name)} ({s.status}, last wrote there {fmt_age(now - rec['last'])} ago; "
+                        f"{address(s.name, s.sid)}) wrote "
                         + ", ".join(os.path.relpath(p, top) for p in files[:15]) + (" …" if len(files) > 15 else "")
                         for s, _, rec, files in found)
-        names = " or ".join(f"'{s.name}'" for s, _, _, _ in found)
+        names = " or ".join(quoted(s.name) for s, _, _, _ in found)
         repo_unit = any(u == top for _, u, _, _ in found)
         worktree = (f", or to move your work into a worktree of this repo (`agent-worktree isolate {top}`) and "
                     "continue there" if repo_unit else "")
@@ -1157,7 +1237,7 @@ def hook_git(cfg, rules, registry, payload, self_sids):
                   f"wrote: {who}. Stopped once, as a warning. Do not decide this yourself, whatever that "
                   f"session's idle time: ask the user whether to message {names} (SendMessage) to "
                   f"coordinate{worktree}. Committing, staging or restoring only your own files by path is "
-                  "always fine. If the user says to go ahead, re-run the command: it passes now.")
+                  f"always fine. If the user says to go ahead, re-run the command: it passes now. {PEERS}")
         return {"permissionDecision": "deny", "permissionDecisionReason": reason}
     return None
 
@@ -1217,7 +1297,7 @@ def main(argv=None):
     p = sub.add_parser("allow", help="once the user said go ahead: work in a unit another session holds, "
                                      "without its warnings or notices (both ways)")
     p.add_argument("unit", metavar="UNIT_OR_PATH")
-    p = sub.add_parser("unit", help="the unit a path belongs to")
+    p = sub.add_parser("unit", help="the unit a path belongs to (a directory: the unit its contents belong to)")
     p.add_argument("path")
     sub.add_parser("hook-git", help="(for the hook) PreToolUse payload on stdin")
     args = ap.parse_args(argv)
