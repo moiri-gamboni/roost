@@ -137,12 +137,12 @@ age() {
     if [ $s -lt 60 ]; then echo "${s}s"; elif [ $s -lt 3600 ]; then echo "$(( s / 60 ))m"
     elif [ $s -lt 86400 ]; then printf '%dh%02dm' $(( s / 3600 )) $(( s % 3600 / 60 )); else printf '%dd%02dh' $(( s / 86400 )) $(( s % 86400 / 3600 )); fi
 }
-describe() {  # describe IDX...
+describe() {  # describe IDX... — each holder: its name, state, last write, and the address SendMessage takes
     local i out=""
-    for i in "$@"; do out+="${out:+; }'${HN[$i]}' ($(status_of "${HP[$i]}"), last wrote there $(age "${HL[$i]}") ago)"; done
+    for i in "$@"; do out+="${out:+; }\"${HN[$i]}\" ($(status_of "${HP[$i]}"), last wrote there $(age "${HL[$i]}") ago; SendMessage to: \"${HN[$i]}\", session ${HS[$i]:0:8})"; done
     echo "$out"
 }
-names() { local i out=""; for i in "$@"; do out+="${out:+ or }'${HN[$i]}'"; done; echo "$out"; }
+names() { local i out=""; for i in "$@"; do out+="${out:+ or }\"${HN[$i]}\""; done; echo "$out"; }
 worktree_offer() {  # worktree_offer UNIT KIND
     [ "$2" = repo ] && echo " Or, since this is a code repo, move your work into a worktree of it (\`agent-worktree isolate $1\`) and continue there."
 }
@@ -154,7 +154,7 @@ warn() {  # warn WHAT IDX... — deny once, recording that this session has now 
         [ -n "${seen[${HU[$i]}]:-}" ] || { units+="${units:+, }${HU[$i]}"; seen[${HU[$i]}]=1; }
     done
     u=${HU[$1]}; k=${HK[$1]}
-    emit deny "Conflict watch: $what $units, which another open session holds: $(describe "$@"). Stopped once, as a warning. Changing anything there is not yours to decide, whatever that session's idle time: ask the user whether to message $(names "$@") (SendMessage) to coordinate.$(worktree_offer "$u" "$k") Reading there is fine, and if the user says to go ahead, retry: it passes now. Changes made there without asking are detected and reported."
+    emit deny "Conflict watch: $what $units, which another open session holds: $(describe "$@"). Stopped once, as a warning. Changing anything there is not yours to decide, whatever that session's idle time: ask the user whether to message $(names "$@") (SendMessage) to coordinate.$(worktree_offer "$u" "$k") Reading there is fine, and if the user says to go ahead, retry: it passes now. Changes made there without asking are detected and reported. (\`session peers\` lists every open session's name and id.)"
 }
 
 # --- Edit / Write ------------------------------------------------------------------------
