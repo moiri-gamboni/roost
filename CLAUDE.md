@@ -20,7 +20,7 @@ roost-apply --caddy|--cloudflare|--xray|--all|…   # reload services directly (
 
 `deploy.sh` sources `.env` and runs the `files/setup/` scripts over SSH; every section is check-then-act, so re-running after a partial failure is safe. `roost-apply` (`files/scripts/roost-apply.sh`) is the only way config changes land: subcommands deploy from the manifest hardcoded in the script (a new file needs a manifest line), flags reload services for app configs outside the manifest. `.env.example` documents every variable; the Hetzner token lives in `hcloud context create roost`, not `.env`.
 
-**`files/settings.json` is runtime-rewritten** (the app writes `/model` and `/config` choices into the live file), so the repo copy tracks the live one rather than dictating it: never blanket-push it, compare with `jq -S`. `roost-apply diff` never shows it clean (the repo copy has `\uXXXX` escapes where the live file has the characters).
+**`files/settings.json` is runtime-rewritten** (the app writes `/model`, `/config` and plugin choices into the live file), so a push of a stale repo copy reverts them. To change it: compare repo and live with `jq -S`; if live has drifted, copy it into the repo first (`jq . ~/roost/claude/settings.json > files/settings.json`); make the change in the repo copy, commit, then `roost-apply push files/settings.json`. Never hand-edit the live file, and never blanket-push without that check.
 
 ## Key Design Patterns
 
