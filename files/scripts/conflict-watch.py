@@ -22,6 +22,7 @@ nothing is blocked; the health check alerts.
     conflict-watch unit PATH               the unit a path belongs to
     conflict-watch run                     the daemon (root, conflict-watch.service)"""
 import argparse
+import collections
 import ctypes
 import errno
 import fnmatch
@@ -199,7 +200,8 @@ class Lineage:
     def __init__(self, grace=30.0):
         self.grace = grace
         self._parent = {}
-        self._exited = {}           # pid → exit time
+        self._exited = {}                   # pid → exit time
+        self._order = collections.deque()   # (exit time, pid), oldest first: expiry touches only what expires
 
     def fork(self, parent, child):
         self._parent[child] = parent
@@ -208,14 +210,17 @@ class Lineage:
     def exit(self, pid, now):
         if pid in self._parent:
             self._exited[pid] = now
+            self._order.append((now, pid))
 
     def parent(self, pid):
         return self._parent.get(pid)
 
     def expire(self, now):
-        for pid in [p for p, t in self._exited.items() if now - t > self.grace]:
-            del self._exited[pid]
-            self._parent.pop(pid, None)
+        while self._order and now - self._order[0][0] > self.grace:
+            t, pid = self._order.popleft()
+            if self._exited.get(pid) == t:          # not forked again under the same pid since
+                del self._exited[pid]
+                self._parent.pop(pid, None)
 
     def __len__(self):
         return len(self._parent)
@@ -744,16 +749,21 @@ class Daemon:
         signal.signal(signal.SIGINT, lambda *_: stop.append(1))
         self.watch.flush()
         log(f"watching {self.rules.root} (pid {self.me})")
-        last_prune = last_flush = time.monotonic()
+        last_prune = last_flush = last_chores = time.monotonic()
         while not stop:
+            # Woken by writes only: the box forks ~100 times a second, and the connector's 8 MB
+            # buffer holds minutes of that, so forks are drained on each wake (before the writes,
+            # whose forks they are) and on a 0.25 s clock.
             try:
-                ready, _, _ = select.select([fan, nl], [], [], self.SETTLE / 2 if self.settling else 1.0)
+                select.select([fan], [], [], self.SETTLE / 2 if self.settling else 0.25)
             except InterruptedError:
                 continue
-            if ready:
-                self.drain_writes(fan, nl)
+            self.drain_writes(fan, nl)
             self.settle()
             now = time.monotonic()
+            if now - last_chores < 0.25:
+                continue
+            last_chores = now
             self.watch.process_requests()
             self.lineage.expire(time.time())
             if now - last_prune > 5:
