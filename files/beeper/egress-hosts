@@ -8,3 +8,4 @@ sygnal.beeper.com                   # push gateway
 updates.beeper.com                  # self-update
 download.beeper.com                 # self-update
 beeper-desktop.download.beeper.com  # the update feed's artifact URL host
+prod-hungryserv-media-weur-3.63a13c95efabf27036cee0f37386b781.r2.cloudflarestorage.com  # media downloads: matrix.beeper.com answers a media request with a 307 to this Cloudflare R2 bucket; its addresses are shared R2 anycast, so other buckets behind them are reachable too
