@@ -62,8 +62,8 @@ say A "echo x > $ROOT/code/repo1/by-shell.py"                           # the se
 check "a write by the session's shell holds its repo" waitfor 5 bash -c "[ \"\$(awk -F'\t' '\$1 == \"$ROOT/code/repo1\" {print \$3}' $RUN/holds.tsv)\" = sid-A ]"
 say B "sed -i s/x/y/ $ROOT/code/repo1/by-shell.py"                      # a short-lived child
 check "a short-lived child's write reaches the second session" waitfor 5 test -s "$RUN/inbox/sid-B"
-check "the writer is told to stop and ask, naming the holder" grep -q "Stop changing anything.*'A'" "$RUN/inbox/sid-B"
-check "the holder is told" waitfor 5 grep -q "session 'B' wrote" "$RUN/inbox/sid-A"
+check "the writer is told to stop and ask, naming the holder" grep -q '"A" (.*SendMessage to: "A", session sid-A).*Stop changing anything' "$RUN/inbox/sid-B"
+check "the holder is told" waitfor 5 grep -q 'session "B" (SendMessage to: "B", session sid-B) wrote' "$RUN/inbox/sid-A"
 check "the repo offers the worktree" grep -q "agent-worktree isolate $ROOT/code/repo1" "$RUN/inbox/sid-B"
 say B "bash -c '(echo n > $ROOT/apart-research/tasks/t1/n.md); true'"   # a grandchild (the subshell forks)
 check "a grandchild's write holds the task folder" waitfor 5 bash -c "grep -q \"^$ROOT/apart-research/tasks/t1	folder	sid-B\" $RUN/holds.tsv"
@@ -71,6 +71,18 @@ say A "echo w > $ROOT/code/repo1/final.py.tmp.1.ab && mv $ROOT/code/repo1/final.
 recorded() { python3 -c "import json,sys; h=json.load(open('$RUN/state.json'))['holds']; print('\n'.join(p for u in h.values() for r in u.values() for p in r['files']))"; }
 final_name_only() { recorded | grep -qx "$ROOT/code/repo1/final.py" && ! recorded | grep -q 'final.py.tmp'; }
 check "an atomic write is recorded under its final name, not the temp one" waitfor 5 final_name_only
+# git laying committed content into a tree is nobody's work in progress: a fast-forward holds nothing
+R3=$ROOT/code/repo3; mkdir -p "$R3"; git -C "$R3" init -q -b main
+git -C "$R3" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+git -C "$R3" checkout -q -b feat
+for i in 1 2 3; do echo "$i" > "$R3/f$i"; done
+git -C "$R3" add -A; git -C "$R3" -c user.name=t -c user.email=t@t commit -q -m feat; git -C "$R3" checkout -q main
+say A "git -C $R3 merge -q --ff-only feat; git -C $R3 checkout -q -b other; git -C $R3 checkout -q main; echo done > $T/ff.done"
+waitfor 10 test -e "$T/ff.done"; sleep 1
+check "a fast-forward and branch switches by a session hold nothing" [ -z "$(held_by "$R3")" ]
+check "(and the files did land)" test -f "$R3/f3"
+say A "echo mine > $R3/mine.py"
+check "while a write of the session's own in that repo still holds it" waitfor 5 bash -c "grep -q '^$R3	repo	sid-A' $RUN/holds.tsv"
 bash -c "echo z > $ROOT/code/repo2/stranger.py"                          # no session behind it
 sleep 1
 check "a write by no session holds nothing" [ -z "$(held_by "$ROOT/code/repo2")" ]
@@ -96,7 +108,7 @@ start_daemon
 check "holds are back after a restart" [ "$(held_by "$ROOT/apart-research/tasks/t1")" = "sid-B " ]
 rm -f "$RUN/inbox/sid-B"
 say A "(echo again > $ROOT/apart-research/tasks/t1/a.md)"
-check "and the restarted daemon still attributes and notifies" waitfor 5 grep -q "session 'A' wrote.*tasks/t1" "$RUN/inbox/sid-B"
+check "and the restarted daemon still attributes and notifies" waitfor 5 grep -q 'session "A" (SendMessage to: "A", session sid-A) wrote .*tasks/t1' "$RUN/inbox/sid-B"
 
 echo "== a session that closes holds nothing"
 kill "$PID_B"
