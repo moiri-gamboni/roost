@@ -67,6 +67,10 @@ check "the holder is told" waitfor 5 grep -q "session 'B' wrote" "$RUN/inbox/sid
 check "the repo offers the worktree" grep -q "agent-worktree isolate $ROOT/code/repo1" "$RUN/inbox/sid-B"
 say B "bash -c '(echo n > $ROOT/apart-research/tasks/t1/n.md); true'"   # a grandchild (the subshell forks)
 check "a grandchild's write holds the task folder" waitfor 5 bash -c "grep -q \"^$ROOT/apart-research/tasks/t1	folder	sid-B\" $RUN/holds.tsv"
+say A "echo w > $ROOT/code/repo1/final.py.tmp.1.ab && mv $ROOT/code/repo1/final.py.tmp.1.ab $ROOT/code/repo1/final.py"   # write-then-rename, as Edit/Write and sed -i do
+recorded() { python3 -c "import json,sys; h=json.load(open('$RUN/state.json'))['holds']; print('\n'.join(p for u in h.values() for r in u.values() for p in r['files']))"; }
+final_name_only() { recorded | grep -qx "$ROOT/code/repo1/final.py" && ! recorded | grep -q 'final.py.tmp'; }
+check "an atomic write is recorded under its final name, not the temp one" waitfor 5 final_name_only
 bash -c "echo z > $ROOT/code/repo2/stranger.py"                          # no session behind it
 sleep 1
 check "a write by no session holds nothing" [ -z "$(held_by "$ROOT/code/repo2")" ]

@@ -28,6 +28,7 @@ import fnmatch
 import json
 import os
 import pwd
+import resource
 import select
 import shlex
 import signal
@@ -468,7 +469,7 @@ class Watch:
         names = " or ".join(f"'{r['name']}'" for _, r in others)
         worktree = (f", or to move this work into a worktree of that repo with `agent-worktree isolate {unit}` "
                     "and continue there" if kind == "repo" else "")
-        return (f"Conflict watch: this session just wrote {path} (by a `{comm}` process) inside {unit}, which "
+        return (f"Conflict watch: this session just wrote {path} (by {comm}) inside {unit}, which "
                 f"another open session holds: {who}. Stop changing anything in {unit} and ask the user before "
                 f"you go on there: whether to message {names} (SendMessage) to coordinate{worktree}. This is not "
                 "yours to decide, whatever that session's idle time. If the user approves working there anyway, "
@@ -632,6 +633,7 @@ class Daemon:
         self.attributor = Attributor(registry, self.lineage)
         self.me = os.getpid()
         self.prefix = rules.root + "/"
+        self.settling = []      # (time, event fd, session, by claude, writer) awaiting settle()
 
     def drain_lineage(self, sock):
         now = time.time()
@@ -676,35 +678,65 @@ class Daemon:
                     self.watch.count("fanotify_overflow")
                     log("fanotify queue overflow: some writes were not seen")
                     continue
+                if efd < 0:                     # the kernel could not open the file for us (fd limit)
+                    self.watch.count("no_fd")
+                    continue
                 try:
                     path = os.readlink(f"/proc/self/fd/{efd}")
                 except OSError:
-                    continue
-                finally:
                     os.close(efd)
-                if pid != self.me and path.startswith(self.prefix):
-                    self.on_write(path[:-10] if path.endswith(" (deleted)") else path, pid)
+                    continue
+                if pid == self.me or not path.startswith(self.prefix) or not self.on_write(path, pid, efd):
+                    os.close(efd)
 
-    def on_write(self, path, pid):
+    def on_write(self, path, pid, efd):
+        """Credit the write now, while its writer is most likely still there to be traced; keep the
+        event's fd to name the file once it has settled. True when the fd was kept."""
         if self.rules.unit_of(path) is None:
-            return
+            return False
         self.watch.count("watched_writes")
         session, how = self.attributor.attribute(pid)
         self.watch.count("by_" + how)
         if session is None:
-            return
+            return False
         cmd = proc_cmdline(pid)
         if cmd and self.rules.skip_writer(cmd):
             self.watch.count("skip_writer")
-            return
+            return False
         try:
             with open(f"/proc/{pid}/comm") as f:
-                comm = f.read().strip()
+                comm = f"a `{f.read().strip()}` process"
         except OSError:
-            comm = "short-lived"
-        self.watch.record(session, path, by_claude=(how == "claude"), comm=comm)
+            comm = "a process that has since exited"
+        self.settling.append((time.monotonic(), path, efd, session, how == "claude", comm))
+        return True
+
+    SETTLE = 0.2
+    MAX_SETTLING = 4096         # a burst beyond this is named early rather than hold more fds
+
+    def settle(self, everything=False):
+        """Name the files written SETTLE seconds ago. Editors, Claude Code's Edit/Write and `sed -i`
+        write a temp file and rename it over the target right after closing it; the event's fd
+        follows the rename, so reading its path a moment later gives the file that was changed.
+        When the file is gone by then (replaced by a later rename, or a temp file removed), the
+        name it was written under is the best there is."""
+        now = time.monotonic()
+        while self.settling and (everything or len(self.settling) > self.MAX_SETTLING
+                                 or now - self.settling[0][0] >= self.SETTLE):
+            _, first, efd, session, by_claude, comm = self.settling.pop(0)
+            try:
+                path = os.readlink(f"/proc/self/fd/{efd}")
+            except OSError:
+                path = first
+            finally:
+                os.close(efd)
+            if path.endswith(" (deleted)"):
+                path = first[:-10] if first.endswith(" (deleted)") else first
+            self.watch.record(session, path, by_claude=by_claude, comm=comm)
 
     def run(self):
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))      # settling writes hold their fds
         fan = fanotify_open(self.rules.root)
         nl = proc_connector_open()
         stop = []
@@ -715,11 +747,12 @@ class Daemon:
         last_prune = last_flush = time.monotonic()
         while not stop:
             try:
-                ready, _, _ = select.select([fan, nl], [], [], 1.0)
+                ready, _, _ = select.select([fan, nl], [], [], self.SETTLE / 2 if self.settling else 1.0)
             except InterruptedError:
                 continue
             if ready:
                 self.drain_writes(fan, nl)
+            self.settle()
             now = time.monotonic()
             self.watch.process_requests()
             self.lineage.expire(time.time())
@@ -730,6 +763,7 @@ class Daemon:
             if self.watch.dirty and now - last_flush > 0.5:
                 self.watch.flush()
                 last_flush = now
+        self.settle(everything=True)
         self.watch.flush()
         log("stopped")
 
