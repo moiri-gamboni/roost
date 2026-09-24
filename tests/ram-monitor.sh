@@ -1,9 +1,9 @@
 #!/bin/bash
 # Test for the per-command-name aggregate in files/scheduled/ram-monitor.sh:
-# processes sharing a name are summed, a group over the line alerts once, again
-# only after growing, and drops out of the state file once it is back under the
-# line so a later climb alerts anew. Drives the functions on fixture ps output
-# with ntfy_send and logger stubbed.
+# processes sharing a name are summed, a group over the line is logged once,
+# again only after growing, and drops out of the state file once it is back
+# under the line so a later climb is logged anew; nothing reaches ntfy. Drives
+# the functions on fixture ps output with ntfy_send and logger stubbed.
 #   tests/ram-monitor.sh            # from the repo root
 set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
@@ -19,7 +19,7 @@ check() { local msg=$1; shift; if "$@"; then ok "$msg"; else bad "$msg"; fi; }
 # shellcheck disable=SC1091
 source "$here/files/scheduled/ram-monitor.sh"
 ntfy_send() { printf '%s\n' "$*" >> "$T/ntfy"; }
-logger() { :; }
+logger() { printf '%s\n' "${*: -1}" >> "$T/log"; }
 # shellcheck disable=SC2034  # read by the sourced functions (the lib sets _HOOK_TAG when run)
 _HOOK_TAG=test GROUP_THRESHOLD_KB=$((6144 * 1024)) GROUP_GROWTH_KB=$((1024 * 1024))
 
@@ -48,20 +48,21 @@ check "names with spaces group as one name"          grep -qxP '83000\t2\ttmux: 
 check "largest group first"                          test "$(awk -F'\t' 'NR==1{print $3}' <<<"$out")" = rg
 
 echo "alert_groups:"
-state="$T/groups"; : > "$state"; : > "$T/ntfy"
+state="$T/groups"; : > "$state"; : > "$T/ntfy"; : > "$T/log"
 storm | alert_groups "$state"
-check "first sighting alerts"        test "$(wc -l < "$T/ntfy")" -eq 1
-check "alert names the count and the name" grep -q '5 x rg' "$T/ntfy"
-check "alert carries the sum in GB"  grep -q '7.8GB' "$T/ntfy"
+check "first sighting is logged"     test "$(wc -l < "$T/log")" -eq 1
+check "log names the count and the name" grep -q '5 x rg' "$T/log"
+check "log carries the sum in GB"    grep -q '7.8GB' "$T/log"
 storm | alert_groups "$state"
-check "unchanged group does not re-alert"  test "$(wc -l < "$T/ntfy")" -eq 1
+check "unchanged group is not logged again"  test "$(wc -l < "$T/log")" -eq 1
 { storm; echo " 1200000 rg"; } | alert_groups "$state"
-check "growth past the step re-alerts"     test "$(wc -l < "$T/ntfy")" -eq 2
-check "growth alert says what it was"      grep -q 'was 7.8GB' "$T/ntfy"
+check "growth past the step is logged"     test "$(wc -l < "$T/log")" -eq 2
+check "growth line says what it was"       grep -q 'was 7.8GB' "$T/log"
 storm | grep -v rg | alert_groups "$state"
 check "group under the line leaves the state file"  test ! -s "$state"
 storm | alert_groups "$state"
-check "a later climb alerts again"         test "$(wc -l < "$T/ntfy")" -eq 3
+check "a later climb is logged again"      test "$(wc -l < "$T/log")" -eq 3
+check "nothing is sent to ntfy"            test ! -s "$T/ntfy"
 
 if (( fail )); then echo "FAILURES"; exit 1; fi
 echo "all passed"

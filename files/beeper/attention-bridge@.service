@@ -1,0 +1,22 @@
+[Unit]
+# One self-hosted Beeper bridge per instance (attention-bridge@slack, later
+# discord, email), run through bbctl as the user so the bridge keeps bbctl's
+# generated config and its registration with the Beeper homeserver. The bridge
+# talks to matrix.beeper.com over a websocket, not to the local Beeper Server,
+# so the two units are independent. bbctl forwards SIGTERM to the bridge.
+Description=Beeper bridge %i (attention queue)
+Documentation=file:/home/moiri/roost/code/server/files/beeper/CLAUDE.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=$USERNAME
+Environment=HOME=$HOME_DIR
+WorkingDirectory=$HOME_DIR
+ExecStart=$HOME_DIR/.local/bin/bbctl run --type %i --custom-startup-command $HOME_DIR/.local/share/bbctl/built/mautrix-%i sh-%i
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=30s
+
+[Install]
+WantedBy=multi-user.target

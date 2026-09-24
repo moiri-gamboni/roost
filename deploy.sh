@@ -1096,6 +1096,14 @@ remote_script "setup/earlyoom.sh"
 ok "earlyoom kills the largest process before a swap thrash takes the box down"
 
 # ============================================
+# Attention Queue
+# ============================================
+
+section "Attention Queue"
+remote_script "setup/attention-queue.sh"
+ok "Beeper Server, egress policy and bridge units enabled (logins and bridge builds: docs/runbooks/attention-queue.md)"
+
+# ============================================
 # Attention Sampler
 # ============================================
 

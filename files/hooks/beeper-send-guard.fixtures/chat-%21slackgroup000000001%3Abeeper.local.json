@@ -1,0 +1,88 @@
+{
+  "id": "!slackgroup000000001:beeper.local",
+  "localChatID": "2",
+  "accountID": "slack",
+  "network": "Slack",
+  "title": "Project channel",
+  "description": "",
+  "imgURL": null,
+  "type": "group",
+  "isReadOnly": false,
+  "participants": {
+    "items": [
+      {
+        "id": "@sh-slack_t01example-u1:beeper.local",
+        "fullName": "Person 1",
+        "imgURL": null,
+        "cannotMessage": false,
+        "isSelf": false,
+        "isAdmin": false,
+        "isPending": false,
+        "isNetworkBot": false
+      },
+      {
+        "id": "@sh-slack_t01example-u2:beeper.local",
+        "fullName": "Person 2",
+        "imgURL": null,
+        "cannotMessage": false,
+        "isSelf": false,
+        "isAdmin": false,
+        "isPending": false,
+        "isNetworkBot": false
+      },
+      {
+        "id": "@sh-slack_t01example-u3:beeper.local",
+        "fullName": "Person 3",
+        "imgURL": null,
+        "cannotMessage": false,
+        "isSelf": false,
+        "isAdmin": false,
+        "isPending": false,
+        "isNetworkBot": false
+      },
+      {
+        "id": "@sh-slack_t01example-u4:beeper.local",
+        "fullName": "Person 4",
+        "imgURL": null,
+        "cannotMessage": false,
+        "isSelf": false,
+        "isAdmin": false,
+        "isPending": false,
+        "isNetworkBot": false
+      },
+      {
+        "id": "@sh-slack_t01example-ubot:beeper.local",
+        "fullName": "Standup Bot",
+        "imgURL": null,
+        "cannotMessage": false,
+        "isSelf": false,
+        "isAdmin": false,
+        "isPending": false,
+        "isNetworkBot": true
+      },
+      {
+        "id": "@moiri-gamboni:beeper.com",
+        "cannotMessage": false,
+        "isSelf": true,
+        "isAdmin": false,
+        "isPending": false,
+        "isNetworkBot": false
+      }
+    ],
+    "hasMore": false,
+    "total": 6
+  },
+  "lastActivity": "2026-09-22T20:09:07.753Z",
+  "unreadCount": 23,
+  "unreadMentionsCount": 0,
+  "lastReadMessageSortKey": "353",
+  "draft": null,
+  "reminder": null,
+  "snooze": null,
+  "isArchived": false,
+  "isMarkedUnread": false,
+  "isMuted": true,
+  "isPinned": false,
+  "isLowPriority": false,
+  "messageExpirySeconds": null
+}

@@ -1,18 +1,21 @@
 #!/bin/bash
-# Alert when any process exceeds 3GB RSS, or when the processes sharing one
-# command name add up to more than 6GB. The second rule exists because on
-# 2026-09-20 five ripgreps at 1.4-1.8GB each swapped the box into a ten-minute
-# hang without any one of them crossing the per-process line.
-# Notified PIDs are tracked to avoid repeat alerts until the process restarts;
-# notified command names until the group drops back under its line.
+# Log to the journal when any process exceeds 3GB RSS, or when the processes
+# sharing one command name add up to more than 6GB. The second rule exists
+# because on 2026-09-20 five ripgreps at 1.4-1.8GB each swapped the box into a
+# ten-minute hang without any one of them crossing the per-process line.
+# Journal only, never ntfy: a large process is routine here (a browser, a
+# language server), and what needs a person is a kill, which health-check.sh
+# reports from earlyoom's journal. These lines say what was big beforehand.
+# Logged PIDs are tracked to avoid repeat lines until the process restarts;
+# logged command names until the group drops back under its line.
 #
 # Sourcing this file defines the functions only (tests/ram-monitor.sh); running
 # it does the check.
 
 THRESHOLD_KB=$((3072 * 1024))       # 3GB per process
-GROWTH_KB=$((512 * 1024))           # re-alert if grown 512MB since last alert
+GROWTH_KB=$((512 * 1024))           # log again if grown 512MB since last line
 GROUP_THRESHOLD_KB=$((6144 * 1024)) # 6GB summed over one command name
-GROUP_GROWTH_KB=$((1024 * 1024))    # re-alert if the group grew 1GB
+GROUP_GROWTH_KB=$((1024 * 1024))    # log again if the group grew 1GB
 
 # Sum RSS per command name from "RSS_KB COMM" lines on stdin and print the
 # groups over $1 KB as "SUM_KB<TAB>COUNT<TAB>COMM", largest first. A command
@@ -26,10 +29,10 @@ rss_groups() {
 
 gb() { awk "BEGIN {printf \"%.1f\", $1/1048576}"; }
 
-# Alert on the groups over the line from "RSS_KB COMM" lines on stdin.
-# State file $1, one "LAST_ALERTED_SUM_KB<TAB>COMM" line per group alerted;
+# Log the groups over the line from "RSS_KB COMM" lines on stdin.
+# State file $1, one "LAST_ALERTED_SUM_KB<TAB>COMM" line per group logged;
 # rewritten from the current groups each run, so a group that dropped under
-# the line falls out and alerts again when it next climbs.
+# the line falls out and is logged again when it next climbs.
 alert_groups() {
     local state=$1 tmp sum count comm prev
     tmp=$(mktemp)
@@ -37,11 +40,9 @@ alert_groups() {
         prev=$(awk -F'\t' -v c="$comm" '$2 == c {print $1}' "$state")
         if [ -z "$prev" ]; then
             logger -t "$_HOOK_TAG" "ALERT: $count x $comm using $(gb "$sum")GB RSS together"
-            ntfy_send -t "High RAM: $count x $comm" -p "high" "$count processes named $comm using $(gb "$sum")GB RSS together"
             printf '%s\t%s\n' "$sum" "$comm" >> "$tmp"
         elif [ $((sum - prev)) -gt "$GROUP_GROWTH_KB" ]; then
             logger -t "$_HOOK_TAG" "GROWTH: $count x $comm now $(gb "$sum")GB together (was $(gb "$prev")GB)"
-            ntfy_send -t "RAM growing: $count x $comm" -p "high" "$count processes named $comm now $(gb "$sum")GB together (was $(gb "$prev")GB)"
             printf '%s\t%s\n' "$sum" "$comm" >> "$tmp"
         else
             printf '%s\t%s\n' "$prev" "$comm" >> "$tmp"
@@ -62,11 +63,9 @@ main() {
             prev_rss=$(awk -v p="$pid" '$1 == p {print $2}' "$state_file")
             if [ -z "$prev_rss" ]; then
                 logger -t "$_HOOK_TAG" "ALERT: $comm (PID $pid) using $(gb "$rss")GB RSS"
-                ntfy_send -t "High RAM: $comm" -p "high" "PID $pid using $(gb "$rss")GB RSS"
                 echo "$pid $rss" >> "$state_file"
             elif [ $((rss - prev_rss)) -gt "$GROWTH_KB" ]; then
                 logger -t "$_HOOK_TAG" "GROWTH: $comm (PID $pid) now $(gb "$rss")GB (was $(gb "$prev_rss")GB)"
-                ntfy_send -t "RAM growing: $comm" -p "high" "PID $pid now $(gb "$rss")GB (was $(gb "$prev_rss")GB)"
                 sed -i "s/^${pid} .*/${pid} ${rss}/" "$state_file"
             fi
         fi

@@ -124,19 +124,21 @@ files/scripts/agent-worktree.sh|$ROOST_DIR/claude/scripts/agent-worktree.sh|plai
 files/roost-session-resume.service|$HOME_DIR/.config/systemd/user/roost-session-resume.service|plain|run:systemctl --user daemon-reload && systemctl --user enable roost-session-resume.service
 files/hooks/shellcheck-edit.sh|$ROOST_DIR/claude/hooks/shellcheck-edit.sh|plain+x|
 files/hooks/notion-write-guard.sh|$ROOST_DIR/claude/hooks/notion-write-guard.sh|plain+x|
+files/hooks/beeper-send-guard.sh|$ROOST_DIR/claude/hooks/beeper-send-guard.sh|plain+x|
 files/hooks/truncation-guard.sh|$ROOST_DIR/claude/hooks/truncation-guard.sh|plain+x|
 files/hooks/roughdraft-write-guard.sh|$ROOST_DIR/claude/hooks/roughdraft-write-guard.sh|plain+x|
 files/hooks/fork-context-guard.sh|$ROOST_DIR/claude/hooks/fork-context-guard.sh|plain+x|
 files/hooks/redelegation-guard.sh|$ROOST_DIR/claude/hooks/redelegation-guard.sh|plain+x|
 files/hooks/subagent-context.sh|$ROOST_DIR/claude/hooks/subagent-context.sh|plain+x|
 files/hooks/agent-browser-session.sh|$ROOST_DIR/claude/hooks/agent-browser-session.sh|plain+x|
+files/hooks/session-switch-notify.sh|$ROOST_DIR/claude/hooks/session-switch-notify.sh|plain+x|
 files/agent-browser-config.json|$HOME_DIR/.agent-browser/config.json|plain|
 files/claude-plugins/.claude-plugin/marketplace.json|$ROOST_DIR/claude/roost-plugins/.claude-plugin/marketplace.json|plain|
 files/claude-plugins/bash-lsp/.claude-plugin/plugin.json|$ROOST_DIR/claude/roost-plugins/bash-lsp/.claude-plugin/plugin.json|plain|
-files/private/granola-digest.sh|$ROOST_DIR/claude/scripts/granola-digest.sh|plain+x|
 files/private/drive-mirror-refresh.sh|$ROOST_DIR/claude/scripts/drive-mirror-refresh.sh|plain+x|
 files/travel/travel-health.sh|$ROOST_DIR/claude/scheduled/health-check-apps.sh|plain+x|
 files/private/health-check-apps-private.sh|$ROOST_DIR/claude/scheduled/health-check-apps-private.sh|plain+x|
+files/private/health-check-attention-queue.sh|$ROOST_DIR/claude/scheduled/health-check-attention-queue.sh|plain+x|
 files/shell/bashrc.sh|$HOME_DIR/.bashrc.d/roost.sh|plain|
 files/private/global-CLAUDE.md|$ROOST_DIR/claude/CLAUDE.md|plain|
 files/private/apart-env.sh|$HOME_DIR/.config/apart/env|plain+600|
@@ -209,6 +211,12 @@ files/privatebin/php-fpm-pool.conf|/etc/php/8.3/fpm/pool.d/privatebin.conf|plain
 files/privatebin/privatebin.caddy|/etc/caddy/sites-enabled/privatebin.caddy|plain|reload-or-restart:caddy
 files/beeper/beeper-egress.sh|/usr/local/sbin/beeper-egress|plain+x|
 files/beeper/egress-hosts|/etc/beeper-egress/hosts|plain|
+files/beeper/beeper-egress.service|/etc/systemd/system/beeper-egress.service|plain|daemon-reload
+files/beeper/beeper-egress-ensure.service|/etc/systemd/system/beeper-egress-ensure.service|plain|daemon-reload
+files/beeper/beeper-egress-ensure.timer|/etc/systemd/system/beeper-egress-ensure.timer|plain|daemon-reload,restart:beeper-egress-ensure.timer
+files/beeper/beeper-server.service|/etc/systemd/system/beeper-server.service|plain|daemon-reload
+files/beeper/attention-bridge@.service|/etc/systemd/system/attention-bridge@.service|envsubst:USERNAME,HOME_DIR|daemon-reload
+files/beeper/attention-bridge@email.service.d/matrimail.conf|/etc/systemd/system/attention-bridge@email.service.d/matrimail.conf|envsubst:HOME_DIR|daemon-reload
 files/private/caddy-sites/app.caddy|/etc/caddy/sites-enabled/app.caddy|plain|reload-or-restart:caddy
 files/private/caddy-sites/analytics.caddy|/etc/caddy/sites-enabled/analytics.caddy|envsubst:TAILSCALE_IP|reload-or-restart:caddy
 files/private/caddy-sites/tailnet-scratch.caddy|/etc/caddy/sites-enabled/tailnet-scratch.caddy|plain|reload-or-restart:caddy
