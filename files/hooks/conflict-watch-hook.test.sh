@@ -27,7 +27,7 @@ session() {
 }
 
 reset_run() {
-    rm -rf "$CONFLICT_WATCH_RUN"; mkdir -p "$CONFLICT_WATCH_RUN"/{inbox,asks,grants,acks,requests}
+    rm -rf "$CONFLICT_WATCH_RUN"; mkdir -p "$CONFLICT_WATCH_RUN"/{inbox,grants,acks,requests}
     printf '#daemon\t%s\n' "$$" > "$CONFLICT_WATCH_RUN/holds.tsv"
 }
 
@@ -80,36 +80,34 @@ echo "second" > "$CONFLICT_WATCH_RUN/inbox/ME"
 has "delivered on UserPromptSubmit" "second" "$(context "$(printf '{"session_id":"ME","hook_event_name":"UserPromptSubmit","prompt":"hi"}' | "$HOOK")")"
 expect "nothing to say: no output" "" "$(run PreToolUse Read '{"file_path":"/etc/hosts"}')"
 
-echo "== Edit/Write"
+echo "== Edit/Write: stopped once, as a warning"
 reset_run; hold "$TASK" folder S "$S" 100 holder-S
 out=$(edit "$TASK/task.md")
-expect "edit in another session's unit asks" ask "$(decision "$out")"
-has "prompt names the holder" "holder-S" "$(reason "$out")"
-has "prompt says idle" "idle" "$(reason "$out")"
-has "prompt gives the age of its last write" "5m ago" "$(reason "$out")"
-has "model is told to ask the user / SendMessage" "SendMessage" "$(context "$out")"
-if [[ $(context "$out") == *"agent-worktree isolate"* ]]; then bad "no worktree offer for a task folder"; else ok "no worktree offer for a task folder"; fi
+expect "the first edit in another session's unit is denied (never a prompt)" deny "$(decision "$out")"
+has "the warning names the holder" "holder-S" "$(reason "$out")"
+has "and says idle" "idle" "$(reason "$out")"
+has "and the age of its last write" "5m ago" "$(reason "$out")"
+has "and tells the model to ask the user / SendMessage" "SendMessage" "$(reason "$out")"
+if [[ $(reason "$out") == *"agent-worktree isolate"* ]]; then bad "no worktree offer for a task folder"; else ok "no worktree offer for a task folder"; fi
+expect "the retry passes" none "$(decision "$(edit "$TASK/task.md")")"
+expect "so does another file in the same unit" none "$(decision "$(edit "$TASK/other.md")")"
 expect "edit in another unit passes" none "$(decision "$(edit "$TASK2/task.md")")"
 expect "own session's unit passes" none "$(decision "$(edit "$TASK/task.md" S)")"
 reset_run; hold "$REPO" repo S "$S" 100 holder-S
-has "repo unit offers the worktree" "agent-worktree isolate $REPO" "$(context "$(edit "$REPO/a.py")")"
+has "repo unit offers the worktree" "agent-worktree isolate $REPO" "$(reason "$(edit "$REPO/a.py")")"
+reset_run; hold "$REPO" repo S "$S" 100 holder-S
 expect "a nested repo inside a held repo is its own unit" none "$(decision "$(edit "$REPO/files/private/g.md")")"
 reset_run; hold "$TASK" folder S 999999999 100 holder-S
 expect "a holder that is gone holds nothing" none "$(decision "$(edit "$TASK/task.md")")"
-
-echo "== approval becomes a grant"
 reset_run; hold "$TASK" folder S "$S" 100 holder-S
-edit "$TASK/task.md" ME toolu_A > /dev/null
-run PostToolUse Edit "$(jq -nc --arg p "$TASK/task.md" '{file_path:$p}')" ME "$ROOT" toolu_A > /dev/null
-expect "the next edit there passes" none "$(decision "$(edit "$TASK/b.md" ME toolu_B)")"
-has "the holder is let past this session too" "ME" "$(cat "$CONFLICT_WATCH_RUN/grants/S" 2>&1)"
+bash_cmd "cat $TASK/task.md" > /dev/null
+expect "one warning per unit: a Bash warning covers the Edit too" none "$(decision "$(edit "$TASK/task.md")")"
 reset_run; hold "$TASK" folder S "$S" 200 holder-S
-cp /dev/null "$CONFLICT_WATCH_RUN/grants/ME"; printf '%s\tS\t100\n' "$TASK" > "$CONFLICT_WATCH_RUN/grants/ME"
-expect "a grant for an earlier hold does not cover a new one" ask "$(decision "$(edit "$TASK/b.md")")"
-reset_run; hold "$TASK" folder S "$S" 100 holder-S
-edit "$TASK/task.md" ME toolu_C > /dev/null
-run PostToolUse Edit "$(jq -nc --arg p "$TASK/task.md" '{file_path:$p}')" ME "$ROOT" toolu_OTHER > /dev/null
-expect "a declined ask (tool never ran) grants nothing" ask "$(decision "$(edit "$TASK/b.md")")"
+printf '%s\tS\t100\n' "$TASK" > "$CONFLICT_WATCH_RUN/acks/ME"
+expect "a warning about an earlier hold does not cover a new one" deny "$(decision "$(edit "$TASK/b.md")")"
+reset_run; hold "$TASK" folder S "$S" 200 holder-S
+printf '%s\tS\t*\n' "$TASK" > "$CONFLICT_WATCH_RUN/grants/ME"
+expect "conflict-watch allow (a grant) covers any hold" none "$(decision "$(edit "$TASK/b.md")")"
 
 echo "== Bash: a command naming a held unit"
 reset_run; hold "$TASK" folder S "$S" 100 holder-S; hold "$TASK2" folder U "$U" 100 holder-U
@@ -149,9 +147,9 @@ HOME_SAVE=$HOME; export HOME="$T"
 expect "~/ is expanded" deny "$(decision "$(bash_cmd "cat ~/roost/code/server/a.py" ME /tmp)")"
 export HOME=$HOME_SAVE
 
-echo "== Bash: approval is the user's"
-reset_run
-expect "conflict-watch allow asks the user" ask "$(decision "$(bash_cmd "conflict-watch allow $TASK")")"
+echo "== never a prompt"
+reset_run; hold "$TASK" folder S "$S" 100 holder-S
+expect "conflict-watch allow runs without one" none "$(decision "$(bash_cmd "conflict-watch allow $TASK" ME /tmp)")"
 
 echo "== a session's own helper (claude -p run from its Bash) is not a stranger"
 reset_run

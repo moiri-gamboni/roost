@@ -1,21 +1,21 @@
 #!/bin/bash
 # conflict-watch hook: the session side of the conflict watch (files/scripts/conflict-watch.py).
 #
-# Wired for PreToolUse (every tool), PostToolUse and PostToolUseFailure (Edit, Write, MultiEdit,
-# NotebookEdit, Bash) and UserPromptSubmit. The daemon records which open session holds which
-# unit (a task folder, a plans/notes/data entry, a whole repo) and publishes it in holds.tsv;
-# this hook acts on it:
+# Wired for PreToolUse (every tool), PostToolUse (Edit, Write, MultiEdit, NotebookEdit, Bash) and
+# UserPromptSubmit. The daemon records which open session holds which unit (a task folder, a
+# plans/notes/data entry, a whole repo) and publishes it in holds.tsv; this hook acts on it. It
+# warns, and never raises a permission prompt: a warning is a deny, once per session, unit and
+# hold (acks/<sid>, keyed by the hold's `since`, so a release and re-hold or a new holder re-arms
+# it), and the retry passes. The model is told to ask the user in the conversation.
 #   - every event: hands the session's inbox (notices the daemon wrote: "you wrote into a unit
 #     another session holds, stop and ask", "another session wrote into yours") to the model;
-#   - Edit/Write/MultiEdit/NotebookEdit into a unit another open session holds: asks the user
-#     (the model is told its options). If the tool then runs, the user approved: PostToolUse
-#     turns the pending ask into a grant for that unit and those holders, both ways;
-#   - Bash naming a path in such a unit (absolute, ~/, or relative to the cwd or a `cd` in the
-#     command): denied once per session, unit and hold, with the holder named; the retry passes
-#     (reading is fine). Writes that happen anyway reach the daemon, which tells the session;
-#   - Bash running `conflict-watch allow`: asks, since that records the user's approval;
-#   - Bash running a repo-wide git command (add -A, commit -a, stash, checkout ., reset --hard,
-#     switch, pull, …): `conflict-watch hook-git` asks when another session has work in that repo.
+#   - Edit/Write/MultiEdit/NotebookEdit into a unit another open session holds, or a Bash command
+#     naming a path in one (absolute, ~/, or relative to the cwd or a `cd` in the command): the
+#     warning, naming the holder. Bash writes that happen anyway reach the daemon, which tells
+#     the session; `conflict-watch allow` (a grant) records the user's go-ahead and ends those;
+#   - Bash running a repo-wide git command (add -A, commit -a, stash, checkout, restore, reset
+#     --hard, switch, merge, rebase, pull, …): `conflict-watch hook-git` warns when the command
+#     would change files another open session wrote in that repo.
 #
 # Fast path, because it runs on every tool call of every session: no subprocess until there is
 # something to do. The payload's leading fields (session_id … tool_name) come from a bounded
@@ -66,25 +66,6 @@ emit() {  # emit DECISION REASON — writes the hook's JSON (with the inbox as c
 }
 
 case "$event:$tool" in
-    PostToolUse*:Edit|PostToolUse*:Write|PostToolUse*:MultiEdit|PostToolUse*:NotebookEdit)
-        # The tool ran, so an ask for it was approved: turn it into grants, both ways.
-        if [ -s "$RUN/asks/$sid" ]; then
-            read_rest
-            re='"tool_use_id":"([A-Za-z0-9_]+)"'
-            if [[ $payload =~ $re ]]; then
-                tu=${BASH_REMATCH[1]}; pending=""
-                while IFS=$'\t' read -r atu unit hsid since; do
-                    if [ "$atu" = "$tu" ]; then
-                        printf '%s\t%s\t%s\n' "$unit" "$hsid" "$since" >> "$RUN/grants/$sid"
-                        printf '%s\t%s\t*\n' "$unit" "$sid" >> "$RUN/grants/$hsid"
-                    else
-                        pending+="$atu"$'\t'"$unit"$'\t'"$hsid"$'\t'"$since"$'\n'
-                    fi
-                done < "$RUN/asks/$sid"
-                printf '%s' "$pending" > "$RUN/asks/$sid"
-            fi
-        fi
-        emit "" "" ;;
     PreToolUse:Bash|PreToolUse:Edit|PreToolUse:Write|PreToolUse:MultiEdit|PreToolUse:NotebookEdit) ;;
     *) emit "" "" ;;
 esac
@@ -94,20 +75,6 @@ unescape() {  # unescape JSON_STRING → REPLY, undoing the escapes a path or co
     s=${s//\\\"/\"}; s=${s//\\\//\/}; s=${s//\\n/$'\n'}; s=${s//\\t/$'\t'}; s=${s//\\\\/\\}
     REPLY=$s
 }
-
-# Recording the user's approval is the user's to do, held units or not.
-if [ "$tool" = Bash ] && [[ $payload == *conflict-watch* ]]; then
-    read_rest
-    re='"command":"(([^"\\]|\\.)*)"'
-    if [[ $payload =~ $re ]]; then
-        unescape "${BASH_REMATCH[1]}"
-        re='(^|[^A-Za-z0-9_.-])conflict-watch(\.py)?[[:space:]]+allow([[:space:]]|$)'
-        if [[ $REPLY =~ $re ]]; then
-            emit ask "Conflict watch: the session runs \`conflict-watch allow\`, which records that YOU approved it working in a unit another open session holds. Approve only if you did." \
-                "Conflict watch: \`conflict-watch allow\` records the user's approval, so the user was asked to confirm it."
-        fi
-    fi
-fi
 
 # --- units other open sessions hold -----------------------------------------------
 # Parsed without checking anything: liveness and ownership are only checked for the units this
@@ -150,13 +117,13 @@ live_others() {  # live_others IDX... → REPLY_IDX: the holds whose session is 
     done
 }
 
-# grants (the user approved) and acks (a Bash command was already stopped here), as "unit\tholder\tsince"
+# grants (`conflict-watch allow`) and acks (this session was already warned), as "unit\tholder\tsince"
 declare -A OK=()
 for f in "$RUN/grants/$sid" "$RUN/acks/$sid"; do
     [ -r "$f" ] || continue
     while IFS= read -r line; do OK[$line]=1; done < "$f"
 done
-cleared() {  # cleared IDX — the user already let this session past this hold
+cleared() {  # cleared IDX — this session was already warned about this hold, or let past it
     local i=$1
     [ -n "${OK[${HU[$i]}$'\t'${HS[$i]}$'\t'${HSI[$i]}]:-}" ] || [ -n "${OK[${HU[$i]}$'\t'${HS[$i]}$'\t'*]:-}" ]
 }
@@ -179,6 +146,16 @@ names() { local i out=""; for i in "$@"; do out+="${out:+ or }'${HN[$i]}'"; done
 worktree_offer() {  # worktree_offer UNIT KIND
     [ "$2" = repo ] && echo " Or, since this is a code repo, move your work into a worktree of it (\`agent-worktree isolate $1\`) and continue there."
 }
+warn() {  # warn WHAT IDX... — deny once, recording that this session has now been warned about these holds
+    local what=$1 i units="" u k; shift
+    local -A seen=()
+    for i in "$@"; do
+        printf '%s\t%s\t%s\n' "${HU[$i]}" "${HS[$i]}" "${HSI[$i]}" >> "$RUN/acks/$sid"
+        [ -n "${seen[${HU[$i]}]:-}" ] || { units+="${units:+, }${HU[$i]}"; seen[${HU[$i]}]=1; }
+    done
+    u=${HU[$1]}; k=${HK[$1]}
+    emit deny "Conflict watch: $what $units, which another open session holds: $(describe "$@"). Stopped once, as a warning. Changing anything there is not yours to decide, whatever that session's idle time: ask the user whether to message $(names "$@") (SendMessage) to coordinate.$(worktree_offer "$u" "$k") Reading there is fine, and if the user says to go ahead, retry: it passes now. Changes made there without asking are detected and reported."
+}
 
 # --- Edit / Write ------------------------------------------------------------------------
 if [ "$tool" != Bash ]; then
@@ -197,15 +174,7 @@ if [ "$tool" != Bash ]; then
     [ ${#hit[@]} -eq 0 ] && emit "" ""
     live_others "${hit[@]}"; hit=("${REPLY_IDX[@]}")
     [ ${#hit[@]} -eq 0 ] && emit "" ""
-    read_rest
-    u=${HU[${hit[0]}]}; k=${HK[${hit[0]}]}
-    re='"tool_use_id":"([A-Za-z0-9_]+)"'
-    if [[ $payload =~ $re ]]; then
-        for i in "${hit[@]}"; do printf '%s\t%s\t%s\t%s\n' "${BASH_REMATCH[1]}" "${HU[$i]}" "${HS[$i]}" "${HSI[$i]}" >> "$RUN/asks/$sid"; done
-    fi
-    who=$(describe "${hit[@]}")
-    emit ask "Conflict watch: $u is held by another open session: $who. Approve to let this session edit there anyway (it and that session will then both work there without being asked again)." \
-        "Conflict watch: $path is inside $u, which another open session holds: $who. Editing there is not yours to decide, whatever that session's idle time, so the user was asked to approve this edit. If it was denied, stop changing anything in $u and ask the user whether to message $(names "${hit[@]}") (SendMessage) to coordinate.$(worktree_offer "$u" "$k")"
+    warn "this edit is in" "${hit[@]}"
 fi
 
 # --- Bash ------------------------------------------------------------------------------------
@@ -214,6 +183,8 @@ re='"command":"(([^"\\]|\\.)*)"'
 [[ $payload =~ $re ]] || emit "" ""
 unescape "${BASH_REMATCH[1]}"; cmd=$REPLY
 cmd=${cmd//\~\//$HOME/}
+re='^[[:space:]]*(conflict-watch|[^[:space:]]*/conflict-watch\.py)[[:space:]]'
+[[ $cmd =~ $re ]] && emit "" ""                 # managing holds (release, allow, status) is never a conflict
 
 norm() {  # norm PATH → REPLY: absolute, with . and .. resolved
     local IFS=/ part; local -a out=()
@@ -254,20 +225,12 @@ for i in "${keep[@]}"; do
 done
 [ ${#hit[@]} -gt 0 ] && { live_others "${hit[@]}"; hit=("${REPLY_IDX[@]}"); }
 
-if [ ${#hit[@]} -gt 0 ]; then
-    units=""; declare -A seen=()
-    for i in "${hit[@]}"; do
-        printf '%s\t%s\t%s\n' "${HU[$i]}" "${HS[$i]}" "${HSI[$i]}" >> "$RUN/acks/$sid"
-        [ -n "${seen[${HU[$i]}]:-}" ] || { units+="${units:+, }${HU[$i]}"; seen[${HU[$i]}]=1; }
-    done
-    u=${HU[${hit[0]}]}; k=${HK[${hit[0]}]}
-    emit deny "Conflict watch: this command names $units, which another open session holds: $(describe "${hit[@]}"). Reading there is fine: re-run the command as it is and it will pass. To change anything there, ask the user first, offering to message $(names "${hit[@]}") (SendMessage) to coordinate.$(worktree_offer "$u" "$k") Changes made there without asking are detected and reported."
-fi
+[ ${#hit[@]} -gt 0 ] && warn "this command names" "${hit[@]}"
 
 re='(^|[^A-Za-z0-9_-])git[[:space:]].*(add|commit|stash|checkout|restore|reset|clean|switch|pull|merge|rebase)'
 if [[ $cmd =~ $re ]]; then
     read_rest
-    verdict=$(printf '%s' "$payload" | CW_CONTEXT="$ctx" python3 "$CW" hook-git)
+    verdict=$(printf '%s' "$payload" | CW_CONTEXT="$ctx" python3 -S "$CW" hook-git)
     [ -n "$verdict" ] && { printf '%s\n' "$verdict"; exit 0; }
 fi
 emit "" ""
