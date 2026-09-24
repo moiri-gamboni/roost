@@ -1,6 +1,6 @@
 # Runbook: attention queue credentials, updates and recovery
 
-The attention queue (`~/roost/code/attention-queue`) reads a headless Beeper Desktop on this box through self-hosted Slack and Discord bridges. Four credentials can expire and one binary can need rolling; this is what to do for each. Design and state reference: `files/beeper/CLAUDE.md`; the pass itself: the clone's README.
+The attention queue (`~/roost/code/attention-queue`) reads a headless Beeper Desktop on this box through self-hosted Slack, Discord and email bridges. Five credentials can expire and one binary can need rolling; this is what to do for each. Design and state reference: `files/beeper/CLAUDE.md`; the pass itself: the clone's README.
 
 ## What runs where
 
@@ -10,13 +10,14 @@ The attention queue (`~/roost/code/attention-queue`) reads a headless Beeper Des
 | Beeper Server (Desktop API on `127.0.0.1:23373`) | `beeper-server.service` | `beeper` | `sudo journalctl -u beeper-server`; `/var/lib/beeper-server/data/logs/` |
 | Slack bridge (`mautrix-slack` through `bbctl run`) | `attention-bridge@slack.service` | moiri | `sudo journalctl -u attention-bridge@slack`; `~/.local/share/bbctl/prod/sh-slack/logs/bridge.log` (JSON, rotated) |
 | Discord bridge (`mautrix-discord` through `bbctl run`) | `attention-bridge@discord.service` | moiri | `sudo journalctl -u attention-bridge@discord`; `~/.local/share/bbctl/prod/sh-discord/logs/` |
+| Email bridge (the matrimail fork through `bbctl run`, type `bridgev2`) | `attention-bridge@email.service` + drop-in `matrimail.conf` | moiri | `sudo journalctl -u attention-bridge@email`; `~/.local/share/bbctl/prod/sh-email/logs/` |
 | The pass (`aq pass`) | cron, every quarter hour (`/etc/cron.d/roost-mirrors`) | moiri | `~/.local/state/attention-queue/pass.log`; API log `~/.local/state/attention-queue/api-log/` |
 | Dead-man | every 5 min inside `health-check.sh` | moiri | `journalctl -t roost/health-check` |
 
 Everything is enabled and returns after a reboot (`setup/attention-queue.sh` does the enabling; `roost-apply push` never does). To check after a reboot:
 
 ```bash
-for u in beeper-egress.service beeper-egress-ensure.timer beeper-server.service attention-bridge@slack.service attention-bridge@discord.service; do
+for u in beeper-egress.service beeper-egress-ensure.timer beeper-server.service attention-bridge@slack.service attention-bridge@discord.service attention-bridge@email.service; do
     printf '%-32s %s %s\n' "$u" "$(systemctl is-active "$u")" "$(systemctl is-enabled "$u")"
 done
 sudo iptables -S OUTPUT | grep beeper-egress && sudo ip6tables -S OUTPUT | grep beeper-egress
@@ -51,7 +52,7 @@ Every failure below also shows up as a line in the `Service health alert` ntfy w
 `~/.config/bbctl/config.json` holds the `bbctl` access token for the Beeper account. The bridge reads it at start to fetch its registration; a running bridge does not need it again.
 
 - **How expiry shows.** Only at the next bridge start: the `attention-bridge@…` units fail and restart every 10 s, `sudo journalctl -u attention-bridge@slack` (or `@discord`) shows the login error, the dead-man reports the unit `not running` and the account as not `connected`.
-- **Where to re-authenticate.** On the box: `bbctl login` (emailed code), then `sudo systemctl restart attention-bridge@slack attention-bridge@discord`.
+- **Where to re-authenticate.** On the box: `bbctl login` (emailed code), then `sudo systemctl restart attention-bridge@slack attention-bridge@discord attention-bridge@email`.
 - **From the phone?** No; SSH.
 - **Meanwhile.** Nothing bridges: Slack messages arriving while the bridge is down are backfilled when it reconnects (the bridge backfills on start).
 
@@ -72,6 +73,16 @@ The bridge holds a Discord user token in `~/.local/share/bbctl/prod/sh-discord/m
 - **Where to re-authenticate.** In the bridge's control chat, the encrypted DM with `@sh-discordbot:beeper.local`, room `!qK7NBaN2S5BWhFuZKJsf:beeper.local` (an earlier unencrypted DM with the bot, `!4soLg4KAMoNJbIjVFvKW:beeper.local`, is ignored: the bridge requires encryption and drops what arrives there). Send `login-token user <token>`, where the token is the `authorization` request header of any `discord.com/api/v9/…` request in a logged-in browser session (dev tools, Network tab). The bot deletes the message after reading it.
 - **From the phone?** The command, yes; getting the token out of a browser realistically needs a desktop browser.
 - **Meanwhile.** Existing chats stay readable; nothing new arrives from Discord. If Discord disabled the account (the enforcement risk of a non-official client, mautrix/discord #235), expect a forced password change first.
+
+## The Gmail login
+
+The email bridge holds a Google refresh token for moiri@apartresearch.com in `~/.local/share/bbctl/prod/sh-email/sh-email.db`, encrypted with the passphrase in `/etc/attention-queue/matrimail.env` (root, 0600). The OAuth client is a Desktop client in an Internal Google Cloud project of the Apart Workspace, so the token has no fixed expiry; its ID and secret are in the bridge's `config.yaml` (`network.gmail_oauth`) and in `~/.config/attention-queue/gmail-oauth-client.env`. The scope is `modify` (Gmail API read, label and send), which still covers the whole mailbox.
+
+- **How expiry shows.** A password change, a revoked grant (https://myaccount.google.com/permissions) or an admin policy change kills the token: `GET /v1/accounts` shows `sh-email_…` as not `connected`, the dead-man reports it, and the bot posts a re-authorise notice in its control chat. The bridge then retries every thirty seconds indefinitely (a known upstream behaviour).
+- **Where to re-authenticate.** In the bridge's control chat, the encrypted DM with `@sh-emailbot:beeper.local`, room `!ciK5fRfu0IQPoBFD0vHI:beeper.local`: send `login`, then the address, then `modify`. The bot answers with a Google URL whose redirect is `http://127.0.0.1:8765/callback` on this box. Open it in a laptop browser, allow, and either run `ssh -N -L 8765:127.0.0.1:8765 moiri@100.73.69.20` first, or copy the failed-to-load callback URL from the address bar and fetch it on the box (`curl -s '<that URL>'`): the code in it is single-use, expires in minutes and is bound to a verifier only the bridge holds. Never use the bridge's `oauth paste-token`, which puts a permanent full-mailbox token into chat history. Pick `default` (INBOX) at the folder prompt unless the watched folders are being changed on purpose.
+- **From the phone?** The chat steps, yes; the callback needs the box, so a laptop or an SSH session.
+- **Meanwhile.** Nothing new arrives from Gmail and nothing sent from Beeper reaches it; mail is not lost, since the bridge reads Gmail's history from its saved cursor when it reconnects (Gmail keeps about a week of history; past that the gap is skipped with a log line).
+- **The passphrase.** Never change `MATRIMAIL_PASSPHRASE`: nothing re-encrypts the stored token, so a new value makes it unreadable and the bridge refuses to start. If the file is lost, delete the bridge's stored login (`logout moiri@apartresearch.com` in the control chat), create a new file and log in again.
 
 ## The recovery key
 
@@ -133,7 +144,7 @@ After a good update, watch `sudo journalctl -k | grep beeper-reject` for a rejec
 
 ## Rebuild or update the bridge binaries
 
-`bbctl`, `mautrix-slack` and `mautrix-discord` are built here from pinned release tags, never downloaded (bbctl's own download path has no checksum). Versions and the build command are in `files/beeper/CLAUDE.md`. To move to a new tag: build into `~/.local/share/bbctl/built/mautrix-slack-<tag>`, point the `mautrix-slack` symlink at it, `sudo systemctl restart attention-bridge@slack`, confirm `Received hello event from websocket (now really connected)` in `sudo journalctl -u attention-bridge@slack`, and record the new tag. The previous binary stays beside it for rollback (flip the symlink back, restart). `mautrix-slack` builds with the pure-Go crypto backend (`-tags goolm`); `mautrix-discord` v0.7.7 cannot, because its mautrix-go predates that option, so it links Ubuntu's `libolm3` and is built with plain `./build.sh -o <path>` in a checkout of the tag; the same steps apply with `@discord`.
+`bbctl`, `mautrix-slack`, `mautrix-discord` and `matrimail` are built here from pinned commits, never downloaded (bbctl's own download path has no checksum). Versions and the build command are in `files/beeper/CLAUDE.md`. To move to a new tag: build into `~/.local/share/bbctl/built/mautrix-slack-<tag>`, point the `mautrix-slack` symlink at it, `sudo systemctl restart attention-bridge@slack`, confirm `Received hello event from websocket (now really connected)` in `sudo journalctl -u attention-bridge@slack`, and record the new tag. The previous binary stays beside it for rollback (flip the symlink back, restart). `mautrix-slack` builds with the pure-Go crypto backend (`-tags goolm`); `mautrix-discord` v0.7.7 cannot, because its mautrix-go predates that option, so it links Ubuntu's `libolm3` and is built with plain `./build.sh -o <path>` in a checkout of the tag; the same steps apply with `@discord`. `matrimail` is built from the fork's reviewed branch in `~/roost/code/matrimail` with `./build.sh -o ~/.local/share/bbctl/built/matrimail-<short sha>` (pure-Go crypto), linked as `matrimail`, restarted with `@email`.
 
 ## The egress policy after a firewall change
 
