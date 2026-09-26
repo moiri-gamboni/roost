@@ -151,6 +151,7 @@ files/private/notion-mirror-changelog-context.md|$HOME_DIR/.config/notion-mirror
 files/private/public-scrub-check.sh|$ROOST_DIR/claude/scripts/public-scrub-check.sh|plain+x|
 files/private/skills/plan-day/SKILL.md|$ROOST_DIR/claude/skills/plan-day/SKILL.md|plain|
 files/private/plan-day-launch.sh|$ROOST_DIR/claude/scripts/plan-day-launch.sh|plain+x|
+files/private/plan-day-gather|$ROOST_DIR/claude/scripts/plan-day-gather|plain+x|
 files/private/plan-day.service|/etc/systemd/system/plan-day.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
 files/private/plan-day.timer|/etc/systemd/system/plan-day.timer|plain|daemon-reload,run:sudo systemctl enable --now plan-day.timer
 files/agents/effort-low.md|$ROOST_DIR/claude/agents/effort-low.md|plain|
