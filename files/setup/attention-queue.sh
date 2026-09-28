@@ -100,6 +100,12 @@ for pair in "beeper-egress.sh:/usr/local/sbin/beeper-egress:0755" "egress-hosts:
         ok "$dst installed"
     fi
 done
+# Account-specific hosts from the private repo, when it is checked out
+if [ -f "$REMOTE_DIR/files/private/beeper-egress-hosts" ]; then
+    install -d -m 0755 /etc/beeper-egress/hosts.d
+    install -m 0644 "$REMOTE_DIR/files/private/beeper-egress-hosts" /etc/beeper-egress/hosts.d/private
+    ok "/etc/beeper-egress/hosts.d/private installed"
+fi
 
 # --- libolm: mautrix-discord v0.7.7 links it (its mautrix-go predates the pure-Go backend) ---
 if dpkg-query -W -f='${Status}\n' libolm3 2>&1 | grep -qx 'install ok installed'; then

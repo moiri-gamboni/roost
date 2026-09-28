@@ -1,6 +1,9 @@
 # Hosts Beeper Server may reach, TCP 443 only. Deployed to
-# /etc/beeper-egress/hosts; read by beeper-egress. Everything not listed is
-# rejected and logged as "beeper-reject:" in the kernel journal.
+# /etc/beeper-egress/hosts; read by beeper-egress with the files in
+# /etc/beeper-egress/hosts.d/, which hold the account-specific hosts (the
+# Cloudflare R2 bucket that matrix.beeper.com redirects media downloads to),
+# deployed from the private repo. Everything not listed is rejected and logged
+# as "beeper-reject:" in the kernel journal.
 api.beeper.com                      # Desktop API account calls, update feed; shares its address with ai-services.beeper.com
 matrix.beeper.com                   # homeserver; CNAME to a pool of 6 v4 + 6 v6 addresses
 roomserv.beeper.com                 # room service

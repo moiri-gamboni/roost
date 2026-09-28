@@ -3,7 +3,8 @@
 #
 # Every packet the `beeper` user sends goes through the beeper-egress chain:
 # loopback (the Desktop API, the local DNS stub) and TCP 443 to the addresses
-# of the hosts in $HOSTS_FILE are accepted; anything else is logged with the
+# of the hosts in $HOSTS_FILE and the files in $HOSTS_FILE.d/ (account-specific
+# hosts, deployed from the private repo) are accepted; anything else is logged with the
 # prefix "beeper-reject: " and rejected. The address set ($ADDR_FILE) is the
 # union of every resolution so far for the hosts still listed, so a DNS
 # rotation can add addresses but can never strand the server on a stale set,
@@ -37,7 +38,11 @@ flock 9
 # unlisted host's addresses are dropped.
 refresh_addresses() {
     local hosts host new
-    hosts=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$HOSTS_FILE" | awk '{ print $1 }')
+    local -a lists=("$HOSTS_FILE")
+    shopt -s nullglob
+    lists+=("$HOSTS_FILE".d/*)
+    shopt -u nullglob
+    hosts=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "${lists[@]}" | awk '{ print $1 }')
     new=$(mktemp)
     if [ -f "$ADDR_FILE" ]; then
         awk 'NR == FNR { keep[$1]; next } $2 in keep' <(printf '%s\n' "$hosts") "$ADDR_FILE" > "$new"
