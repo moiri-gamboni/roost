@@ -1,6 +1,6 @@
 # beeper/ — Beeper Server, its egress containment, and the attention-queue units
 
-Beeper Server (the headless Beeper Desktop that the attention queue in `~/roost/code/attention-queue` reads over `127.0.0.1:23373`) is closed source and ships product analytics with no working opt-out, so it runs as its own system user, `beeper`, behind a default-deny egress policy. Plan and rationale: `~/roost/work/plans/attention-queue.md`.
+Beeper Server (the headless Beeper Desktop that the attention queue in `~/roost/code/attention-queue` reads over `127.0.0.1:23373`) is closed source and ships product analytics with no working opt-out, so it runs as its own system user, `beeper`, behind a default-deny egress policy. Plan and rationale: `~/roost/work/workspace/plans/attention-queue.md`.
 
 ## Files
 
