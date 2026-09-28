@@ -128,3 +128,13 @@ as_user "git config --global gpg.format ssh"
 as_user "git config --global user.signingkey '$HOME_DIR/.ssh/id_ed25519.pub'"
 as_user "git config --global commit.gpgsign true"
 echo "  [+] Git commit signing configured"
+
+# --- Box-wide git hooks ---
+# Every repository on the box runs claude/scripts/git-hook.sh through the global
+# core.hooksPath: the scrub gate on pushes to public GitHub repositories, then the
+# repository's own .git/hooks. roost-apply keeps the script current and re-runs install.
+cp "$REMOTE_DIR/files/scripts/git-hook.sh" "$ROOST_DIR/claude/scripts/git-hook.sh"
+chmod +x "$ROOST_DIR/claude/scripts/git-hook.sh"
+chown "$USERNAME:$USERNAME" "$ROOST_DIR/claude/scripts/git-hook.sh"
+as_user "'$ROOST_DIR/claude/scripts/git-hook.sh' install"
+echo "  [+] Box-wide git hooks installed ($ROOST_DIR/claude/git-hooks)"

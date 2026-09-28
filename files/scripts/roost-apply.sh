@@ -120,6 +120,7 @@ files/scripts/roost-apply.sh|$ROOST_DIR/claude/scripts/roost-apply.sh|plain+x|
 files/scripts/roost-net.sh|$ROOST_DIR/claude/scripts/roost-net.sh|plain+x|
 files/scripts/agent-worktree.sh|$ROOST_DIR/claude/scripts/agent-worktree.sh|plain+x|
 files/scripts/conflict-watch.py|$ROOST_DIR/claude/scripts/conflict-watch.py|plain+x|restart:conflict-watch
+files/scripts/git-hook.sh|$ROOST_DIR/claude/scripts/git-hook.sh|plain+x|run:~/roost/claude/scripts/git-hook.sh install
 files/conflict-watch.conf|$ROOST_DIR/claude/conflict-watch.conf|plain|restart:conflict-watch
 files/roost-session-resume.service|$HOME_DIR/.config/systemd/user/roost-session-resume.service|plain|run:systemctl --user daemon-reload && systemctl --user enable roost-session-resume.service
 files/hooks/shellcheck-edit.sh|$ROOST_DIR/claude/hooks/shellcheck-edit.sh|plain+x|
