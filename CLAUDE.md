@@ -20,7 +20,13 @@ roost-apply --caddy|--cloudflare|--xray|--all|…   # reload services directly (
 
 `deploy.sh` sources `.env` and runs the `files/setup/` scripts over SSH; every section is check-then-act, so re-running after a partial failure is safe. `roost-apply` (`files/scripts/roost-apply.sh`) is the only way config changes land: subcommands deploy from the manifest hardcoded in the script (a new file needs a manifest line) followed by the private repo's `files/private/roost-apply.manifest` (its files' lines), flags reload services for app configs outside the manifest. `.env.example` documents every variable; the Hetzner token lives in `hcloud context create roost`, not `.env`.
 
-**`files/settings.json` is runtime-rewritten** (the app writes `/model`, `/config` and plugin choices into the live file), so a push of a stale repo copy reverts them. To change it: compare repo and live with `jq -S`; if live has drifted, copy it into the repo first (`jq . ~/roost/claude/settings.json > files/settings.json`); make the change in the repo copy, commit, then `roost-apply push files/settings.json`. Never hand-edit the live file, and never blanket-push without that check.
+**`files/settings.json` is runtime-rewritten** (the app writes `/model`, `/config` and plugin choices into the live file), so a push of a stale repo copy reverts them. The live file is the repo copy merged with the private `files/private/settings.overlay.json` (jq `*`: the private plugins, their marketplace and the auto-mode entries), so compare the rendered copy with live: `jq -S . ~/roost/claude/settings.json | diff - <(jq -S -s '.[0] * .[1]' files/settings.json files/private/settings.overlay.json)`. If live has drifted, take it into the repo first with the overlay's keys removed:
+
+```bash
+jq --slurpfile o files/private/settings.overlay.json 'def strip($o): reduce ($o | keys_unsorted[]) as $k (.; if ($o[$k] | type) == "object" and (.[$k] | type) == "object" then .[$k] |= strip($o[$k]) | if .[$k] == {} then del(.[$k]) else . end else del(.[$k]) end); strip($o[0])' ~/roost/claude/settings.json > files/settings.json
+```
+
+and carry a drifted overlay key into the overlay by hand. Make the change in whichever copy owns the key, commit, then `roost-apply push files/settings.json`. Never hand-edit the live file, and never blanket-push without that check.
 
 ## Key Design Patterns
 

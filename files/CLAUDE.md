@@ -4,7 +4,7 @@ Everything here is deployed by `roost-apply push` from the manifest in `scripts/
 
 ## Claude Code config
 
-- `settings.json` — **runtime-rewritten** (see root CLAUDE.md for how to change it). Hook wiring is described in `hooks/CLAUDE.md`. JSON has no comments, so the reasons for the non-obvious keys live here:
+- `settings.json` — **runtime-rewritten** (see root CLAUDE.md for how to change it), and deployed merged with `private/settings.overlay.json` (the private plugins, their marketplace and the auto-mode entries), both by roost-apply's `sed-roost+overlay` transform and by `setup/claude-config.sh`. Hook wiring is described in `hooks/CLAUDE.md`. JSON has no comments, so the reasons for the non-obvious keys live here:
   - `autoContinueAtUsageLimit: true` must stay on. With it off, the app opens the `/rate-limit-options` modal on every cap, and the open modal holds the session tool's auto-resume wake until someone presses Esc.
   - Telemetry, error reporting and the feedback surfaces are off (`DISABLE_TELEMETRY`, `DO_NOT_TRACK`, `DISABLE_ERROR_REPORTING`, the feedback env switches, `feedbackSurveyRate: 0`, `autoUploadSessions: false`). With telemetry off, feature flags are not fetched either, so `CLAUDE_CODE_GB_DISK_CACHE_WHEN_TELEMETRY_OFF` makes sessions read the flags cached in `.claude.json`; that is what keeps the Monitor tool. The cache never refreshes: if tools or commands appear or vanish after a Claude Code update, this is why, and Remote Control stays unavailable.
   - `CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP=1` stops sessions killing their own idle background shells on a memory-pressure event that Bun raises falsely on Linux (oven-sh/bun#42783).

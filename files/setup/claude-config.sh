@@ -6,8 +6,14 @@ CLAUDE_DIR="$ROOST_DIR/claude"
 
 # --- Configuration files ---
 
-# settings.json (hooks, cleanup policy, compact policy)
-cp "$REMOTE_DIR/files/settings.json" "$CLAUDE_DIR/settings.json"
+# settings.json (hooks, cleanup policy, compact policy), merged with the private
+# repo's overlay when it is checked out, as roost-apply renders it
+if [ -f "$REMOTE_DIR/files/private/settings.overlay.json" ]; then
+    jq -s '.[0] * .[1]' "$REMOTE_DIR/files/settings.json" "$REMOTE_DIR/files/private/settings.overlay.json" \
+        > "$CLAUDE_DIR/settings.json"
+else
+    cp "$REMOTE_DIR/files/settings.json" "$CLAUDE_DIR/settings.json"
+fi
 
 chown -R "$USERNAME:$USERNAME" "$CLAUDE_DIR"
 ok "Claude Code configuration written"

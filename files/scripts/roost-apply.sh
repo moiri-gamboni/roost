@@ -90,7 +90,8 @@ tunnel_id() {
 # ============================================
 
 # Each entry: repo_path|server_path|transform|service_action
-# Transforms: plain, plain+x, plain+600, envsubst:<VARS>, sed-roost
+# Transforms: plain, plain+x, plain+600, envsubst:<VARS>, sed-roost,
+#   sed-roost+overlay:<repo path of a JSON overlay> (see render_file)
 # Service actions (comma-separated):
 #   reload-or-restart:<unit>  restart:<unit>  daemon-reload
 #   daemon-reload,restart:<unit>  run:<command>  (empty = none)
@@ -100,7 +101,7 @@ tunnel_id() {
 define_manifest() {
     # Category A: User files under ~/roost/ (no root needed)
     cat <<'MANIFEST_A'
-files/settings.json|$ROOST_DIR/claude/settings.json|sed-roost|
+files/settings.json|$ROOST_DIR/claude/settings.json|sed-roost+overlay:files/private/settings.overlay.json|
 files/session.conf|$ROOST_DIR/claude/session.conf|plain|
 files/lib/_hook-env.sh|$ROOST_DIR/claude/lib/_hook-env.sh|plain+x|
 files/lib/cloudflare-assemble.sh|$ROOST_DIR/claude/lib/cloudflare-assemble.sh|plain+x|
@@ -264,6 +265,17 @@ render_file() {
             ;;
         sed-roost)
             sed "s|~/roost/|~/$ROOST_DIR_NAME/|g" "$full_path"
+            ;;
+        sed-roost+overlay:*)
+            # A JSON file merged with an overlay from the private repo (jq's recursive `*`:
+            # objects merge key by key, the overlay wins everywhere else; its new keys land
+            # last), then sed-roost. Without the overlay, the file alone.
+            local overlay="$REPO_DIR/${transform#sed-roost+overlay:}"
+            if [ -f "$overlay" ]; then
+                jq -s '.[0] * .[1]' "$full_path" "$overlay"
+            else
+                cat "$full_path"
+            fi | sed "s|~/roost/|~/$ROOST_DIR_NAME/|g"
             ;;
         envsubst:*)
             local vars_csv="${transform#envsubst:}"

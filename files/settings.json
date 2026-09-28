@@ -294,21 +294,11 @@
     "plugin-dev@claude-plugins-official": true,
     "praxis@praxis-marketplace": true,
     "diataxis@diataxis-skill": true,
-    "tasksync@work-tools": true,
-    "outbox@work-tools": true,
-    "session@work-tools": true,
-    "granola-mirror@work-tools": true,
     "bash-lsp@roost": true,
     "pyright-lsp@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
-    "work-tools": {
-      "source": {
-        "source": "git",
-        "url": "git@github.com:example-org/work-tools.git"
-      }
-    },
     "diataxis-skill": {
       "source": {
         "source": "git",
