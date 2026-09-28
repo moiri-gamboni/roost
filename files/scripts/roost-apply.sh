@@ -150,6 +150,7 @@ files/private/work-tools-env|$HOME_DIR/.config/work-tools/env|plain+600|
 files/private/notion-mirror-env|$HOME_DIR/.config/notion-mirror/env|plain+600|
 files/private/notion-mirror-changelog-context.md|$HOME_DIR/.config/notion-mirror/changelog-context.md|plain+600|
 files/private/public-scrub-check.sh|$ROOST_DIR/claude/scripts/public-scrub-check.sh|plain+x|
+files/private/public-scrub-check.allow|$ROOST_DIR/claude/scripts/public-scrub-check.allow|plain|
 files/private/skills/plan-day/SKILL.md|$ROOST_DIR/claude/skills/plan-day/SKILL.md|plain|
 files/private/plan-day-launch.sh|$ROOST_DIR/claude/scripts/plan-day-launch.sh|plain+x|
 files/private/plan-day-gather|$ROOST_DIR/claude/scripts/plan-day-gather|plain+x|
