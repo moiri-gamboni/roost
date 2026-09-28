@@ -196,27 +196,6 @@ if [ -f "$(dirname "$0")/health-check-apps-private.sh" ]; then
     source "$(dirname "$0")/health-check-apps-private.sh"
 fi
 
-# --- tasksync dead-man: hourly rows refresh + tasksync conflict ageing -------
-# The hourly rows job never ntfys — losing the race with the nightly is its
-# designed outcome, 2-4 times a night. It records every attempt in a marker
-# instead, and this is the only thing that reads it. Keyed on the age of the
-# last SUCCESS, not on exit status: a wedged nightly holds the lock
-# indefinitely and every tick behind it exits 1 from flock -n, so
-# alert-on-failure would never fire. The check composes the mirror's marker
-# alarms with the tasks-side ones, so one listener covers both.
-TASKS_DEADMAN="$HOME/roost/work/tasksync"
-if [ -f "$TASKS_DEADMAN/tasksync/deadman.py" ]; then
-    if ! ALARMS="$(cd "$TASKS_DEADMAN" && python3 -m tasksync.deadman 2>&1)"; then
-        # 6h cooldown matches the staleness threshold, so a real outage nags
-        # ~4x a day rather than 24, and a recovery is visible within one cycle.
-        if cooldown_ok "notion-rows-deadman" 21600; then
-            ntfy_send -t "tasksync dead-man" -p "high" "$ALARMS"
-        fi
-    fi
-else
-    FAILURES="$FAILURES\n- tasksync deadman.py missing ($TASKS_DEADMAN/tasksync/deadman.py)"
-fi
-
 if [ -n "$FAILURES" ]; then
     logger -t "$_HOOK_TAG" "Health check FAILED"
     # Key the cooldown by the failure set so escalations / partial recoveries
