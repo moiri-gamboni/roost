@@ -10,7 +10,10 @@ here=$(cd "$(dirname "$0")/.." && pwd)
 CW="$here/files/scripts/conflict-watch.py"
 T=$(mktemp -d /tmp/cwd-test.XXXX)
 ROOT=$T/roost RUN=$T/run REG=$T/sessions
-export CONFLICT_WATCH_ROOT=$ROOT CONFLICT_WATCH_RUN=$RUN CONFLICT_WATCH_REGISTRY=$REG CONFLICT_WATCH_CONF="$here/files/conflict-watch.conf"
+export CONFLICT_WATCH_ROOT=$ROOT CONFLICT_WATCH_RUN=$RUN CONFLICT_WATCH_REGISTRY=$REG CONFLICT_WATCH_CONF="$T/conf/conflict-watch.conf"
+# The real rules file, with a synthetic `work` workspace's task folders in the file it includes
+mkdir -p "$T/conf" && cp "$here/files/conflict-watch.conf" "$T/conf/"
+echo 'unit    work/tasks/*' > "$T/conf/conflict-watch.private.conf"
 mkdir -p "$REG" "$ROOT/code/repo1" "$ROOT/code/repo2" "$ROOT/work/tasks/t1"
 for r in repo1 repo2; do git -C "$ROOT/code/$r" init -q; done
 declare -a sess=() fifos=()

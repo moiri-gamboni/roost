@@ -21,6 +21,20 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "..", "files", "scripts", "conflict-watch.py")
 CONF = os.path.join(HERE, "..", "files", "conflict-watch.conf")
+# The private repo's workspace rules, in shape, for a synthetic `work` workspace: the public
+# rules file includes them from beside itself.
+WORKSPACE_RULES = """\
+ignore  work/mirrors
+ignore  work/meetings/granola
+ignore  work/tasks/.*
+unit    work/tasks/*
+unit    work/workspace/plans/*
+unit    work/workspace/notes/*
+unit    work/data/*
+repos   work
+skip-writer */tasksync/tasks pull*
+skip-writer */tasksync/tasks live-drain*
+"""
 sys.dont_write_bytecode = True        # importing the script must not leave a __pycache__ in the repo
 spec = importlib.util.spec_from_file_location("cw", SRC)
 cw = importlib.util.module_from_spec(spec)
@@ -40,9 +54,9 @@ def write(path, text="x\n"):
 
 
 class Fixture(unittest.TestCase):
-    """A fake ~/roost with the real rules file: an work workspace (a plain
-    folder holding the tasks, meetings and workspace repos, data, mirrors and code
-    repos), a code/ repo with a nested repo, and a worktree."""
+    """A fake ~/roost with the real rules file and the workspace rules it includes: a `work`
+    workspace (a plain folder holding the tasks, meetings and workspace repos, data, mirrors
+    and code repos), a code/ repo with a nested repo, and a worktree."""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="cw-test.")
@@ -57,7 +71,11 @@ class Fixture(unittest.TestCase):
         git("init", "-q", cwd=f"{r}/code/server")
         git("init", "-q", cwd=f"{r}/code/server/files/private")
         write(f"{r}/worktrees/server/tree1/.git", "gitdir: /nowhere\n")  # a linked worktree's .git file
-        self.rules = cw.Rules.load(CONF, r)
+        conf_dir = os.path.join(self.tmp, "conf")
+        os.makedirs(conf_dir)
+        shutil.copy(CONF, conf_dir)
+        write(os.path.join(conf_dir, "conflict-watch.private.conf"), WORKSPACE_RULES)
+        self.rules = cw.Rules.load(os.path.join(conf_dir, "conflict-watch.conf"), r)
 
     def tearDown(self):
         shutil.rmtree(self.tmp)
@@ -68,6 +86,13 @@ class Fixture(unittest.TestCase):
 
 
 class UnitMapping(Fixture):
+    def test_a_missing_include_is_skipped(self):
+        # A clone without the private repo: the generic rules alone, no workspace units.
+        rules = cw.Rules.load(CONF, self.root)
+        self.assertEqual(rules.rules, [("repos", ["code"]), ("repos", ["worktrees"])])
+        self.assertIsNone(rules.unit_of(os.path.join(self.root, "work/tasks/t1/task.md")))
+        self.assertEqual(rules.unit_of(os.path.join(self.root, "code/server/a.py")), (os.path.join(self.root, "code/server"), "repo"))
+
     def test_each_task_folder_is_its_own_unit(self):
         self.assertEqual(self.unit("work/tasks/2026-09-01-foo/task.md"), ("work/tasks/2026-09-01-foo", "folder"))
         self.assertEqual(self.unit("work/tasks/2026-09-01-foo/sub/deep.md"), ("work/tasks/2026-09-01-foo", "folder"))
@@ -90,7 +115,7 @@ class UnitMapping(Fixture):
     def test_repos_in_the_workspace_are_whole_units(self):
         self.assertEqual(self.unit("work/tasksync/tasksync/cli.py"), ("work/tasksync", "repo"))
         self.assertEqual(self.unit("work/meetings/notes/n.md"), ("work/meetings", "repo"))
-        self.assertEqual(self.unit("work/workspace/zapier/README.md"), ("work/workspace", "repo"))
+        self.assertEqual(self.unit("work/workspace/tools/README.md"), ("work/workspace", "repo"))
 
     def test_the_top_folder_itself_is_not_a_unit(self):
         self.assertIsNone(self.unit("work/CLAUDE.md"))

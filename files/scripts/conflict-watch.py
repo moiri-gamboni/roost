@@ -48,21 +48,29 @@ class Rules:
     @classmethod
     def load(cls, conf, root):
         rules, skip_names, skip_writers = [], [], []
-        with open(conf) as f:
-            for line in f:
-                line = line.split("#", 1)[0].strip()
-                if not line:
-                    continue
-                key, _, arg = line.partition(" ")
-                arg = arg.strip()
-                if key in ("ignore", "unit", "repos"):
-                    rules.append((key, [c for c in arg.split("/") if c]))
-                elif key == "skip-name":
-                    skip_names += arg.split()
-                elif key == "skip-writer":
-                    skip_writers.append(arg)
-                else:
-                    raise ValueError(f"{conf}: unknown rule {key!r}")
+
+        def read(path):
+            with open(path) as f:
+                for line in f:
+                    line = line.split("#", 1)[0].strip()
+                    if not line:
+                        continue
+                    key, _, arg = line.partition(" ")
+                    arg = arg.strip()
+                    if key in ("ignore", "unit", "repos"):
+                        rules.append((key, [c for c in arg.split("/") if c]))
+                    elif key == "skip-name":
+                        skip_names.extend(arg.split())
+                    elif key == "skip-writer":
+                        skip_writers.append(arg)
+                    elif key == "include":
+                        inc = os.path.join(os.path.dirname(path), arg)
+                        if os.path.exists(inc):
+                            read(inc)
+                    else:
+                        raise ValueError(f"{path}: unknown rule {key!r}")
+
+        read(conf)
         return cls(root, rules, skip_names, skip_writers)
 
     def unit_of(self, path):
