@@ -71,13 +71,15 @@ if [[ -r "$HOME/.config/roughdraft/token" ]]; then
 fi
 export ROUGHDRAFT_NO_OPEN=1  # headless: print the URL instead of calling xdg-open
 
-# Work credentials (deployed from roost-private to ~/.config/work/env).
-# Kept in a sourced file rather than exported from a tracked one: the values are
-# live keys, and the sourcing line is the only part safe to publish. Absent on a
-# fresh server, in which case the tools that need them say so themselves.
-if [[ -r "$HOME/.config/work/env" ]]; then
-    . "$HOME/.config/work/env"
-fi
+# Private shell additions: every *.sh in ~/.bashrc.d/private/, deployed from the
+# private repo (credentials among them, which is why they are not in this file).
+# Sourced on every (re)load of this file, so each must be safe to source twice.
+# Absent on a fresh server until the first roost-apply push.
+for _roost_private in "$HOME"/.bashrc.d/private/*.sh; do
+    # shellcheck source=/dev/null
+    [[ -r "$_roost_private" ]] && . "$_roost_private"
+done
+unset _roost_private
 
 # ~/.cache is its own subvolume (setup/snapper.sh) and hardlinks cannot cross
 # subvolumes: without this uv warns on every install before falling back to copy.
