@@ -40,19 +40,20 @@ def write(path, text="x\n"):
 
 
 class Fixture(unittest.TestCase):
-    """A fake ~/roost with the real rules file: an work workspace (a meta
-    repo holding task folders, plans, notes, data, mirrors and nested repos), a
-    code/ repo with a nested repo, and a worktree."""
+    """A fake ~/roost with the real rules file: an work workspace (a plain
+    folder holding the tasks, meetings and workspace repos, data, mirrors and code
+    repos), a code/ repo with a nested repo, and a worktree."""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="cw-test.")
         self.root = os.path.join(self.tmp, "roost")
         r = self.root
-        for d in ["work", "work/tasksync", "code/server", "code/server/files/private",
+        for d in ["work/tasks", "work/meetings", "work/workspace",
+                  "work/tasksync", "code/server", "code/server/files/private",
                   "code/notrepo", "worktrees/server/tree1"]:
             os.makedirs(os.path.join(r, d), exist_ok=True)
-        git("init", "-q", cwd=f"{r}/work")
-        git("init", "-q", cwd=f"{r}/work/tasksync")
+        for repo in ["tasks", "meetings", "workspace", "tasksync"]:
+            git("init", "-q", cwd=f"{r}/work/{repo}")
         git("init", "-q", cwd=f"{r}/code/server")
         git("init", "-q", cwd=f"{r}/code/server/files/private")
         write(f"{r}/worktrees/server/tree1/.git", "gitdir: /nowhere\n")  # a linked worktree's .git file
@@ -72,23 +73,26 @@ class UnitMapping(Fixture):
         self.assertEqual(self.unit("work/tasks/2026-09-01-foo/sub/deep.md"), ("work/tasks/2026-09-01-foo", "folder"))
         self.assertEqual(self.unit("work/tasks/2026-09-02-bar/task.md"), ("work/tasks/2026-09-02-bar", "folder"))
 
-    def test_tasksync_state_is_not_a_unit(self):
+    def test_tasksync_state_and_the_tasks_repos_own_files_are_not_units(self):
         self.assertIsNone(self.unit("work/tasks/.sync/base.json"))
+        self.assertIsNone(self.unit("work/tasks/.gitignore"))
 
     def test_plans_notes_data_first_level_entries_file_or_folder(self):
-        self.assertEqual(self.unit("work/plans/x.md"), ("work/plans/x.md", "folder"))
-        self.assertEqual(self.unit("work/plans/big/y.md"), ("work/plans/big", "folder"))
-        self.assertEqual(self.unit("work/notes/n.md"), ("work/notes/n.md", "folder"))
+        self.assertEqual(self.unit("work/workspace/plans/x.md"), ("work/workspace/plans/x.md", "folder"))
+        self.assertEqual(self.unit("work/workspace/plans/big/y.md"), ("work/workspace/plans/big", "folder"))
+        self.assertEqual(self.unit("work/workspace/notes/n.md"), ("work/workspace/notes/n.md", "folder"))
         self.assertEqual(self.unit("work/data/evals/r.json"), ("work/data/evals", "folder"))
 
     def test_mirrors_and_granola_are_not_watched(self):
         self.assertIsNone(self.unit("work/mirrors/notion/page.md"))
         self.assertIsNone(self.unit("work/meetings/granola/2026/m.md"))
 
-    def test_nested_repos_in_the_workspace_are_whole_units(self):
+    def test_repos_in_the_workspace_are_whole_units(self):
         self.assertEqual(self.unit("work/tasksync/tasksync/cli.py"), ("work/tasksync", "repo"))
+        self.assertEqual(self.unit("work/meetings/notes/n.md"), ("work/meetings", "repo"))
+        self.assertEqual(self.unit("work/workspace/zapier/README.md"), ("work/workspace", "repo"))
 
-    def test_the_workspace_meta_repo_itself_is_not_a_unit(self):
+    def test_the_top_folder_itself_is_not_a_unit(self):
         self.assertIsNone(self.unit("work/CLAUDE.md"))
         self.assertIsNone(self.unit("work/scratchpad/s.md"))
 
