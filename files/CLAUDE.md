@@ -1,6 +1,6 @@
 # files/ — what each deployed file is for
 
-Everything here is deployed by `roost-apply push` from the manifest in `scripts/roost-apply.sh`, an explicit list with no globs, so a new file needs a manifest line. This file keeps the per-file facts you need before editing; most units and scripts also give their reasons in their own comments. `hooks/`, `scripts/`, `scheduled/`, `travel/`, `beeper/` and `laptop/` have their own CLAUDE.md, and `private/` has a README.
+Everything here is deployed by `roost-apply push` from the manifest in `scripts/roost-apply.sh`, an explicit list with no globs, so a new file needs a manifest line (a file in `private/` needs one in `private/roost-apply.manifest`). This file keeps the per-file facts you need before editing; most units and scripts also give their reasons in their own comments. `hooks/`, `scripts/`, `scheduled/`, `travel/`, `beeper/` and `laptop/` have their own CLAUDE.md, and `private/` has a README.
 
 ## Claude Code config
 
@@ -35,7 +35,7 @@ Everything here is deployed by `roost-apply push` from the manifest in `scripts/
 - `dufs.service` — read-only on `127.0.0.1:5000`, served as `drop.$DOMAIN` on the Tailscale IP `:443` with the Vision wildcard cert (`caddy` is in group `xray` to read it), downloads forced to `attachment`. `setup/dufs.sh` owns that Caddy site (`sites-enabled/tailnet-drop.caddy`, rendered from `$DOMAIN`; not in the manifest).
 - `privatebin/` — config, php-fpm pool, Caddy site (loopback origin `127.0.0.1:8095`; write methods from the tunnel get 403) and the `paste.$DOMAIN` ingress template. The health check asserts the write gate.
 - `glances.service`, `ram-monitor.{service,timer}`, `earlyoom.default` (restart on push; rationale inline), `btrfs-convert.sh` (rescue-mode ext4 → btrfs).
-- `notion-webhook.service`, `granola-webhook.service` — receivers run from the `~/roost/code/notion-mirror` and `~/roost/code/granola-mirror` clones (unit comments cover their environment; the granola receiver refuses to start without its signing secret). `Restart=on-failure` does not pick up file changes: after editing a receiver, run `sudo systemctl restart <unit>`; to roll back, revert the file, then restart.
+- `private/notion-webhook.service`, `granola-webhook.service` — receivers run from the `~/roost/code/notion-mirror` and `~/roost/code/granola-mirror` clones (unit comments cover their environment; the granola receiver refuses to start without its signing secret). `Restart=on-failure` does not pick up file changes: after editing a receiver, run `sudo systemctl restart <unit>`; to roll back, revert the file, then restart.
 - `session.conf`, `session-focus-tick.*`, `roost-session-resume.service` — what feeds the `session` tool (`scripts/CLAUDE.md`).
 - `cron-roost` — the base crontab. App cron goes in `/etc/cron.d/${ROOST_DIR_NAME}-apps`, private mirrors in `private/cron-mirrors`.
 - `lib/_hook-env.sh` — the shared helpers for hooks and jobs (`hook_input`/`hook_json`, `ntfy_send`, `rate_limit_ok`, the `roost/<script>` log tag). Cron-context scripts set `HOOK_DROP_TO_SUDO_USER=1` before sourcing it (why is in the lib).

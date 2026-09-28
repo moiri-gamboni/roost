@@ -2,7 +2,7 @@
 
 Deployed to `~/roost/claude/scripts/` and symlinked into `~/bin` by `setup/shell-config.sh`.
 
-- `roost-apply.sh` — config deployment. Usage is in the root CLAUDE.md and `roost-apply --help`; the manifest is the list hardcoded in the script.
+- `roost-apply.sh` — config deployment. Usage is in the root CLAUDE.md and `roost-apply --help`; the manifest is the list hardcoded in the script, followed by the private repo's `files/private/roost-apply.manifest` when it is checked out.
 - `roost-net.sh` — the travel VPN (`files/travel/CLAUDE.md`, `roost-net --help`).
 - `agent-worktree.sh` — composite worktrees (`agent -w`, wired as the WorktreeCreate and SessionEnd hooks) and single-repo ones (`agent-worktree isolate [path]`, which a session takes when the conflict watch stops it in a code repo; the work fast-forwards back at session end, and a tree that cannot is kept with an ntfy). Its header is the contract and `tests/agent-worktree.sh` the behaviour spec.
 - `conflict-watch.py` → `~/bin/conflict-watch` — the conflict watch's daemon and CLI (section below).

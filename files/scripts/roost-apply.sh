@@ -94,6 +94,8 @@ tunnel_id() {
 # Service actions (comma-separated):
 #   reload-or-restart:<unit>  restart:<unit>  daemon-reload
 #   daemon-reload,restart:<unit>  run:<command>  (empty = none)
+# The private repo's entries (files/private/roost-apply.manifest, same format, `#` comment
+# lines) follow when it is checked out.
 
 define_manifest() {
     # Category A: User files under ~/roost/ (no root needed)
@@ -139,23 +141,8 @@ files/hooks/conflict-watch-hook.sh|$ROOST_DIR/claude/hooks/conflict-watch-hook.s
 files/agent-browser-config.json|$HOME_DIR/.agent-browser/config.json|plain|
 files/claude-plugins/.claude-plugin/marketplace.json|$ROOST_DIR/claude/roost-plugins/.claude-plugin/marketplace.json|plain|
 files/claude-plugins/bash-lsp/.claude-plugin/plugin.json|$ROOST_DIR/claude/roost-plugins/bash-lsp/.claude-plugin/plugin.json|plain|
-files/private/drive-mirror-refresh.sh|$ROOST_DIR/claude/scripts/drive-mirror-refresh.sh|plain+x|
 files/travel/travel-health.sh|$ROOST_DIR/claude/scheduled/health-check-apps.sh|plain+x|
-files/private/health-check-apps-private.sh|$ROOST_DIR/claude/scheduled/health-check-apps-private.sh|plain+x|
-files/private/health-check-attention-queue.sh|$ROOST_DIR/claude/scheduled/health-check-attention-queue.sh|plain+x|
 files/shell/bashrc.sh|$HOME_DIR/.bashrc.d/roost.sh|plain|
-files/private/global-CLAUDE.md|$ROOST_DIR/claude/CLAUDE.md|plain|
-files/private/work-env.sh|$HOME_DIR/.config/work/env|plain+600|
-files/private/work-tools-env|$HOME_DIR/.config/work-tools/env|plain+600|
-files/private/notion-mirror-env|$HOME_DIR/.config/notion-mirror/env|plain+600|
-files/private/notion-mirror-changelog-context.md|$HOME_DIR/.config/notion-mirror/changelog-context.md|plain+600|
-files/private/public-scrub-check.sh|$ROOST_DIR/claude/scripts/public-scrub-check.sh|plain+x|
-files/private/public-scrub-check.allow|$ROOST_DIR/claude/scripts/public-scrub-check.allow|plain|
-files/private/skills/plan-day/SKILL.md|$ROOST_DIR/claude/skills/plan-day/SKILL.md|plain|
-files/private/plan-day-launch.sh|$ROOST_DIR/claude/scripts/plan-day-launch.sh|plain+x|
-files/private/plan-day-gather|$ROOST_DIR/claude/scripts/plan-day-gather|plain+x|
-files/private/plan-day.service|/etc/systemd/system/plan-day.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
-files/private/plan-day.timer|/etc/systemd/system/plan-day.timer|plain|daemon-reload,run:sudo systemctl enable --now plan-day.timer
 files/agents/effort-low.md|$ROOST_DIR/claude/agents/effort-low.md|plain|
 files/agents/effort-medium.md|$ROOST_DIR/claude/agents/effort-medium.md|plain|
 files/agents/effort-high.md|$ROOST_DIR/claude/agents/effort-high.md|plain|
@@ -168,7 +155,6 @@ files/skills/pastebin/SKILL.md|$ROOST_DIR/claude/skills/pastebin/SKILL.md|envsub
 files/skills/roughdraft/SKILL.md|$ROOST_DIR/claude/skills/roughdraft/SKILL.md|plain|
 files/skills/zotero/SKILL.md|$ROOST_DIR/claude/skills/zotero/SKILL.md|plain|
 files/privatebin/privatebin-cloudflare.yml.tmpl|$ROOST_DIR/cloudflared/apps/privatebin.yml|envsubst:DOMAIN|run:~/roost/claude/lib/cloudflare-assemble.sh,restart:cloudflared
-files/private/work-analytics/analytics-cloudflare.yml.tmpl|$ROOST_DIR/cloudflared/apps/analytics.yml|envsubst:DOMAIN|run:~/roost/claude/lib/cloudflare-assemble.sh,restart:cloudflared
 MANIFEST_A
 
     # Category B: System files (root needed, may require service restarts)
@@ -194,7 +180,6 @@ files/tmux.conf|$HOME_DIR/.tmux.conf|plain|run:tmux source-file ~/.tmux.conf
 files/sshd/50-clip-forward.conf|/etc/ssh/sshd_config.d/50-clip-forward.conf|plain|restart:ssh
 files/apparmor/agent-browser-chrome|/etc/apparmor.d/agent-browser-chrome|envsubst:HOME_DIR|run:sudo apparmor_parser -r /etc/apparmor.d/agent-browser-chrome
 files/tailscaled-iptables.conf|/etc/systemd/system/tailscaled.service.d/iptables-pin.conf|plain|daemon-reload,restart:tailscaled
-files/notion-webhook.service|/etc/systemd/system/notion-webhook.service|plain|daemon-reload,enable:notion-webhook.service,restart:notion-webhook
 files/granola-webhook.service|/etc/systemd/system/granola-webhook.service|plain|daemon-reload,enable:granola-webhook.service,restart:granola-webhook
 files/travel/xray.service|/etc/systemd/system/xray.service|plain|daemon-reload,restart:xray
 files/travel/xray-boot-guard|/usr/local/bin/xray-boot-guard|plain+x|restart:xray
@@ -227,16 +212,12 @@ files/beeper/beeper-egress-ensure.timer|/etc/systemd/system/beeper-egress-ensure
 files/beeper/beeper-server.service|/etc/systemd/system/beeper-server.service|plain|daemon-reload
 files/beeper/attention-bridge@.service|/etc/systemd/system/attention-bridge@.service|envsubst:USERNAME,HOME_DIR|daemon-reload
 files/beeper/attention-bridge@email.service.d/matrimail.conf|/etc/systemd/system/attention-bridge@email.service.d/matrimail.conf|envsubst:HOME_DIR|daemon-reload
-files/private/caddy-sites/app.caddy|/etc/caddy/sites-enabled/app.caddy|plain|reload-or-restart:caddy
-files/private/caddy-sites/analytics.caddy|/etc/caddy/sites-enabled/analytics.caddy|envsubst:TAILSCALE_IP|reload-or-restart:caddy
-files/private/caddy-sites/tailnet-scratch.caddy|/etc/caddy/sites-enabled/tailnet-scratch.caddy|plain|reload-or-restart:caddy
-files/private/caddy-sites/tailnet-workout.caddy|/etc/caddy/sites-enabled/tailnet-workout.caddy|plain|reload-or-restart:caddy
-files/private/gp-picker.service|/etc/systemd/system/gp-picker.service|envsubst:USERNAME,HOME_DIR|daemon-reload,enable:gp-picker.service,restart:gp-picker
-files/private/caddy-sites/apps-picker.caddy|/etc/caddy/apps-enabled/picker.caddy|plain|reload-or-restart:caddy
-files/private/cron-mirrors|/etc/cron.d/$ROOST_DIR_NAME-mirrors|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|
-files/private/notion-mirror-nightly.service|/etc/systemd/system/notion-mirror-nightly.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
-files/private/notion-mirror-nightly.timer|/etc/systemd/system/notion-mirror-nightly.timer|plain|daemon-reload,enable:notion-mirror-nightly.timer,restart:notion-mirror-nightly.timer
 MANIFEST_B
+
+    local private="$REPO_DIR/files/private/roost-apply.manifest"
+    if [ -f "$private" ]; then
+        sed '/^#/d' "$private"
+    fi
 }
 
 # Expand variables in server path.

@@ -163,7 +163,7 @@ roost-apply push [FILE...] [-y]     # deploy changed files, then daemon-reload a
 roost-apply --caddy --cloudflare    # reload services for app configs outside the repo
 ```
 
-The repo's manifest (inside `files/scripts/roost-apply.sh`) lists every managed file; `roost-apply list` prints it and `roost-apply --help` lists the reload flags.
+The repo's manifest (inside `files/scripts/roost-apply.sh`, followed by the private repo's `files/private/roost-apply.manifest` when it is checked out) lists every managed file; `roost-apply list` prints it and `roost-apply --help` lists the reload flags.
 
 ## Travel VPN
 
