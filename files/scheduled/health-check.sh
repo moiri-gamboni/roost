@@ -46,6 +46,16 @@ check_service "cloudflared"
 # this is the only place its absence shows.
 check_service "conflict-watch"
 
+# The box-wide git hooks (scripts/git-hook.sh) go just as quiet when the global core.hooksPath
+# is lost or a repository sets its own, and with them the scrub gate on public pushes.
+if GIT_HOOK_PROBLEMS=$("$(dirname "$0")/../scripts/git-hook.sh" check 2>&1); then
+    logger -t "$_HOOK_TAG" "OK: git hooks"
+else
+    GIT_HOOK_PROBLEMS=$(tr '\n' ';' <<<"$GIT_HOOK_PROBLEMS")
+    logger -t "$_HOOK_TAG" "FAIL: git hooks: $GIT_HOOK_PROBLEMS"
+    FAILURES="$FAILURES\n- git hooks: ${GIT_HOOK_PROBLEMS%;} (fix, then git-hook.sh check)"
+fi
+
 # earlyoom stands between a swap thrash and the kernel's OOM killer (files/
 # earlyoom.default). It logs each kill to its own journal and nothing else
 # reports it, so replay the kills since the last run here. The window is kept
