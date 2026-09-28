@@ -29,7 +29,7 @@ mkdir -p "$P/tasks/.sync" "$P/data" "$P/.claude"; echo base > "$P/tasks/.sync/ba
 echo 'SECRET=1' > "$P/.env"
 echo '{"permissions":{"allow":["Bash(ls:*)"]}}' > "$P/.claude/settings.local.json"
 git -C "$P" config --add agent.worktreeCopy 'tasks/.sync'
-git -C "$P" config --add agent.worktreeEnv 'WORK_WORKSPACE=@ROOT@'
+git -C "$P" config --add agent.worktreeEnv 'WORKSPACE_ROOT=@ROOT@'
 # WIP in the parent (must not be copied): an untracked file in a tracked dir + a modification
 echo wip > "$P/docs/wip.txt"; echo more >> "$P/docs/a.md"
 # sub-repo A on a feature branch, with a venv and .env
@@ -63,7 +63,7 @@ check "subB (linked worktree) is a symlink to the live dir" [ "$(readlink "$ROOT
 check "subC (agent.noWorktree) is a symlink to the live dir, no store worktree" bash -c "[ \"\$(readlink '$ROOT/subC')\" = '$P/subC' ] && [ ! -e '$AGENT_WORKTREES_DIR/ws/one.repos/subC' ] && ! git -C '$C' show-ref -q refs/heads/worktree-one"
 check "files/private is a symlink to its own store worktree" bash -c "[ -L '$ROOT/files/private' ] && [ \"\$(git -C '$ROOT/files/private' branch --show-current)\" = worktree-one ]"
 check "files/x.txt still a checked-out file" [ -f "$ROOT/files/x.txt" ]
-check ".claude/settings.local.json generated with env and permissions kept" bash -c "[ -f '$ROOT/.claude/settings.local.json' ] && [ ! -L '$ROOT/.claude/settings.local.json' ] && [ \"\$(jq -r .env.WORK_WORKSPACE '$ROOT/.claude/settings.local.json')\" = '$ROOT' ] && [ \"\$(jq -r '.permissions.allow[0]' '$ROOT/.claude/settings.local.json')\" = 'Bash(ls:*)' ]"
+check ".claude/settings.local.json generated with env and permissions kept" bash -c "[ -f '$ROOT/.claude/settings.local.json' ] && [ ! -L '$ROOT/.claude/settings.local.json' ] && [ \"\$(jq -r .env.WORKSPACE_ROOT '$ROOT/.claude/settings.local.json')\" = '$ROOT' ] && [ \"\$(jq -r '.permissions.allow[0]' '$ROOT/.claude/settings.local.json')\" = 'Bash(ls:*)' ]"
 check "record lists root, subA, files/private" bash -c "grep -c '^wt' '$AGENT_WORKTREES_DIR/.sessions/sid-one' | grep -qx 3"
 check "live parent untouched: status unchanged, no stray files" bash -c "[ \"\$(git -C '$P' status --porcelain | wc -l)\" = 3 ]"    # M a.md, ?? wip.txt, ?? files/private/
 

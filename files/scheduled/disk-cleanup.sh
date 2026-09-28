@@ -232,7 +232,7 @@ fi
 # rebuild from. `sg docker` because shells under the long-lived tmux server
 # predate the docker group add.
 #
-# The infra deploy scripts run `docker buildx create --use` on every deploy
+# The infrastructure repo's deploy scripts run `docker buildx create --use` on every deploy
 # and never remove the builder, so each deploy leaves a running buildkit
 # container with a ~1 GB state volume on the data volume (23 of them, 18 GB,
 # took /mnt/roost-data under 5GiB unallocated on 2026-09-16). `buildx prune`
