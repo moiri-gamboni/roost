@@ -25,7 +25,6 @@ The CLI, its statusline, its settings.json hook entries and the `~/bin/session` 
 - `files/session-focus-tick.{service,timer}` — the 10 s activity sampler. The unit comments explain why `AccuracySec=1s` and `CLAUDE_CONFIG_DIR` must stay.
 - `files/roost-session-resume.service` (user unit) — runs `session resume` at boot, reopening what `session reboot` snapshotted. It needs lingering, which `setup/shell-config.sh` enables.
 - `files/settings.json` — records the installer's hook and statusLine entries as they stand in the live file; the installer, not a push, is what writes them.
-- `files/scheduled/session-daily-brief.sh` — reads the usage logs.
 
 ## `conflict-watch` — who is writing where
 
