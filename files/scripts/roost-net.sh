@@ -677,13 +677,20 @@ render_android() {
     # dropped while 172.67/16 worked. urltest's 3m re-probe interval also
     # handles transient blocking changes.
     #
-    # Override: $ROOST_DIR/travel/cf-preferred-ip — one IP per line; blank
+    # Override: ~/.config/roost-net/cf-preferred-ip — one IP per line; blank
     # lines and `#` comments ignored. Each IP becomes its own path-a-ipN
     # outbound and joins the urltest pool. Populated by `roost-travel ips`
     # (laptop-side cfst probe pushes top N via ssh+tee — user-writable so
     # no sudo round-trip needed). Remove the file to get DNS defaults
     # (~2 IPs from `getent`, CF's BGP-nearest pair).
-    local _cf_pref_file="$ROOST_DIR/travel/cf-preferred-ip"
+    # A laptop whose roost-travel predates the move still pushes to the old
+    # path, $ROOST_DIR/travel/cf-preferred-ip; while that file exists, the
+    # newer of the two wins.
+    local _cf_pref_file="$HOME/.config/roost-net/cf-preferred-ip"
+    local _cf_pref_old="$ROOST_DIR/travel/cf-preferred-ip"
+    if [ -r "$_cf_pref_old" ] && { [ ! -e "$_cf_pref_file" ] || [ "$_cf_pref_old" -nt "$_cf_pref_file" ]; }; then
+        _cf_pref_file="$_cf_pref_old"
+    fi
     local path_a_ips_raw=""
     if [ -r "$_cf_pref_file" ]; then
         path_a_ips_raw=$(grep -vE '^[[:space:]]*(#|$)' "$_cf_pref_file" \

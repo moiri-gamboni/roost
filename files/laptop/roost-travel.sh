@@ -358,9 +358,9 @@ cmd_ips() {
     awk -F, -v n="$n_top" 'NR > 1 && NR <= n+1 {printf "  %-15s  %s ms (loss %s)\n", $1, $5, $4}' "$out"
 
     echo
-    echo "Pushing to $target:~/roost/travel/cf-preferred-ip..."
+    echo "Pushing to $target:~/.config/roost-net/cf-preferred-ip..."
     printf '%s\n' "$top_ips" \
-        | ssh -q "$target" 'mkdir -p ~/roost/travel && tee ~/roost/travel/cf-preferred-ip > /dev/null' \
+        | ssh -q "$target" 'mkdir -p ~/.config/roost-net && tee ~/.config/roost-net/cf-preferred-ip > /dev/null' \
         || { echo "ssh push failed" >&2; exit 1; }
     echo "Pushed."
 
