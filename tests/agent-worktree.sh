@@ -102,8 +102,33 @@ git -C "$P" worktree remove --force "$ROOT"; git -C "$P" branch -q -D worktree-f
 "$AW" finish four 2>"$T/finish.err" || bad "finish exited $?"
 check "branch worktree-four kept in A" git -C "$A" show-ref -q refs/heads/worktree-four
 check "feat untouched" [ "$(git -C "$A" log -1 --format=%s feat)" = "feat moved" ]
-check "kept reason names the merge" grep -q "moved on" "$T/finish.err"
+check "kept reason names the merge" grep -q "merge by hand" "$T/finish.err"
 git -C "$A" worktree remove --force "$AGENT_WORKTREES_DIR/ws/four.repos/subA" 2>/dev/null || true; git -C "$A" branch -q -D worktree-four; rm -rf "$AGENT_WORKTREES_DIR/ws/four.repos" "$AGENT_WORKTREES_DIR/.sessions/sid-four"
+
+echo "== finish: branch already merged by hand while feat moved on → cleaned, not kept"
+ROOT=$(create eight); echo e > "$ROOT/subA/e"; commit_all "$ROOT/subA" "merged later"
+git -C "$A" merge -q --no-ff -m "merge eight" worktree-eight; echo m2 > "$A/m2"; commit_all "$A" "feat moved again"
+git -C "$P" worktree remove --force "$ROOT"; git -C "$P" branch -q -D worktree-eight
+"$AW" finish eight 2>"$T/finish.err" || bad "finish exited $?"
+check "branch worktree-eight deleted (its commits are already in feat)" bash -c "! git -C '$A' show-ref -q refs/heads/worktree-eight"
+check "store and record removed" bash -c "[ ! -e '$AGENT_WORKTREES_DIR/ws/eight.repos/subA' ] && [ ! -e '$AGENT_WORKTREES_DIR/.sessions/sid-eight' ]"
+
+echo "== finish: a kept tree is announced once, in plain words, not on every gc"
+# The script copied beside a fake lib/_hook-env.sh, so its push lands in a file.
+mkdir -p "$T/roost/claude/scripts" "$T/roost/claude/lib"; cp "$AW" "$T/roost/claude/scripts/agent-worktree.sh"
+printf 'ntfy_send() { printf "%%s\\n" "$*" >> "%s"; }\n' "$T/pushes" > "$T/roost/claude/lib/_hook-env.sh"
+# A stub `session` answers the title lookup the push leads with.
+mkdir -p "$T/bin"; printf '#!/bin/sh\n[ "$1 $2" = "name sid-nine" ] && echo "Fix the flaky login test"\n' > "$T/bin/session"; chmod +x "$T/bin/session"
+AWN() { PATH="$T/bin:$PATH" AGENT_WORKTREE_NOTIFY=1 "$T/roost/claude/scripts/agent-worktree.sh" "$@"; }
+ROOT=$(create nine); echo s > "$ROOT/subA/s9"; commit_all "$ROOT/subA" "diverging nine"
+echo m > "$A/m9"; commit_all "$A" "feat moved for nine"
+git -C "$P" worktree remove --force "$ROOT"; git -C "$P" branch -q -D worktree-nine
+AWN finish nine 2>"$T/finish.err" || bad "finish exited $?"
+AWN finish nine 2>"$T/finish.err" || bad "second finish exited $?"
+check "one push for two finishes of the same kept state" [ "$(grep -c 'worktree-nine' "$T/pushes")" = 1 ]
+check "the push gives the command that merges the work" grep -qF "git -C $A merge worktree-nine" "$T/pushes"
+check "the push names the session by its title and the repo" grep -qF '"Fix the flaky login test" (ws)' "$T/pushes"
+git -C "$A" worktree remove --force "$AGENT_WORKTREES_DIR/ws/nine.repos/subA" 2>/dev/null || true; git -C "$A" branch -q -D worktree-nine; rm -rf "$AGENT_WORKTREES_DIR/ws/nine.repos" "$AGENT_WORKTREES_DIR/.sessions/sid-nine"
 
 echo "== gc: dead pid → finished"
 ROOT=$(create five); sed -i 's/^pid=.*/pid=999999/' "$AGENT_WORKTREES_DIR/.sessions/sid-five"

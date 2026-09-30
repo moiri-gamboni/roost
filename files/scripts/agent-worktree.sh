@@ -28,8 +28,10 @@
 # one; it never calls a WorktreeRemove hook for git worktrees, and SessionEnd
 # fires only after that removal, with cwd back at the launch repo — which is why
 # sub-repo worktrees live outside the root. SessionEnd then runs `finish`: each sub worktree is removed if it made no
-# commits, fast-forwarded into the branch it came from when that is a pure ff
-# and the live checkout accepts it, and kept (with an ntfy summary) otherwise.
+# commits or they are already in the branch it came from, fast-forwarded into
+# that branch when that is a pure ff and the live checkout accepts it, and kept
+# otherwise, with one ntfy per kept state (the nightly gc re-checks kept trees
+# without repeating it), led by the session's title.
 #
 # On demand, a session can also take one repo out of the live checkout: `isolate` (run from the
 # session's Bash, typically after the conflict watch reports another session working in that
@@ -282,23 +284,28 @@ integrate() {
     local rel=$1 real=$2 wt=$3 src=$4 base=$5
     local branch="worktree-$NAME"
     if [ -d "$wt" ] && [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
-        echo "kept:uncommitted changes in $wt"; return
+        echo "kept:$rel has uncommitted changes in $wt; commit or discard them there"; return
     fi
     if git -C "$real" show-ref --verify -q "refs/heads/$branch"; then
         local tip; tip=$(git -C "$real" rev-parse "$branch")
         if [ "$tip" = "$base" ]; then
             remove_wt "$real" "$wt"; git -C "$real" branch -q -D "$branch"; echo clean; return
         fi
-        if [ -z "$src" ]; then echo "kept:$rel has commits on $branch but came from a detached HEAD"; return; fi
+        if [ -z "$src" ]; then echo "kept:$rel has commits on branch $branch but started from a detached HEAD, so there is nothing to fast-forward; merge it where it belongs"; return; fi
+        # Already merged (by hand, or into a branch that then moved on): nothing is
+        # left to integrate, and keeping it would re-announce done work every gc.
+        if git -C "$real" merge-base --is-ancestor "$branch" "$src"; then
+            remove_wt "$real" "$wt"; git -C "$real" branch -q -D "$branch"; echo clean; return
+        fi
         if ! git -C "$real" merge-base --is-ancestor "$src" "$branch"; then
-            echo "kept:$rel: $src moved on since; merge $branch by hand"; return
+            echo "kept:$rel has commits on branch $branch, but $src got other commits since, so they cannot be fast-forwarded; merge by hand: git -C $real merge $branch"; return
         fi
         if [ "$(git -C "$real" symbolic-ref --short -q HEAD || true)" = "$src" ]; then
             if ! git -C "$real" merge -q --ff-only "$branch" >/dev/null 2>&1; then
-                echo "kept:$rel: live checkout refused the fast-forward of $branch into $src (local changes in the way)"; return
+                echo "kept:$rel has commits on branch $branch, but uncommitted changes in $real block the fast-forward into $src; once they are committed or stashed: git -C $real merge --ff-only $branch"; return
             fi
         elif ! git -C "$real" branch -q -f "$src" "$branch" 2>/dev/null; then
-            echo "kept:$rel: could not move $src to $branch (checked out elsewhere?)"; return
+            echo "kept:$rel has commits on branch $branch, but $src could not be moved to it (checked out in another worktree?); merge by hand: git -C $real merge $branch"; return
         fi
         remove_wt "$real" "$wt"; git -C "$real" branch -q -D "$branch"; echo merged; return
     fi
@@ -334,13 +341,28 @@ finish_record() {
         esac
     done < "$rec"
     [ -d "$substore" ] && find "$substore" -depth -type d -empty -delete 2>/dev/null
-    local summary=""
+    local summary="" msg sum
     [ ${#merged[@]} -gt 0 ] && summary+="fast-forwarded: $(printf '%s; ' "${merged[@]}")"$'\n'
     [ ${#kept[@]} -gt 0 ] && summary+="kept: $(printf '%s; ' "${kept[@]}")"
     if [ ${#kept[@]} -gt 0 ]; then
         log "$NAME: $summary"
         sed -i '/^state=/d' "$rec"; echo "state=kept" >> "$rec"
-        notify "agent-worktree: work kept" "worktree $NAME: $summary (agent-worktree list)"
+        # One push per kept state, not per finish: gc re-runs this every night on
+        # every kept tree, and a tree nobody has touched would otherwise repeat
+        # the same push daily. A changed reason is news and is pushed again.
+        sum=$(printf '%s\n' "${kept[@]}" | cksum | cut -d' ' -f1)
+        if ! grep -qx "notified=$sum" "$rec"; then
+            sed -i '/^notified=/d' "$rec"; echo "notified=$sum" >> "$rec"
+            # Led by the session's title and the repo: the generated worktree name
+            # means nothing to the reader, and appears only inside the commands.
+            local title sessbin
+            sessbin=$(command -v session || echo "$HOME/bin/session")
+            title=$("$sessbin" name "$(basename "$rec")" || true)
+            msg="The Claude session ${title:+\"$title\" }($(basename "$(sed -n 's/^repo=//p' "$rec")")) ended with work that could not be merged back by itself:"
+            msg+=$(printf '\n- %s' "${kept[@]}")
+            msg+=$'\n'"All kept worktrees: agent-worktree list"
+            notify "Worktree left to merge" "$msg"
+        fi
     else
         [ -n "$summary" ] && log "$NAME: $summary"
         rm -f "$rec"
