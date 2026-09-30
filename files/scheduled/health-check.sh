@@ -86,15 +86,24 @@ DISK_PCT=$(df / --output=pcent | tail -1 | tr -d ' %')
 logger -t "$_HOOK_TAG" "Disk: ${DISK_PCT}%"
 # Alert on the trend, not the level. A disk parked above 80% is a known state,
 # and re-reporting it every 5 minutes trains the alert to be ignored. Above
-# DISK_CRIT it is reported regardless: the growth rule alone would silently
-# swallow a jump straight from healthy to nearly full, which is the one case
-# that most needs a page.
+# DISK_CRIT it is reported as soon as it gets there, whatever the growth: the
+# growth rule alone would silently swallow a jump straight from healthy to
+# nearly full, which is the one case that most needs a page.
 DISK_WARN=80
 DISK_CRIT=90
 DISK_STATE="$HOOK_RUNTIME_DIR/disk-alert-pct"
 if [ "$DISK_PCT" -ge "$DISK_CRIT" ]; then
-    FAILURES="$FAILURES\n- Disk usage at ${DISK_PCT}% (critical)"
-    echo "$DISK_PCT" > "$DISK_STATE"
+    # Reported on entering the band, on every further rise, and otherwise twice
+    # a day. Reported on every run, the line changed with each 1-point wobble
+    # (a new failure set, so a push past the hourly cooldown) and repeated
+    # hourly while nothing changed: 14 pushes in one night at 90-92%.
+    DISK_LAST=""
+    [ -f "$DISK_STATE" ] && DISK_LAST=$(cat "$DISK_STATE" 2>/dev/null)
+    if [ -z "$DISK_LAST" ] || [ "$DISK_LAST" -lt "$DISK_CRIT" ] || [ "$DISK_PCT" -gt "$DISK_LAST" ] \
+        || cooldown_ok "disk-critical" 43200; then
+        FAILURES="$FAILURES\n- Disk usage at ${DISK_PCT}% (critical)"
+        echo "$DISK_PCT" > "$DISK_STATE"
+    fi
 elif [ "$DISK_PCT" -gt "$DISK_WARN" ]; then
     # Fire only once usage climbs 3 points past the level last reported, and
     # track it back down as it recovers, so a genuine climb after a cleanup
