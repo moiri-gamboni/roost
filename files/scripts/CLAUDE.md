@@ -22,6 +22,7 @@ The CLI, its statusline, its settings.json hook entries and the `~/bin/session` 
 
 - `files/session.conf` → `~/roost/claude/session.conf` — a copy of what `install.sh` writes: the data root `~/roost/claude/usage`, the tmux main guard, the attention bridge and tail, and the primary config dir. Keep it identical to the installer's output; `roost-apply diff` shows drift.
 - `files/tmux.conf` — the focus hooks (`session --focus-mark`) behind attended time.
+- `files/cron-roost` — the hourly `session account expiry --notify`, which pushes two days and six hours before a saved login's sign-in ends.
 - `files/session-focus-tick.{service,timer}` — the 10 s activity sampler. The unit comments explain why `AccuracySec=1s` and `CLAUDE_CONFIG_DIR` must stay.
 - `files/roost-session-resume.service` (user unit) — runs `session resume` at boot, reopening what `session reboot` snapshotted. It needs lingering, which `setup/shell-config.sh` enables.
 - `files/settings.json` — records the installer's hook and statusLine entries as they stand in the live file; the installer, not a push, is what writes them.

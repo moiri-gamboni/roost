@@ -47,3 +47,8 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 # tmux pane): fast-forward what finished cleanly and drop it; anything dirty,
 # diverged or whose root still exists is kept (3:35am).
 35 3 * * * $USERNAME flock -n $HOME_DIR/.locks/agent-worktree-gc $HOME_DIR/bin/agent-worktree gc
+
+# Claude login sign-ins end on a fixed date renewal never moves; push a warning
+# two days and six hours ahead of each saved login's end (session CLI, once
+# each; the listing on stdout is dropped).
+17 * * * * $USERNAME $HOME_DIR/bin/session account expiry --notify >/dev/null
