@@ -57,6 +57,6 @@ logger -t roost/light-subagents-to-codex "refused a ${model} spawn (${kind:-gene
 jq -nc \
     --arg r "This box runs Sonnet- and Haiku-class subagent work on Codex (GPT-6-Luna at max effort) through antiphon, not on a light Claude model. Run this ${kind:-subagent} task as a Codex thread instead, in a background Bash (run_in_background), with the prompt you were giving this Agent call after the --:
 antiphon start -C ${cwd:-.} -n ${name} -m gpt-6-luna --effort max --read-only${instr} --no-report --wait --timeout 3600 -- \"<prompt>\"
-Drop --read-only when the task edits files (add --worktree to keep its changes separable). The Bash output is the thread's final answer; parallel legs are parallel background Bash calls, each with its own -n. If antiphon is unavailable (\`antiphon ping\` fails, or the Codex plan's limit is spent), spawn the same agent again with model: \"opus\"." \
+Load the antiphon skill first if this session has not (it covers steering and following up a running thread). Drop --read-only when the task edits files (add --worktree to keep its changes separable). The Bash output is the thread's final answer; parallel legs are parallel background Bash calls, each with its own -n. If antiphon is unavailable (\`antiphon ping\` fails, or the Codex plan's limit is spent), spawn the same agent again with model: \"opus\"." \
     '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $r}}'
 exit 0
