@@ -4,8 +4,9 @@
 # cloned before or after.
 #
 #   <hook name> [ARGS]    as a hook (named by the link git ran). pre-push first runs the
-#                         scrub gate when the push goes to a public GitHub repository; then
-#                         every hook hands over to the repository's own hook,
+#                         scrub gate when the push goes to a public GitHub repository, and
+#                         pre-commit and commit-msg when the branch's push remote is one;
+#                         then every hook hands over to the repository's own hook,
 #                         <git common dir>/hooks/<name>, when it is executable, with the same
 #                         arguments and stdin (git itself stops looking there once
 #                         core.hooksPath is set).
@@ -25,10 +26,17 @@
 #                                     "private" skips the gate, "public" and "internal" run it.
 #   any other host, or a lookup that  the gate runs, after a line saying why (fail closed).
 #   failed (gh error, 404)            A failed lookup is never cached.
+# The commit decision is the same, for each push URL of the remote the current branch
+# pushes to (git's own choice: branch.<name>.pushRemote, remote.pushDefault, then the
+# upstream's remote; origin on a detached HEAD or a branch with none of them). No such
+# remote, or only local URLs: no gate and no gh call.
+#
 # The gate is public-scrub-check.sh beside this script, run as
-# `public-scrub-check.sh [--repo OWNER/REPO] REMOTE URL` with the push's ref lines on stdin;
-# a push it must check while it is missing is refused. `git push --no-verify` skips all of
-# pre-push, the gate included.
+# `public-scrub-check.sh [--repo OWNER/REPO] REMOTE URL` with the push's ref lines on stdin,
+# `… --staged` from pre-commit and `… --message FILE` from commit-msg; a push or commit it
+# must check while it is missing is refused. `--no-verify` on a push or a commit skips these
+# hooks, the gate included. A conflict-free merge, a cherry-pick or a rebase runs no
+# pre-commit, so the push gate stays the backstop for what they bring in.
 set -euo pipefail
 
 # Every hook git 2.43 looks up in the hooks directory (githooks(5)), except:
@@ -96,25 +104,46 @@ visibility() {
     echo "$out"
 }
 
-# pre-push REMOTE URL, the ref lines in $refs. Returns non-zero to refuse the push.
-scrub_gate() {
-    local url="$2" slug vis why args=()
+# gated URL WHAT — whether what goes to URL meets the gate: 1 for a local URL or a private
+# GitHub repository, 0 (after a line saying why, when it is undecided) otherwise. Sets slug.
+gated() {
+    local url="$1" vis why=""
     slug=$(github_slug "$url")
-    if [ "$slug" = local ]; then return 0; fi
+    if [ "$slug" = local ]; then return 1; fi
     if [ -z "$slug" ]; then
         why="$url is not a GitHub repository"
     elif ! vis=$(visibility "$slug" 2>&1); then
         why="could not learn whether $slug is public ($vis)"
     elif [ "$vis" = private ]; then
-        return 0
-    fi
-    if [ -n "${why:-}" ]; then say "$why: checking the push as if it were public"; fi
-    if [ -n "$slug" ]; then args=(--repo "$slug"); fi
-    if [ ! -x "$gate" ]; then
-        say "refusing the push: the scrub gate $gate is not deployed (roost-apply push files/private/public-scrub-check.sh)"
         return 1
     fi
-    printf '%s' "$refs" | "$gate" "${args[@]}" "$1" "$url"
+    if [ -n "$why" ]; then say "$why: checking the $2 as if it were public"; fi
+}
+
+# run_gate WHAT ARGS... — the gate, with --repo when $slug names a repository.
+run_gate() {
+    local what="$1" args=()
+    shift
+    paths
+    if [ ! -x "$gate" ]; then
+        say "refusing the $what: the scrub gate $gate is not deployed (roost-apply push files/private/public-scrub-check.sh)"
+        return 1
+    fi
+    if [ -n "$slug" ]; then args=(--repo "$slug"); fi
+    "$gate" "${args[@]}" "$@"
+}
+
+# commit_gate ARGS... — pre-commit and commit-msg: the gate on ARGS when a push URL of the
+# current branch's push remote is gated.
+commit_gate() {
+    local ref remote="" urls url
+    ref=$(git symbolic-ref -q HEAD) || ref=""
+    if [ -n "$ref" ]; then remote=$(git for-each-ref --format='%(push:remotename)' "$ref"); fi
+    # The one failure is "No such remote": nothing to push to, nothing to check.
+    urls=$(git remote get-url --push --all "${remote:-origin}" 2>&1) || return 0
+    while IFS= read -r url; do
+        if gated "$url" commit; then run_gate commit "$@"; return; fi
+    done <<<"$urls"
 }
 
 install() {
@@ -163,14 +192,17 @@ case "$name" in
 esac
 
 own="$(git rev-parse --path-format=absolute --git-common-dir)/hooks/$name"
-if [ -x "$own" ] || [ "$name" = pre-push ]; then paths; fi
+if [ -x "$own" ]; then paths; fi
 if [ ! -x "$own" ] || [ "$(readlink -f "$own")" = "$self" ]; then own=""; fi
 
-if [ "$name" = pre-push ]; then
-    refs=$(cat; echo .); refs=${refs%.}
-    scrub_gate "$@" || exit 1
-    if [ -n "$own" ]; then exec "$own" "$@" < <(printf '%s' "$refs"); fi
-    exit 0
-fi
+case "$name" in
+    pre-push)
+        refs=$(cat; echo .); refs=${refs%.}
+        if gated "$2" push; then printf '%s' "$refs" | run_gate push "$1" "$2" || exit 1; fi
+        if [ -n "$own" ]; then exec "$own" "$@" < <(printf '%s' "$refs"); fi
+        exit 0 ;;
+    pre-commit) commit_gate --staged || exit 1 ;;
+    commit-msg) commit_gate --message "$1" || exit 1 ;;
+esac
 if [ -n "$own" ]; then exec "$own" "$@"; fi
 exit 0
