@@ -221,6 +221,26 @@ if [ "$n" -gt 0 ]; then
     note "stale /tmp/tmpXXXXXXXX dirs: $n"
 fi
 
+# --- The rootfs /tmp hidden under the @tmp mount ----------------------------
+# setup/snapper.sh mounts the @tmp subvolume over /tmp from the next boot, so
+# whatever the rootfs /tmp held at that shutdown is hidden, never cleaned by
+# boot, and kept in every snapshot. Clear it once through a top-level mount;
+# after that the directory stays empty and this finds nothing.
+if [ "$(findmnt -n -o FSROOT /tmp 2>/dev/null)" = "/@tmp" ]; then
+    TOP=$(sudo mktemp -d)
+    if sudo mount -o subvolid=5 "$(findmnt -n -o SOURCE / | sed 's/\[.*//')" "$TOP"; then
+        UNDER="$TOP$(findmnt -n -o FSROOT /)/tmp"
+        n=$(sudo find "$UNDER" -mindepth 1 -maxdepth 1 | wc -l)
+        if [ "$n" -gt 0 ]; then
+            [ "$DRY_RUN" = 1 ] || sudo find "$UNDER" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+            log "$([ "$DRY_RUN" = 1 ] && echo WOULD\ )clear $n entries of the rootfs /tmp under the @tmp mount"
+            note "rootfs /tmp hidden under @tmp: $n entries"
+        fi
+        sudo umount "$TOP"
+    fi
+    sudo rmdir "$TOP"
+fi
+
 # --- Orphaned virtualenvs ---------------------------------------------------
 # pipenv writes the source project path into .project. Worktrees get deleted far
 # more often than their venvs do, stranding multi-GB trees. Only act when .project
