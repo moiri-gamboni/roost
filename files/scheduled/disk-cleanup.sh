@@ -1,6 +1,7 @@
 #!/bin/bash
 # Reclaim disk from regenerable artifacts: superseded toolchain versions, package
-# manager caches, orphaned virtualenvs, dangling Docker layers, archived journals.
+# manager caches, orphaned virtualenvs, leaked shell and test scratch, dangling
+# Docker layers, archived journals.
 #
 # Runs from auto-update.sh (daily, 2:50am start), right after any Node LTS bump —
 # the moment the previous Node version becomes stale — and timed to finish before
@@ -190,6 +191,34 @@ if [ -d "$CODEX_RELEASES" ]; then
         if printf '%s\n' "$RUNNING_CODEX" | grep -qx "$v"; then kept "Codex $v (a running process uses it)"; continue; fi
         reclaim "$vdir" "Codex $v"
     done
+fi
+
+# --- Leaked per-shell and per-test scratch -----------------------------------
+# Tiny, but by the hundred thousand: each is a few btrfs metadata items that
+# every hourly snapshot pins. fnm leaves one multishell per shell started
+# without XDG_RUNTIME_DIR (289k by 2026-09-30; shell/bashrc.sh stops cron's),
+# named <shell pid>_<ms>, so only those whose shell is gone go. Test suites
+# leave Python mkdtemp() directories (/tmp/tmpXXXXXXXX; tasksync's alone ~8k a
+# day until it got a per-run root); those untouched for 3 days go.
+FNM_STATE="$HOME/.local/state/fnm_multishells"
+if [ -d "$FNM_STATE" ]; then
+    n=0
+    for e in "$FNM_STATE"/*_*; do
+        [ -e "$e" ] || [ -L "$e" ] || continue
+        pid=${e##*/}; pid=${pid%%_*}
+        kill -0 "$pid" 2>/dev/null && continue
+        [ "$DRY_RUN" = 1 ] || rm -f "$e"
+        n=$((n + 1))
+    done
+    [ "$n" -gt 0 ] && log "$([ "$DRY_RUN" = 1 ] && echo WOULD\ )remove $n fnm multishells of exited shells" \
+        && note "fnm multishells of exited shells: $n"
+fi
+n=$(find /tmp -maxdepth 1 -user "$(id -u)" -type d -name 'tmp????????' -mtime +3 | wc -l)
+if [ "$n" -gt 0 ]; then
+    [ "$DRY_RUN" = 1 ] || find /tmp -maxdepth 1 -user "$(id -u)" -type d -name 'tmp????????' -mtime +3 \
+        -exec rm -rf {} +
+    log "$([ "$DRY_RUN" = 1 ] && echo WOULD\ )remove $n stale /tmp/tmpXXXXXXXX dirs"
+    note "stale /tmp/tmpXXXXXXXX dirs: $n"
 fi
 
 # --- Orphaned virtualenvs ---------------------------------------------------
