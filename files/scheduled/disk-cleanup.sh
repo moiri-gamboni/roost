@@ -173,6 +173,25 @@ if [ -d "$CLAUDE_VERSIONS" ]; then
     done
 fi
 
+# --- Codex CLI versions ----------------------------------------------------
+# The standalone installer keeps every release (~420M each, several a week).
+# Keep the current one, the newest previous one for a manual rollback, and any
+# a running process was started from: antiphon threads outlive an update.
+CODEX_RELEASES="$HOME/.codex/packages/standalone/releases"
+if [ -d "$CODEX_RELEASES" ]; then
+    CURRENT_CODEX=$(basename "$(readlink -f "$HOME/.codex/packages/standalone/current" 2>/dev/null)" 2>/dev/null)
+    KEEP_CODEX=$(ls -1 "$CODEX_RELEASES" 2>/dev/null | sort -V | tail -2)
+    RUNNING_CODEX=$(pgrep -a -u "$(id -u)" codex | grep -o "$CODEX_RELEASES/[^/]*" | sed 's|.*/||' | sort -u)
+    for vdir in "$CODEX_RELEASES"/*; do
+        [ -d "$vdir" ] || continue
+        v=$(basename "$vdir")
+        [ "$v" = "$CURRENT_CODEX" ] && continue
+        printf '%s\n' "$KEEP_CODEX" | grep -qx "$v" && continue
+        if printf '%s\n' "$RUNNING_CODEX" | grep -qx "$v"; then kept "Codex $v (a running process uses it)"; continue; fi
+        reclaim "$vdir" "Codex $v"
+    done
+fi
+
 # --- Orphaned virtualenvs ---------------------------------------------------
 # pipenv writes the source project path into .project. Worktrees get deleted far
 # more often than their venvs do, stranding multi-GB trees. Only act when .project
