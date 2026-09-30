@@ -37,12 +37,20 @@ _roost_path_append "$HOME/go/bin"
 # path inherited from a long-lived parent and lets the eval allocate its own;
 # a re-source keeps this shell's live multishell (re-running the eval would
 # allocate and prepend another one).
+# Without XDG_RUNTIME_DIR (cron: BASH_ENV sources this for every job) fnm puts the
+# multishell under ~/.local/state and never removes it: ~3,700 a day, 289k by
+# 2026-09-30, all pinned by snapshots. Such a shell never cd's interactively, so
+# --use-on-cd buys it nothing: it gets the default Node straight on PATH.
 FNM_DIR="$HOME/.local/share/fnm"
 if [ -x "$FNM_DIR/fnm" ] && ! type _roost_fnm_inited &>/dev/null; then
     _roost_fnm_inited() { :; }
     _roost_path_prepend "$FNM_DIR"
     unset FNM_MULTISHELL_PATH
-    eval "$($FNM_DIR/fnm env --use-on-cd --shell bash)"
+    if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+        eval "$($FNM_DIR/fnm env --use-on-cd --shell bash)"
+    else
+        _roost_path_prepend "$FNM_DIR/aliases/default/bin"
+    fi
 fi
 
 # clip-forward shims (must precede system xclip/wl-paste)
