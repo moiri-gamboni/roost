@@ -343,5 +343,6 @@
   "crossSessionInbound": "accept",
   "autoUploadSessions": false,
   "agentPushNotifEnabled": false,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "model": "opus"
 }
