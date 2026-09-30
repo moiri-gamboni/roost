@@ -29,7 +29,8 @@ fi
 NESTED_SUBVOLS=(
     .cache .npm
     .local/share/fnm .local/share/uv .local/share/pnpm .local/share/virtualenvs .local/share/claude
-    .vscode-server/cli .codex/packages
+    .vscode-server/cli .vscode-server/extensions .codex/packages
+    go/pkg/mod .agent-browser/browsers
     "$ROOST_DIR_NAME/drop"
 )
 for rel in "${NESTED_SUBVOLS[@]}"; do
@@ -56,6 +57,33 @@ for rel in "${NESTED_SUBVOLS[@]}"; do
     mv "$dir.subvol" "$dir"
     echo "  [+] Subvolume converted: $rel (old tree kept at $rel.old until its processes exit)"
 done
+
+# /tmp is a top-level subvolume (@tmp) mounted over the rootfs /tmp dir: test
+# suites and tools churn hundreds of thousands of scratch files through it, and
+# nested in @rootfs every hourly snapshot pinned them (5.5G live plus the
+# metadata). It cannot be converted in place like the trees above, because live
+# sockets sit in it (tmux's among them), so the mount takes effect at the next
+# boot. nofail: a missing @tmp leaves /tmp on the rootfs dir, as before. Boot
+# empties /tmp either way (Ubuntu's tmpfiles `D /tmp`); what the mount hides
+# underneath is cleared by scheduled/disk-cleanup.sh.
+ROOT_DEV=$(findmnt -n -o SOURCE / | sed 's/\[.*//')
+ROOT_UUID=$(blkid -s UUID -o value "$ROOT_DEV")
+TOP=$(mktemp -d)
+mount -o subvolid=5 "$ROOT_DEV" "$TOP"
+if [ -d "$TOP/@tmp" ]; then
+    echo "  [-] @tmp subvolume already exists (already done)"
+else
+    btrfs subvolume create "$TOP/@tmp" >/dev/null
+    chmod 1777 "$TOP/@tmp"
+    echo "  [+] @tmp subvolume created"
+fi
+umount "$TOP" && rmdir "$TOP"
+if grep -qE '^\S+\s+/tmp\s' /etc/fstab; then
+    echo "  [-] /tmp already in fstab (already done)"
+else
+    echo "UUID=$ROOT_UUID /tmp btrfs defaults,discard=async,space_cache=v2,subvol=@tmp,nofail 0 0" >> /etc/fstab
+    echo "  [+] /tmp mounts @tmp from the next boot"
+fi
 
 # Disable COW for database directories
 for dir in /var/lib/postgresql /var/lib/typesense; do

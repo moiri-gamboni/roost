@@ -97,7 +97,7 @@ Base configs stay generic; server-specific app configs go where the base configs
 
 btrfs snapshots via snapper (24 hourly, 7 daily, 2 weekly), a daily off-site btrfs send/receive to the laptop (`files/laptop/btrfs-backup.sh`), and daily Hetzner backups. Rollback: `snapper list`, `snapper rollback <number>`, reboot.
 
-Not in any snapshot or backup: the regenerable trees `setup/snapper.sh` keeps as nested subvolumes (caches, toolchains, `~/roost/drop`; list in the script) and the Beeper Server state (`files/beeper/CLAUDE.md`). When btrfs unallocated space stays low after a balance, the health check prunes the oldest timeline snapshots itself.
+Not in any snapshot or backup: the regenerable trees `setup/snapper.sh` keeps as nested subvolumes (caches, toolchains, `~/roost/drop`; list in the script), `/tmp` (the top-level `@tmp` subvolume, mounted by fstab; the rootfs dir it hides is cleared by `scheduled/disk-cleanup.sh`) and the Beeper Server state (`files/beeper/CLAUDE.md`). When btrfs unallocated space stays low after a balance, the health check prunes the oldest timeline snapshots itself.
 
 ## Security Model
 
