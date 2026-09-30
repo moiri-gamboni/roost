@@ -288,6 +288,9 @@ check "the branch's upstream remote decides, not origin" test "$rc" -ne 0
 git -C "$T/c-priv" config branch.main.pushRemote origin
 check "... and a pushRemote over the upstream" git -C "$T/c-priv" commit -q -m "g"
 git -C "$T/c-priv" config --unset branch.main.pushRemote; git -C "$T/c-priv" config --unset branch.main.remote
+git -C "$T/c-priv" branch aaa; git -C "$T/c-priv" config branch.aaa.remote pub
+stage "$T/c-priv" g2 "PLANTED"
+check "another branch's upstream remote does not count" git -C "$T/c-priv" commit -q -m "g2"
 git -C "$T/c-pub" checkout -q --detach
 stage "$T/c-pub" d "PLANTED"
 out=$(git -C "$T/c-pub" commit -m "d" 2>&1); rc=$?

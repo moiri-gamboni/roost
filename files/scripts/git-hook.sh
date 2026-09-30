@@ -87,7 +87,7 @@ github_slug() {
 visibility() {
     local slug="$1" dir="${XDG_CACHE_HOME:-$HOME/.cache}/roost-git-hooks/visibility" f err out
     f="$dir/${slug/\//%}"
-    if [ -f "$f" ] && [ $(( $(date +%s) - $(stat -c %Y "$f") )) -lt "$VISIBILITY_TTL" ]; then
+    if [ -f "$f" ] && [ $(( EPOCHSECONDS - $(stat -c %Y "$f") )) -lt "$VISIBILITY_TTL" ]; then
         cat "$f"; return 0
     fi
     err=$(mktemp)
@@ -136,9 +136,10 @@ run_gate() {
 # commit_gate ARGS... — pre-commit and commit-msg: the gate on ARGS when a push URL of the
 # current branch's push remote is gated.
 commit_gate() {
-    local ref remote="" urls url
-    ref=$(git symbolic-ref -q HEAD) || ref=""
-    if [ -n "$ref" ]; then remote=$(git for-each-ref --format='%(push:remotename)' "$ref"); fi
+    local remote urls url
+    # The current branch's line alone is non-empty; none on a detached HEAD or unborn branch.
+    remote=$(git for-each-ref --format='%(if)%(HEAD)%(then)%(push:remotename)%(end)' refs/heads/)
+    remote=${remote//$'\n'/}
     # The one failure is "No such remote": nothing to push to, nothing to check.
     urls=$(git remote get-url --push --all "${remote:-origin}" 2>&1) || return 0
     while IFS= read -r url; do
