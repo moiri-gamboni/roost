@@ -7,6 +7,8 @@
 #                         reader knows it is speech-to-text. Enter is left to you.
 #                         A red bar at the bottom of that tmux session shows
 #                         while it records and while it transcribes.
+#   dictate cancel        stop the recording in progress and throw it away,
+#                         nothing sent (Alt+Shift+M).
 #
 # Audio comes from the laptop mic forwarded over SSH (files/audio/,
 # README "Voice"). Transcription is ElevenLabs Scribe v2 in batch mode with
@@ -40,7 +42,7 @@ unbar() {
     local sess o
     sess=$(tmux display -p -t "$1" '#{session_name}') || return 0
     # a newer recording runs: its own pane keeps (or regains) the bar
-    if [ -f "$STATE/current" ]; then bar "$(sed -n 2p "$STATE/current")" "REC · Alt+M to stop"; return 0; fi
+    if [ -f "$STATE/current" ]; then bar "$(sed -n 2p "$STATE/current")" "REC · Alt+M to stop · Alt+Shift+M to cancel"; return 0; fi
     for o in status status-left status-right status-left-length; do tmux set -u -t "$sess" "$o" || true; done
 }
 # Claude Code treats more than 800 characters arriving in one read as a paste
@@ -71,7 +73,7 @@ start() {
         rm -f "$STATE/current" "$wav"
         fail "microphone unavailable ($(head -c 200 "$wav.err")). Is the VS Code SSH connection forwarding it?"
     fi
-    bar "$1" "REC · Alt+M to stop"
+    bar "$1" "REC · Alt+M to stop · Alt+Shift+M to cancel"
 }
 
 stop() {
@@ -118,6 +120,20 @@ stop() {
     rm -f "$wav"
 }
 
+cancel() {
+    local pid wav
+    [ -f "$STATE/current" ] || { show -d 1500 "🎤 no recording to cancel"; return 0; }
+    { read -r pid; read -r pane; read -r wav; } < "$STATE/current"
+    rm -f "$STATE/current"
+    if [ -d "/proc/$pid" ]; then
+        kill -INT "$pid" || true
+        while [ -d "/proc/$pid" ]; do sleep 0.05; done
+    fi
+    rm -f "$wav" "$wav.err"
+    unbar "$pane"
+    show -d 1500 "🎤 recording cancelled"
+}
+
 case "${1:-}" in
     toggle)
         [ -n "${2:-}" ] || { echo "usage: dictate toggle PANE" >&2; exit 2; }
@@ -126,5 +142,10 @@ case "${1:-}" in
         exec >>"$STATE/log" 2>&1
         trap 'say "🎤 dictate failed at line $LINENO, see $STATE/log"' ERR
         if [ -f "$STATE/current" ]; then stop; else start "$2"; fi ;;
-    *) sed -n '2,17s/^# \{0,1\}//p' "$0"; exit 2 ;;
+    cancel)
+        mkdir -p "$STATE"
+        exec >>"$STATE/log" 2>&1
+        trap 'say "🎤 dictate cancel failed at line $LINENO, see $STATE/log"' ERR
+        cancel ;;
+    *) sed -n '2,19s/^# \{0,1\}//p' "$0"; exit 2 ;;
 esac
