@@ -7,6 +7,7 @@ Deployed to `~/roost/claude/scripts/` and symlinked into `~/bin` by `setup/shell
 - `agent-worktree.sh` — composite worktrees (`agent -w`, wired as the WorktreeCreate and SessionEnd hooks) and single-repo ones (`agent-worktree isolate [path]`, which a session takes when the conflict watch stops it in a code repo; the work fast-forwards back at session end, and a tree that cannot is kept with an ntfy). Its header is the contract and `tests/agent-worktree.sh` the behaviour spec.
 - `conflict-watch.py` → `~/bin/conflict-watch` — the conflict watch's daemon and CLI (section below).
 - `git-hook.sh` — the box-wide git hooks (section below). Not in `~/bin`: git runs it through the links in `~/roost/claude/git-hooks/`.
+- `dictate.sh` — push-to-talk dictation (header is the contract). Not in `~/bin`: tmux runs it on Alt+M (`tmux.conf`). Its API key and keyterm list live in `~/.config/dictate/`, outside any repo; state, a log and any audio kept from a failed transcription in `$XDG_RUNTIME_DIR/dictate/`.
 
 ## `git-hook.sh` — the box-wide git hooks
 
