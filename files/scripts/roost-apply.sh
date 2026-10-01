@@ -178,6 +178,8 @@ files/session-focus-tick.timer|/etc/systemd/system/session-focus-tick.timer|plai
 files/cron-roost|/etc/cron.d/$ROOST_DIR_NAME|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|
 files/tmux.conf|$HOME_DIR/.tmux.conf|plain|run:tmux source-file ~/.tmux.conf
 files/sshd/50-clip-forward.conf|/etc/ssh/sshd_config.d/50-clip-forward.conf|plain|restart:ssh
+files/audio/asoundrc|$HOME_DIR/.asoundrc|plain|
+files/audio/pulse-client.conf|$HOME_DIR/.config/pulse/client.conf|plain|
 files/apparmor/agent-browser-chrome|/etc/apparmor.d/agent-browser-chrome|envsubst:HOME_DIR|run:sudo apparmor_parser -r /etc/apparmor.d/agent-browser-chrome
 files/tailscaled-iptables.conf|/etc/systemd/system/tailscaled.service.d/iptables-pin.conf|plain|daemon-reload,restart:tailscaled
 files/granola-webhook.service|/etc/systemd/system/granola-webhook.service|plain|daemon-reload,enable:granola-webhook.service,restart:granola-webhook

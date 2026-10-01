@@ -1,0 +1,5 @@
+# Route ALSA's default devices through PulseAudio, so ALSA-only recorders
+# (Claude Code's /voice native module, arecord) reach the laptop microphone
+# forwarded over SSH (see pulse-client.conf).
+pcm.!default { type pulse }
+ctl.!default { type pulse }

@@ -20,6 +20,11 @@ ok "Package list updated"
 apt install -y tmux build-essential jq unzip btrfs-progs snapper glances util-linux bash-completion acl
 ok "Base packages installed"
 
+# Claude Code /voice over SSH: the ALSA pulse plugin plus arecord/pactl to
+# check the laptop microphone forwarded as a socket (files/audio/).
+apt install -y --no-install-recommends libasound2-plugins alsa-utils pulseaudio-utils
+ok "Audio forwarding packages installed"
+
 # TCP BBR: better throughput than the cubic default on lossy/congested
 # paths (notably xray traffic from in-China clients through GFW). Drop-in
 # survives reboots; fq_codel qdisc (Ubuntu default) is BBR-compatible.
