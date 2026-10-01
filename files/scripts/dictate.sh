@@ -11,64 +11,75 @@
 # no_verbatim (drops fillers, false starts, repeats) and the keyterms in
 # ~/.config/dictate/keyterms.txt (one per line, <= 5 words, keep it under 100:
 # past 100 every request bills at least 20 s). API key: ~/.config/dictate/elevenlabs-key.
-# A failed transcription keeps the audio and says where, so nothing is lost.
+# A failure keeps the audio (or, if the pane is gone, the text) in
+# ~/.local/state/dictate/ and says where, so nothing is lost.
 set -euo pipefail
 
 CONF="$HOME/.config/dictate"
-STATE="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/dictate"
+STATE="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/dictate"   # the recording in progress, the log
+KEEP="$HOME/.local/state/dictate"                        # audio or text a failure left behind
 MAX_SECONDS=600   # an abandoned recording stops itself
 
 # status line notes are best effort: with no attached client there is nowhere to show them
 show() { tmux display-message "$@" || true; }
 say() { show -d 4000 "$*"; logger -t roost/dictate -- "$*"; }
-alive() { [ -f "$STATE/pid" ] && [ -d "/proc/$(cat "$STATE/pid")" ]; }
+# handled failures say why and exit 0: a non-zero exit makes run-shell put the pane in view mode
+fail() { say "🎤 dictate: $*"; exit 0; }
+keep() { mkdir -p "$KEEP"; local to; to="$KEEP/$(date +%Y%m%d-%H%M%S)-$1"; mv "$2" "$to"; echo "$to"; }
 
 start() {
-    local pane=$1
-    arecord -q -f S16_LE -r 16000 -c 1 -d "$MAX_SECONDS" "$STATE/rec.wav" 2>"$STATE/arecord.err" &
-    echo "$!" > "$STATE/pid"
-    echo "$pane" > "$STATE/pane"
+    local wav
+    wav="$STATE/rec-$(date +%s%N).wav"
+    arecord -q -f S16_LE -r 16000 -c 1 -d "$MAX_SECONDS" "$wav" 2>"$wav.err" &
+    printf '%s\n%s\n%s\n' "$!" "$1" "$wav" > "$STATE/current"
     sleep 0.3
-    if ! alive; then
-        rm -f "$STATE/pid"
-        say "🎤 dictate: microphone unavailable ($(head -c 200 "$STATE/arecord.err")). Is the VS Code SSH connection forwarding it?"
-        return 1
+    if [ ! -d "/proc/$!" ]; then
+        rm -f "$STATE/current" "$wav"
+        fail "microphone unavailable ($(head -c 200 "$wav.err")). Is the VS Code SSH connection forwarding it?"
     fi
     show -d 0 "🎤 recording… Alt+M to transcribe"
 }
 
 stop() {
-    local pid pane wav text
-    pid=$(cat "$STATE/pid"); pane=$(cat "$STATE/pane"); rm -f "$STATE/pid"
-    kill -INT "$pid" || true
-    while [ -d "/proc/$pid" ]; do sleep 0.05; done
-    wav="$STATE/rec.wav"
+    local pid pane wav text resp kept
+    { read -r pid; read -r pane; read -r wav; } < "$STATE/current"
+    # cleared first, so the next press starts a new recording while this one transcribes
+    rm -f "$STATE/current"
+    if [ -d "/proc/$pid" ]; then
+        kill -INT "$pid" || true
+        while [ -d "/proc/$pid" ]; do sleep 0.05; done
+    else
+        say "🎤 recording had already stopped ($(head -c 200 "$wav.err")); transcribing what it got"
+    fi
+    rm -f "$wav.err"
     show -d 0 "🎤 transcribing…"
 
     local -a terms=()
     if [ -f "$CONF/keyterms.txt" ]; then
-        while IFS= read -r t; do [ -n "$t" ] && terms+=(-F "keyterms=$t"); done < <(grep -v '^#' "$CONF/keyterms.txt")
+        while IFS= read -r t; do [ -n "$t" ] && terms+=(--form-string "keyterms=$t"); done < <(grep -v '^#' "$CONF/keyterms.txt")
     fi
-    local resp
     if ! resp=$(curl -sS --fail-with-body --max-time 60 https://api.elevenlabs.io/v1/speech-to-text \
             -H "xi-api-key: $(cat "$CONF/elevenlabs-key")" \
             -F model_id=scribe_v2 -F no_verbatim=true -F tag_audio_events=false \
             "${terms[@]}" -F "file=@$wav;type=audio/wav" 2>&1) \
        || ! text=$(jq -er '.text' <<<"$resp"); then
-        local kept
-        kept="$STATE/failed-$(date +%H%M%S).wav"
-        mv "$wav" "$kept"
-        say "🎤 dictate: transcription failed, audio kept at $kept: $(head -c 300 <<<"$resp")"
-        return 1
+        kept=$(keep audio.wav "$wav")
+        fail "transcription failed, audio kept at $kept: $(head -c 300 <<<"$resp")"
     fi
-    rm -f "$wav"
     # a newline would submit the prompt
     text=$(tr '\n' ' ' <<<"$text" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
     if [ -z "$text" ]; then
+        rm -f "$wav"
         show -d 2000 "🎤 nothing heard"
         return 0
     fi
-    tmux send-keys -t "$pane" -l "🎤 $text"
+    if ! tmux send-keys -t "$pane" -l "🎤 $text"; then
+        printf '%s\n' "$text" > "$wav.txt"
+        kept=$(keep text.txt "$wav.txt")
+        rm -f "$wav"
+        fail "the pane is gone; the text is in $kept"
+    fi
+    rm -f "$wav"
     show -d 1 ""
 }
 
@@ -78,6 +89,7 @@ case "${1:-}" in
         # run-shell would show any output in the pane, so it goes to a log instead
         mkdir -p "$STATE"
         exec >>"$STATE/log" 2>&1
-        if alive; then stop; else start "$2"; fi ;;
-    *) sed -n '2,13s/^# \{0,1\}//p' "$0"; exit 2 ;;
+        trap 'say "🎤 dictate failed at line $LINENO, see $STATE/log"' ERR
+        if [ -f "$STATE/current" ]; then stop; else start "$2"; fi ;;
+    *) sed -n '2,15s/^# \{0,1\}//p' "$0"; exit 2 ;;
 esac
