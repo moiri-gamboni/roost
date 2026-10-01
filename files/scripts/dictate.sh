@@ -8,7 +8,8 @@
 #                         A red bar at the bottom of that tmux session shows
 #                         while it records and while it transcribes.
 #   dictate cancel        stop the recording in progress and throw it away,
-#                         nothing sent (Alt+Shift+M).
+#                         nothing sent (Esc in that session while it records;
+#                         Esc passes through untouched otherwise).
 #
 # Audio comes from the laptop mic forwarded over SSH (files/audio/,
 # README "Voice"). Transcription is ElevenLabs Scribe v2 in batch mode with
@@ -37,13 +38,15 @@ bar() {
     sess=$(tmux display -p -t "$1" '#{session_name}') || return 0
     tmux set -t "$sess" status on \; set -t "$sess" status-right "" \; set -t "$sess" status-left-length 60 \
         \; set -t "$sess" status-left "#[bg=red,fg=white,bold] 🎤 $2 #[default]" || true
+    # @dictating makes Esc cancel in this session (tmux.conf), only while recording
+    if [ "${2#REC}" != "$2" ]; then tmux set -t "$sess" @dictating 1 || true; else tmux set -u -t "$sess" @dictating || true; fi
 }
 unbar() {
     local sess o
     sess=$(tmux display -p -t "$1" '#{session_name}') || return 0
     # a newer recording runs: its own pane keeps (or regains) the bar
-    if [ -f "$STATE/current" ]; then bar "$(sed -n 2p "$STATE/current")" "REC · Alt+M to stop · Alt+Shift+M to cancel"; return 0; fi
-    for o in status status-left status-right status-left-length; do tmux set -u -t "$sess" "$o" || true; done
+    if [ -f "$STATE/current" ]; then bar "$(sed -n 2p "$STATE/current")" "REC · Alt+M to stop · Esc to cancel"; return 0; fi
+    for o in status status-left status-right status-left-length @dictating; do tmux set -u -t "$sess" "$o" || true; done
 }
 # Claude Code treats more than 800 characters arriving in one read as a paste
 # and collapses it into "[Pasted text #N]", so long text goes in ~300-character
@@ -73,7 +76,7 @@ start() {
         rm -f "$STATE/current" "$wav"
         fail "microphone unavailable ($(head -c 200 "$wav.err")). Is the VS Code SSH connection forwarding it?"
     fi
-    bar "$1" "REC · Alt+M to stop · Alt+Shift+M to cancel"
+    bar "$1" "REC · Alt+M to stop · Esc to cancel"
 }
 
 stop() {
@@ -147,5 +150,5 @@ case "${1:-}" in
         exec >>"$STATE/log" 2>&1
         trap 'say "🎤 dictate cancel failed at line $LINENO, see $STATE/log"' ERR
         cancel ;;
-    *) sed -n '2,19s/^# \{0,1\}//p' "$0"; exit 2 ;;
+    *) sed -n '2,20s/^# \{0,1\}//p' "$0"; exit 2 ;;
 esac
