@@ -5,6 +5,8 @@
 #                         second press: transcribe and type the text into the
 #                         pane where recording started, prefixed with 🎤 so the
 #                         reader knows it is speech-to-text. Enter is left to you.
+#                         A red bar at the bottom of that tmux session shows
+#                         while it records and while it transcribes.
 #
 # Audio comes from the laptop mic forwarded over SSH (files/audio/,
 # README "Voice"). Transcription is ElevenLabs Scribe v2 in batch mode with
@@ -25,6 +27,22 @@ show() { tmux display-message "$@" || true; }
 say() { show -d 4000 "$*"; logger -t roost/dictate -- "$*"; }
 # handled failures say why and exit 0: a non-zero exit makes run-shell put the pane in view mode
 fail() { say "🎤 dictate: $*"; exit 0; }
+# A red bar in the status line of the tmux session holding the pane, for as
+# long as a recording runs or a transcription is pending (status is off
+# otherwise, and a display-message vanishes at the next keypress).
+bar() {
+    local sess
+    sess=$(tmux display -p -t "$1" '#{session_name}') || return 0
+    tmux set -t "$sess" status on \; set -t "$sess" status-right "" \; set -t "$sess" status-left-length 60 \
+        \; set -t "$sess" status-left "#[bg=red,fg=white,bold] 🎤 $2 #[default]" || true
+}
+unbar() {
+    local sess o
+    sess=$(tmux display -p -t "$1" '#{session_name}') || return 0
+    # a newer recording runs: its own pane keeps (or regains) the bar
+    if [ -f "$STATE/current" ]; then bar "$(sed -n 2p "$STATE/current")" "REC · Alt+M to stop"; return 0; fi
+    for o in status status-left status-right status-left-length; do tmux set -u -t "$sess" "$o" || true; done
+}
 keep() { mkdir -p "$KEEP"; local to; to="$KEEP/$(date +%Y%m%d-%H%M%S)-$1"; mv "$2" "$to"; echo "$to"; }
 
 start() {
@@ -37,14 +55,16 @@ start() {
         rm -f "$STATE/current" "$wav"
         fail "microphone unavailable ($(head -c 200 "$wav.err")). Is the VS Code SSH connection forwarding it?"
     fi
-    show -d 0 "🎤 recording… Alt+M to transcribe"
+    bar "$1" "REC · Alt+M to stop"
 }
 
 stop() {
-    local pid pane wav text resp kept
+    # pane stays global: the EXIT trap runs after this function has returned
+    local pid wav text resp kept
     { read -r pid; read -r pane; read -r wav; } < "$STATE/current"
     # cleared first, so the next press starts a new recording while this one transcribes
     rm -f "$STATE/current"
+    trap 'unbar "$pane"' EXIT
     if [ -d "/proc/$pid" ]; then
         kill -INT "$pid" || true
         while [ -d "/proc/$pid" ]; do sleep 0.05; done
@@ -52,7 +72,7 @@ stop() {
         say "🎤 recording had already stopped ($(head -c 200 "$wav.err")); transcribing what it got"
     fi
     rm -f "$wav.err"
-    show -d 0 "🎤 transcribing…"
+    bar "$pane" "transcribing…"
 
     local -a terms=()
     if [ -f "$CONF/keyterms.txt" ]; then
@@ -80,7 +100,6 @@ stop() {
         fail "the pane is gone; the text is in $kept"
     fi
     rm -f "$wav"
-    show -d 1 ""
 }
 
 case "${1:-}" in
@@ -91,5 +110,5 @@ case "${1:-}" in
         exec >>"$STATE/log" 2>&1
         trap 'say "🎤 dictate failed at line $LINENO, see $STATE/log"' ERR
         if [ -f "$STATE/current" ]; then stop; else start "$2"; fi ;;
-    *) sed -n '2,15s/^# \{0,1\}//p' "$0"; exit 2 ;;
+    *) sed -n '2,17s/^# \{0,1\}//p' "$0"; exit 2 ;;
 esac
