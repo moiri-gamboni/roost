@@ -4,7 +4,8 @@
 #   dictate toggle PANE   first press: record the forwarded laptop microphone;
 #                         second press: transcribe and type the text into the
 #                         pane where recording started, prefixed with 🎤 so the
-#                         reader knows it is speech-to-text. Enter is left to you.
+#                         reader knows it is speech-to-text, then a new line
+#                         (in Claude Code only). Enter is left to you.
 #                         A red bar at the bottom of that tmux session shows
 #                         while it records and while it transcribes.
 #   dictate cancel        stop the recording in progress and throw it away,
@@ -120,6 +121,11 @@ stop() {
         rm -f "$wav"
         fail "the pane is gone; the text is in $kept"
     fi
+    # end on a new line so the next dictation starts on its own: Ctrl+J is
+    # Claude Code's newline key, but Enter in a shell, so only there
+    if [ "$(tmux display -p -t "$pane" '#{pane_current_command}')" = claude ]; then
+        tmux send-keys -t "$pane" C-j || true
+    fi
     rm -f "$wav"
 }
 
@@ -150,5 +156,5 @@ case "${1:-}" in
         exec >>"$STATE/log" 2>&1
         trap 'say "🎤 dictate cancel failed at line $LINENO, see $STATE/log"' ERR
         cancel ;;
-    *) sed -n '2,20s/^# \{0,1\}//p' "$0"; exit 2 ;;
+    *) sed -n '2,21s/^# \{0,1\}//p' "$0"; exit 2 ;;
 esac
