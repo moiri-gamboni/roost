@@ -43,6 +43,22 @@ unbar() {
     if [ -f "$STATE/current" ]; then bar "$(sed -n 2p "$STATE/current")" "REC · Alt+M to stop"; return 0; fi
     for o in status status-left status-right status-left-length; do tmux set -u -t "$sess" "$o" || true; done
 }
+# Claude Code treats more than 800 characters arriving in one read as a paste
+# and collapses it into "[Pasted text #N]", so long text goes in ~300-character
+# chunks with a pause between them.
+type_text() {
+    local pane=$1 chunk="" w
+    local -a words
+    read -ra words <<<"$2"
+    for w in "${words[@]}"; do
+        if [ $(( ${#chunk} + ${#w} )) -ge 300 ]; then
+            tmux send-keys -t "$pane" -l "$chunk" || return 1
+            chunk=""; sleep 0.05
+        fi
+        chunk+="$w "
+    done
+    tmux send-keys -t "$pane" -l "${chunk% }"
+}
 keep() { mkdir -p "$KEEP"; local to; to="$KEEP/$(date +%Y%m%d-%H%M%S)-$1"; mv "$2" "$to"; echo "$to"; }
 
 start() {
@@ -93,7 +109,7 @@ stop() {
         show -d 2000 "🎤 nothing heard"
         return 0
     fi
-    if ! tmux send-keys -t "$pane" -l "🎤 $text"; then
+    if ! type_text "$pane" "🎤 $text"; then
         printf '%s\n' "$text" > "$wav.txt"
         kept=$(keep text.txt "$wav.txt")
         rm -f "$wav"
