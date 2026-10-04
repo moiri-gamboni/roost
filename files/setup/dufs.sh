@@ -67,10 +67,19 @@ if ! id -nG caddy | tr ' ' '\n' | grep -qx xray; then
 fi
 
 CADDY_SITE="/etc/caddy/sites-enabled/tailnet-drop.caddy"
+# Raster images and PDFs open in the browser; everything else (HTML, JS, SVG,
+# which can carry script) is rewritten inline->attachment so it downloads.
 CADDY_CONTENT="https://drop.${DOMAIN} {
     tls $VISION_CERT $VISION_KEY
-    reverse_proxy 127.0.0.1:5000 {
-        header_down Content-Disposition inline attachment
+    header X-Content-Type-Options nosniff
+    @viewable path_regexp viewable (?i)\\.(png|jpe?g|gif|webp|avif|pdf)$
+    handle @viewable {
+        reverse_proxy 127.0.0.1:5000
+    }
+    handle {
+        reverse_proxy 127.0.0.1:5000 {
+            header_down Content-Disposition inline attachment
+        }
     }
 }"
 if [ ! -f "$CADDY_SITE" ] || [ "$(cat "$CADDY_SITE")" != "$CADDY_CONTENT" ]; then
