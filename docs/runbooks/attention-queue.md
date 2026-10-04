@@ -79,11 +79,35 @@ The bridge holds a Discord user token in `~/.local/share/bbctl/prod/sh-discord/m
 The email bridge holds a Google refresh token for the work mailbox (its address in the private repo's README) in `~/.local/share/bbctl/prod/sh-email/sh-email.db`, encrypted with the passphrase in `/etc/attention-queue/matrimail.env` (root, 0600). The OAuth client is a Desktop client in an Internal Google Cloud project of the mailbox's Google Workspace, so the token has no fixed expiry; its ID and secret are in the bridge's `config.yaml` (`network.gmail_oauth`) and in `~/.config/attention-queue/gmail-oauth-client.env`. The scope is `modify` (Gmail API read, label and send), which still covers the whole mailbox.
 
 - **How expiry shows.** A password change, a revoked grant (https://myaccount.google.com/permissions) or an admin policy change kills the token: `GET /v1/accounts` shows `sh-email_…` as not `connected`, the dead-man reports it, and the bot posts a re-authorise notice in its control chat. The bridge then retries every thirty seconds indefinitely (a known upstream behaviour).
-- **Where to re-authenticate.** In the bridge's control chat, the encrypted DM with `@sh-emailbot:beeper.local`, room `!ciK5fRfu0IQPoBFD0vHI:beeper.local`: send `login`, then the address, then `modify`. The bot answers with a Google URL whose redirect is `http://127.0.0.1:8765/callback` on this box. Open it in a laptop browser, allow, and either run `ssh -N -L 8765:127.0.0.1:8765 moiri@100.73.69.20` first, or copy the failed-to-load callback URL from the address bar and fetch it on the box (`curl -s '<that URL>'`): the code in it is single-use, expires in minutes and is bound to a verifier only the bridge holds. Never use the bridge's `oauth paste-token`, which puts a permanent full-mailbox token into chat history. At the folder prompt pick `default` (INBOX), then add SENT with the bridge stopped: `sqlite3 ~/.local/share/bbctl/prod/sh-email/sh-email.db "update email_accounts set monitored_folders='[\"INBOX\",\"SENT\"]'"` (the bridge has no command for it). SENT is what makes a reply sent from Gmail's own apps show in the thread as yours; without it the board calls every such thread unanswered.
+- **Where to re-authenticate.** In the bridge's control chat, the encrypted DM with `@sh-emailbot:beeper.local`, room `!ciK5fRfu0IQPoBFD0vHI:beeper.local`: send `login`, then the address, then `modify`. The bot answers with a Google URL whose redirect is `http://127.0.0.1:8765/callback` on this box. Open it in a laptop browser, allow, and either run `ssh -N -L 8765:127.0.0.1:8765 moiri@100.73.69.20` first, or copy the failed-to-load callback URL from the address bar and fetch it on the box (`curl -s '<that URL>'`): the code in it is single-use, expires in minutes and is bound to a verifier only the bridge holds. Never use the bridge's `oauth paste-token`, which puts a permanent full-mailbox token into chat history. At the folder prompt, `default` keeps the mailbox's watched folders on re-login; a fresh login defaults to both INBOX and SENT. SENT is what imports replies sent from Gmail's own apps. Verify it after re-authentication with the read-only check below.
 - **From the phone?** The chat steps, yes; the callback needs the box, so a laptop or an SSH session.
 - **Meanwhile.** Nothing new arrives from Gmail and nothing sent from Beeper reaches it; mail is not lost, since the bridge reads Gmail's history from its saved cursor when it reconnects (Gmail keeps about a week of history; past that the gap is skipped with a log line).
 - **The bridge's `config.yaml` carries five hand edits**, kept across starts by `--no-override-config`: `network.gmail_oauth` (client ID and secret, `listener_address: "127.0.0.1:8765"`); `network.timezone: "Europe/Lisbon"` (the date in the "On … wrote:" line of replies); `network.beeper_sync` (`api_url: http://127.0.0.1:23373`, `token_file: /home/moiri/.config/attention-queue/beeper-token`, `interval_seconds: 60`: two-way archive and read sync between the Beeper chats and Gmail, through Beeper Server's API; state in the bridge DB table `matrimail_beeper_sync`); `logging.min_level: info`; and `bridge.only_bridge_tags: [m.favourite]` (the fork tags every email chat low priority on creation, which would hide email in Beeper's Low Priority section and make the board read every thread as dismissed). A rebuilt bridge needs all five again. The sync depends on Beeper Server: while it is down the sync pauses (one warning, one recovery line) and mail keeps bridging.
 - **The passphrase.** Never change `MATRIMAIL_PASSPHRASE`: nothing re-encrypts the stored token, so a new value makes it unreadable and the bridge refuses to start. If the file is lost, delete the bridge's stored login (`logout <the mailbox address>` in the control chat), create a new file and log in again.
+
+### Restore SENT watching
+
+If the dead-man reports `email SENT not monitored`, inspect only the folder column:
+
+```bash
+sqlite3 -readonly ~/.local/share/bbctl/prod/sh-email/sh-email.db \
+  'SELECT monitored_folders FROM email_accounts;'
+```
+
+Every mailbox row must include `SENT`. If it is missing, stop the email bridge, back up its DB, add SENT without removing other watched folders, and start it again:
+
+```bash
+sudo systemctl stop attention-bridge@email
+EMAIL_DB=~/.local/share/bbctl/prod/sh-email/sh-email.db
+sqlite3 "$EMAIL_DB" ".backup '$EMAIL_DB.pre-sent-$(date -u +%Y%m%dT%H%M%S)'"
+sqlite3 "$EMAIL_DB" "UPDATE email_accounts
+  SET monitored_folders=json_insert(monitored_folders, '\$[#]', 'SENT')
+  WHERE NOT EXISTS (SELECT 1 FROM json_each(monitored_folders) WHERE value='SENT');"
+sudo systemctl start attention-bridge@email
+sqlite3 -readonly "$EMAIL_DB" 'SELECT monitored_folders FROM email_accounts;'
+```
+
+If the alarm instead says `email monitored folders unreadable`, check the DB path, permissions and bridge journal before changing folders. After recovery, check the next pass and a reply made in Gmail; a connected account alone does not prove SENT is watched.
 
 ## The recovery key
 
