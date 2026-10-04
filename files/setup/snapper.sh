@@ -62,8 +62,10 @@ done
 # suites and tools churn hundreds of thousands of scratch files through it, and
 # nested in @rootfs every hourly snapshot pinned them (5.5G live plus the
 # metadata). It cannot be converted in place like the trees above, because live
-# sockets sit in it (tmux's among them), so the mount takes effect at the next
-# boot. nofail: a missing @tmp leaves /tmp on the rootfs dir, as before. Boot
+# sockets sit in it (tmux's among them). The fstab line is not inert until the
+# next boot: the next time systemd re-reads fstab it mounts @tmp over the live
+# /tmp (an apt upgrade's daemon-reload did, 2026-10-01 02:51), hiding whatever
+# processes had there. nofail: a missing @tmp leaves /tmp on the rootfs dir. Boot
 # empties /tmp either way (Ubuntu's tmpfiles `D /tmp`); what the mount hides
 # underneath is cleared by scheduled/disk-cleanup.sh.
 ROOT_DEV=$(findmnt -n -o SOURCE / | sed 's/\[.*//')
