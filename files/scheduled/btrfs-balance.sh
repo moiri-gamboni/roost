@@ -7,8 +7,16 @@
 # the device edge the metadata pool can no longer grow — the next metadata
 # spike aborts the transaction and force-flips the fs read-only (2026-08-19:
 # root went RO this way at df=75%). Relocating part-empty data chunks returns
-# their slack to the unallocated pool. Data chunks only: balancing metadata
-# would shrink the very pool this protects; dlimit bounds the weekly I/O.
+# their slack to the unallocated pool; dlimit bounds the weekly I/O.
+#
+# Metadata is left alone, except with --emergency (health-check.sh, below 5GiB
+# unallocated) while the metadata pool is under 60% full: then chunks under
+# half full are packed too. Slack inside metadata chunks is room only metadata
+# can use, which is why the steady-state pass keeps it; but once deletions have
+# emptied the pool it is the space that is missing. 2026-10-04: metadata used
+# fell from 17 to 11GiB of 21GiB allocated, unallocated sat at 4.8GiB, the data
+# pass and snapshot pruning reclaimed nothing, and -musage=50 returned 5.8GiB
+# while leaving the pool 72% full.
 #
 # A higher -dusage is not an escalation path: on chunks averaging 92% full
 # (2026-08-31), -dusage=90 relocated 15 chunks and LOST 0.3GiB of unallocated
@@ -22,13 +30,27 @@ unalloc_gib() {
         awk '/Device unallocated:/ {printf "%d", $3 / 1024^3}'
 }
 
+meta_pct() {
+    sudo -n btrfs filesystem usage -b "$1" 2>/dev/null | awk '/^Metadata,/ {
+        s = $2; u = $3; sub(/^Size:/, "", s); sub(/,$/, "", s); sub(/^Used:/, "", u)
+        if (s > 0) printf "%d", 100 * u / s }'
+}
+
+balance() {  # MNT FILTER...
+    local mnt=$1 before out; shift
+    before=$(unalloc_gib "$mnt")
+    if out=$(sudo -n btrfs balance start "$@" "$mnt" 2>&1); then
+        logger -t "$_HOOK_TAG" "$mnt $*: $out (unallocated ${before}GiB -> $(unalloc_gib "$mnt")GiB)"
+    else
+        logger -t "$_HOOK_TAG" "FAIL $mnt $*: $out"
+        ntfy_send -t "btrfs balance failed" -p "high" "$mnt: $out"
+    fi
+}
+
 for mnt in / /mnt/roost-data; do
     mountpoint -q "$mnt" || continue
-    before=$(unalloc_gib "$mnt")
-    if out=$(sudo -n btrfs balance start -dusage=50 -dlimit=30 "$mnt" 2>&1); then
-        logger -t "$_HOOK_TAG" "$mnt: $out (unallocated ${before}GiB -> $(unalloc_gib "$mnt")GiB)"
-    else
-        logger -t "$_HOOK_TAG" "FAIL $mnt: $out"
-        ntfy_send -t "btrfs balance failed" -p "high" "$mnt: $out"
+    balance "$mnt" -dusage=50 -dlimit=30
+    if [ "${1:-}" = --emergency ] && [ "$(unalloc_gib "$mnt")" -lt 5 ] && [ "$(meta_pct "$mnt")" -lt 60 ]; then
+        balance "$mnt" -musage=50
     fi
 done

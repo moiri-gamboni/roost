@@ -128,7 +128,8 @@ fi
 # spike force-flips the fs read-only (2026-08-19: root went RO at df=75%).
 # Below 5GiB the balance runs from here (at most once a day; the Sunday job is
 # the steady-state pass) and the alert says what it reclaimed. A balance only
-# returns slack from part-empty data chunks; when it reclaims nothing the
+# returns slack from part-empty chunks (data, and metadata when that pool is
+# mostly empty: btrfs-balance.sh --emergency); when it reclaims nothing the
 # chunks are full of live extents — in practice files that snapshots still
 # pin — and the remedy is pruning history or moving data off the filesystem:
 # the oldest timeline snapshots go, three per hour at most, until headroom is
@@ -155,7 +156,7 @@ if [ "${#UNALLOC_LOW[@]}" -gt 0 ]; then
     BALANCE_NOTE="balance already ran within 24h"
     if cooldown_ok "btrfs-balance-auto" 86400; then
         # Same lock as the cron line, so this never overlaps the Sunday run.
-        if flock -n "$HOME/.locks/btrfs-balance" "$(dirname "$0")/btrfs-balance.sh"; then
+        if flock -n "$HOME/.locks/btrfs-balance" "$(dirname "$0")/btrfs-balance.sh" --emergency; then
             BALANCE_NOTE="balance ran now"
         else
             BALANCE_NOTE="balance failed or already running"
