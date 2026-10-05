@@ -344,5 +344,10 @@
   "autoUploadSessions": false,
   "agentPushNotifEnabled": false,
   "skipAutoPermissionPrompt": true,
-  "model": "opus"
+  "model": "opus",
+  "voice": {
+    "enabled": true,
+    "mode": "hold"
+  },
+  "voiceEnabled": true
 }
