@@ -193,16 +193,24 @@ reset_run; reg_me idle; hold "$TASK" folder W "$$" 100 waiter
 expect "busy and idle again (a later turn's waiter takes over): exits 0" 0 "$(stop)"
 reset_run; reg_me idle; hold "$TASK" folder S "$S" 100 holder-S
 expect "only another session's holds: exits 0" 0 "$(stop)"
+reset_run; reg_me idle 17912; hold "$TASK" folder W "$$" 100 waiter
+( sleep 0.4; reg_me idle ) &
+s=$(date +%s%N); code=$(stop); e=$(date +%s%N)
+expect "a torn first idle reading (tiny statusUpdatedAt) does not start the clock" "2 after the limit" \
+    "$code $([ $(( (e - s) / 1000000 )) -ge 1300 ] && echo after the limit || echo at once)"
 reset_run; hold "$TASK" folder W "$$" 100 waiter
 rm "$CONFLICT_WATCH_REGISTRY/$$.json"
 expect "no registered claude ancestor: exits 0 (never a waiter it cannot place)" 0 "$(stop)"
 # a print run (`claude -p`) would run an asyncRewake hook synchronously and block on the wait
 s=$(date +%s%N)
 code=$(bash -c 'printf "{\"pid\":%s,\"sessionId\":\"W\",\"kind\":\"interactive\",\"status\":\"idle\",\"statusUpdatedAt\":%s}\n" $$ "$(date +%s%3N)" > "$1/$$.json"
-                printf "{\"session_id\":\"W\",\"hook_event_name\":\"Stop\"}" | "$2"; echo $?' _ "$CONFLICT_WATCH_REGISTRY" "$HOOK" -p)
+                printf "{\"session_id\":\"W\",\"hook_event_name\":\"Stop\"}" | "$2"; echo $?; rm "$1/$$.json"' _ "$CONFLICT_WATCH_REGISTRY" "$HOOK" -p)
 e=$(date +%s%N)
 expect "under a print run (-p in the session's argv): exits 0 at once" "0 fast" "$code $([ $(( (e - s) / 1000000 )) -lt 500 ] && echo fast || echo slow)"
-rm -f "$CONFLICT_WATCH_REGISTRY"/*.json.p "$CONFLICT_WATCH_REGISTRY/$$.json"
+reset_run; reg_me idle; hold "$TASK" folder W "$$" 100 waiter
+( sleep 0.4; date +%s > "$CONFLICT_WATCH_RUN/reminders/W" ) &
+expect "another waiter reminded first (same idle period): exits 0" 0 "$(stop)"
+rm -f "$CONFLICT_WATCH_REGISTRY/$$.json"
 unset CONFLICT_WATCH_IDLE CONFLICT_WATCH_POLL
 
 echo "== latency (ms per call, 20 calls each)"

@@ -2,12 +2,13 @@
 # conflict-watch hook: the session side of the conflict watch (files/scripts/conflict-watch.py).
 #
 # Wired for PreToolUse (every tool), PostToolUse (Edit, Write, MultiEdit, NotebookEdit, Bash),
-# UserPromptSubmit, and Stop as an asyncRewake entry (the idle reminder, below). The daemon records which open session holds which unit (a task folder, a
-# plans/notes/data entry, a whole repo) and publishes it in holds.tsv; this hook acts on it. It
+# UserPromptSubmit, and Stop as an asyncRewake entry (the idle reminder, below). The daemon
+# records which open session holds which unit (a task folder, a plans/notes/data entry, a whole
+# repo) and publishes it in holds.tsv; this hook acts on it. It
 # warns, and never raises a permission prompt: a warning is a deny, once per session, unit and
 # hold (acks/<sid>, keyed by the hold's `since`, so a release and re-hold or a new holder re-arms
 # it), and the retry passes. The model is told to ask the user in the conversation.
-#   - every event: hands the session's inbox (notices the daemon wrote: "you wrote into a unit
+#   - every event but Stop: hands the session's inbox (notices the daemon wrote: "you wrote into a unit
 #     another session holds, stop and ask", "another session wrote into yours") to the model;
 #   - Edit/Write/MultiEdit/NotebookEdit into a unit another open session holds, or a Bash command
 #     naming a path in one (absolute, ~/, or relative to the cwd or a `cd` in the command): the
@@ -84,7 +85,10 @@ idle_reminder() {
     mapfile -d '' -t argv < "/proc/$pid/cmdline"
     for a in "${argv[@]}"; do [ "$a" = -p ] || [ "$a" = --print ] && exit 0; done
     # Wait while the session stays idle: its registry status, and the time it went idle, unchanged.
-    # A new turn (busy) ends this waiter; that turn's Stop starts the next one.
+    # A new turn (busy) ends this waiter once it has seen the session idle; that turn's Stop starts
+    # the next one. Before that, a busy reading is tolerated for 120 s, so a short turn can end
+    # inside the window and two waiters can sit on the same idle period: the stamp is re-read
+    # before waking, and only the first of them wakes.
     while :; do
         [ -r "$REG/$pid.json" ] || exit 0
         IFS= read -r -d '' rj < "$REG/$pid.json"
@@ -93,7 +97,9 @@ idle_reminder() {
         re='"statusUpdatedAt": ?([0-9]+)'; [[ $rj =~ $re ]] && su=${BASH_REMATCH[1]} || exit 0
         now=${EPOCHSECONDS:-$(date +%s)}
         if [ "$status" = idle ]; then
-            [ -z "$mark" ] && mark=$su
+            # the first idle reading starts the clock, so it has to be this Stop's: one older
+            # than the waiter is a registry file read mid-write, and would wake at once
+            [ -z "$mark" ] && { [ $(( su / 1000 )) -ge $(( t0 - 120 )) ] || { sleep "$poll"; continue; }; mark=$su; }
             [ "$su" = "$mark" ] || exit 0
             ms=${EPOCHREALTIME/./}; [ $(( ms / 1000 - su )) -ge $(( idle * 1000 )) ] && break
         else
@@ -102,9 +108,10 @@ idle_reminder() {
         fi
         sleep "$poll"
     done
+    [ -r "$stamp" ] && read -r since < "$stamp"
     fresh || exit 0
     echo "$now" > "$stamp" || exit 0
-    echo "Conflict watch: this session has been idle for $(( idle / 60 )) min and still holds units it wrote into: $list. While it holds them, any other session that works there is stopped and has to ask the user. Release each unit whose work is finished (\`conflict-watch release <unit> …\`, or \`conflict-watch release\` for all of them) and keep the ones you will work in again; a later write there takes the hold back. This is an automated reminder from the conflict watch, not user input: answer with one short line saying what you released and what you kept." >&2
+    echo "This session has been idle for $(( idle / 60 )) min and still holds units it wrote into: $list. While it holds them, any other session that works there is stopped and has to ask the user. Release each unit whose work is finished (\`conflict-watch release <unit> …\`; with no unit it releases every unit this session holds, including any not listed here) and keep the ones you will work in again; a later write there takes the hold back. This is an automated reminder from the conflict watch, not user input: answer with one short line saying what you released and what you kept." >&2
     exit 2
 }
 [ "$event" = Stop ] && idle_reminder

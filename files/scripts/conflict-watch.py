@@ -2,20 +2,20 @@
 """conflict-watch: which open Claude Code session is working in which unit, so two sessions do not
 edit the same folder or repo without knowing.
 
-A unit is a folder the rules in conflict-watch.conf name: a task folder, a first-level entry of
-the workspace's plans/, notes/ or data/, or a whole code repo. A session holds every unit it
-writes into for as long as it is open (the Claude Code registry, $CLAUDE_CONFIG_DIR/sessions),
-until it or the user releases it (the hook wakes a session idle for 30 min on fresh holds to
-choose). The root daemon (`run`) sees every close-after-write on the
-mount holding ~/roost through fanotify — notification events only, so a dead or slow daemon
-never blocks a write — and credits it to a session by walking the writer's parent chain to the
-outermost registered claude process; the proc connector's fork events keep that chain for
-writers that exit before their event is read (`sed -i`). A write into a unit another open session
-holds puts a notice in both sessions' inboxes; the hook (hooks/conflict-watch-hook.sh) hands them
-to the model and warns before an Edit/Write there, a Bash command naming it, or a repo-wide git
-command that would change files another session wrote (`hook-git`). A warning is a deny, once per
-session, unit and hold; the retry passes. Nothing ever raises a permission prompt. If the daemon
-is down nothing is watched and nothing is blocked; the health check alerts.
+A unit is a folder the rules in conflict-watch.conf name: a task folder, a first-level entry of the
+workspace's plans/, notes/ or data/, or a whole code repo. A session holds every unit it writes into
+for as long as it is open (the Claude Code registry, $CLAUDE_CONFIG_DIR/sessions), until it or the
+user releases it (after 30 min idle, the hook wakes a session that wrote into units since its last
+reminder, to decide which to release). The root daemon (`run`) sees every close-after-write on the
+mount holding ~/roost through fanotify — notification events only, so a dead or slow daemon never
+blocks a write — and credits it to a session by walking the writer's parent chain to the outermost
+registered claude process; the proc connector's fork events keep that chain for writers that exit
+before their event is read (`sed -i`). A write into a unit another open session holds puts a notice
+in both sessions' inboxes; the hook (hooks/conflict-watch-hook.sh) hands them to the model and warns
+before an Edit/Write there, a Bash command naming it, or a repo-wide git command that would change
+files another session wrote (`hook-git`). A warning is a deny, once per session, unit and hold; the
+retry passes. Nothing ever raises a permission prompt. If the daemon is down nothing is watched and
+nothing is blocked; the health check alerts.
 
     conflict-watch status                  which session holds which unit, and the counters
     conflict-watch release [UNIT|PATH ...] [--session NAME|ID]
