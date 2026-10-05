@@ -27,14 +27,14 @@ session() {
 }
 
 reset_run() {
-    rm -rf "$CONFLICT_WATCH_RUN"; mkdir -p "$CONFLICT_WATCH_RUN"/{inbox,grants,acks,requests}
+    rm -rf "$CONFLICT_WATCH_RUN"; mkdir -p "$CONFLICT_WATCH_RUN"/{inbox,grants,acks,requests,reminders}
     printf '#daemon\t%s\n' "$$" > "$CONFLICT_WATCH_RUN/holds.tsv"
 }
 
-# hold UNIT KIND SID PID SINCE NAME — publish a hold as the daemon would
+# hold UNIT KIND SID PID SINCE NAME [LAST] — publish a hold as the daemon would (last write: 5 min ago)
 hold() {
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$(start_of "$4")" "$5" "$6" \
-        "$(( $(date +%s) - 300 ))" "$1/f.md" >> "$CONFLICT_WATCH_RUN/holds.tsv"
+        "${7:-$(( $(date +%s) - 300 ))}" "$1/f.md" >> "$CONFLICT_WATCH_RUN/holds.tsv"
 }
 
 # run EVENT TOOL INPUT_JSON [SID] [CWD] [TOOL_USE_ID] → hook stdout
@@ -160,6 +160,50 @@ printf '{"pid":%s,"sessionId":"OUTER","name":"outer","status":"busy","procStart"
 hold "$TASK" folder OUTER "$$" 100 outer
 expect "the hook's own ancestor session holding the unit: pass" none "$(decision "$(edit "$TASK/a.md" INNER)")"
 rm "$CONFLICT_WATCH_REGISTRY/$$.json"
+
+echo "== idle reminder (Stop, asyncRewake): an idle session still holding units is woken once"
+# The test shell stands in for the claude process: the hook finds it among its ancestors.
+export CONFLICT_WATCH_IDLE=1 CONFLICT_WATCH_POLL=0.1
+reg_me() {  # reg_me STATUS [STATUS_SINCE_MS] — (re)write this shell's registry entry as session W
+    printf '{"pid":%s,"sessionId":"W","name":"waiter","kind":"interactive","status":"%s","statusUpdatedAt":%s,"procStart":"%s"}\n' \
+        "$$" "$1" "${2:-$(date +%s%3N)}" "$(start_of $$)" > "$CONFLICT_WATCH_REGISTRY/$$.json"
+}
+stop() {  # stop → the hook's stderr in $T/err, its exit code as output
+    printf '{"session_id":"W","hook_event_name":"Stop","stop_hook_active":false,"cwd":"/tmp"}' | "$HOOK" 2> "$T/err"
+    echo $?
+}
+reset_run; reg_me idle
+expect "no holds: exits 0" 0 "$(stop)"
+reset_run; reg_me idle; hold "$TASK" folder W "$$" 100 waiter
+s=$(date +%s%N); code=$(stop); e=$(date +%s%N)
+expect "holds and idle past the limit: wakes (exit 2)" 2 "$code"
+expect "after the idle limit, not before" yes "$([ $(( (e - s) / 1000000 )) -ge 900 ] && echo yes || echo no)"
+has "names the unit" "$TASK" "$(cat "$T/err")"
+has "says how to release" "conflict-watch release" "$(cat "$T/err")"
+expect "once: nothing written since the reminder, so the next Stop exits 0" 0 "$(stop)"
+reset_run_keep_reminders() { local r; r=$(cat "$CONFLICT_WATCH_RUN/reminders/W"); reset_run; printf '%s\n' "$r" > "$CONFLICT_WATCH_RUN/reminders/W"; }
+sleep 1; reset_run_keep_reminders; hold "$TASK" folder W "$$" 100 waiter "$(date +%s)"
+expect "a write after the reminder re-arms it" 2 "$(stop)"
+reset_run; reg_me idle; hold "$TASK" folder W "$$" 100 waiter
+( sleep 0.4; reg_me busy ) &
+expect "the session turns busy while waiting: exits 0" 0 "$(stop)"
+expect "and says nothing" "" "$(cat "$T/err")"
+reset_run; reg_me idle; hold "$TASK" folder W "$$" 100 waiter
+( sleep 0.4; reg_me idle ) &
+expect "busy and idle again (a later turn's waiter takes over): exits 0" 0 "$(stop)"
+reset_run; reg_me idle; hold "$TASK" folder S "$S" 100 holder-S
+expect "only another session's holds: exits 0" 0 "$(stop)"
+reset_run; hold "$TASK" folder W "$$" 100 waiter
+rm "$CONFLICT_WATCH_REGISTRY/$$.json"
+expect "no registered claude ancestor: exits 0 (never a waiter it cannot place)" 0 "$(stop)"
+# a print run (`claude -p`) would run an asyncRewake hook synchronously and block on the wait
+s=$(date +%s%N)
+code=$(bash -c 'printf "{\"pid\":%s,\"sessionId\":\"W\",\"kind\":\"interactive\",\"status\":\"idle\",\"statusUpdatedAt\":%s}\n" $$ "$(date +%s%3N)" > "$1/$$.json"
+                printf "{\"session_id\":\"W\",\"hook_event_name\":\"Stop\"}" | "$2"; echo $?' _ "$CONFLICT_WATCH_REGISTRY" "$HOOK" -p)
+e=$(date +%s%N)
+expect "under a print run (-p in the session's argv): exits 0 at once" "0 fast" "$code $([ $(( (e - s) / 1000000 )) -lt 500 ] && echo fast || echo slow)"
+rm -f "$CONFLICT_WATCH_REGISTRY"/*.json.p "$CONFLICT_WATCH_REGISTRY/$$.json"
+unset CONFLICT_WATCH_IDLE CONFLICT_WATCH_POLL
 
 echo "== latency (ms per call, 20 calls each)"
 reset_run; hold "$TASK" folder S "$S" 100 holder-S; hold "$REPO" repo U "$U" 100 holder-U

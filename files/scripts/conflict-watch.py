@@ -5,7 +5,8 @@ edit the same folder or repo without knowing.
 A unit is a folder the rules in conflict-watch.conf name: a task folder, a first-level entry of
 the workspace's plans/, notes/ or data/, or a whole code repo. A session holds every unit it
 writes into for as long as it is open (the Claude Code registry, $CLAUDE_CONFIG_DIR/sessions),
-until it or the user releases it. The root daemon (`run`) sees every close-after-write on the
+until it or the user releases it (the hook wakes a session idle for 30 min on fresh holds to
+choose). The root daemon (`run`) sees every close-after-write on the
 mount holding ~/roost through fanotify — notification events only, so a dead or slow daemon
 never blocks a write — and credits it to a session by walking the writer's parent chain to the
 outermost registered claude process; the proc connector's fork events keep that chain for
@@ -322,9 +323,10 @@ class Attributor:
 #   inbox/<sid>      notices for a session; the daemon appends, the hook takes the whole file
 #   grants/<sid>     units the user let this session into (unit, holder, since|*): `allow`
 #   acks/<sid>       holds this session was already warned about (unit, holder, since)
+#   reminders/<sid>  when the hook's idle reminder last woke this session (epoch seconds)
 #   requests/        release requests from the CLI
 
-SUBDIRS = ("inbox", "grants", "acks", "requests")
+SUBDIRS = ("inbox", "grants", "acks", "requests", "reminders")
 
 
 def quoted(name):
@@ -632,7 +634,7 @@ class Watch:
             for sid in [s for s in self.holds[u] if s not in open_sids]:
                 self.release(sid, u)
         now = time.time()
-        for d in ("inbox", "grants", "acks"):
+        for d in ("inbox", "grants", "acks", "reminders"):
             for name in os.listdir(os.path.join(self.run, d)):
                 sid = name.lstrip(".").split(".")[0]
                 p = os.path.join(self.run, d, name)

@@ -1,8 +1,8 @@
 #!/bin/bash
 # conflict-watch hook: the session side of the conflict watch (files/scripts/conflict-watch.py).
 #
-# Wired for PreToolUse (every tool), PostToolUse (Edit, Write, MultiEdit, NotebookEdit, Bash) and
-# UserPromptSubmit. The daemon records which open session holds which unit (a task folder, a
+# Wired for PreToolUse (every tool), PostToolUse (Edit, Write, MultiEdit, NotebookEdit, Bash),
+# UserPromptSubmit, and Stop as an asyncRewake entry (the idle reminder, below). The daemon records which open session holds which unit (a task folder, a
 # plans/notes/data entry, a whole repo) and publishes it in holds.tsv; this hook acts on it. It
 # warns, and never raises a permission prompt: a warning is a deny, once per session, unit and
 # hold (acks/<sid>, keyed by the hold's `since`, so a release and re-hold or a new holder re-arms
@@ -15,7 +15,9 @@
 #     the session; `conflict-watch allow` (a grant) records the user's go-ahead and ends those;
 #   - Bash running a repo-wide git command (add -A, commit -a, stash, checkout, restore, reset
 #     --hard, switch, merge, rebase, pull, …): `conflict-watch hook-git` warns when the command
-#     would change files another open session wrote in that repo.
+#     would change files another open session wrote in that repo;
+#   - Stop: a session that wrote into units and then stays idle for 30 min is woken once to
+#     release the ones it is done with (idle_reminder).
 #
 # Fast path, because it runs on every tool call of every session: no subprocess until there is
 # something to do. The payload's leading fields (session_id … tool_name) come from a bounded
@@ -43,6 +45,69 @@ re='"hook_event_name":"([A-Za-z]+)"';      [[ $payload =~ $re ]] || exit 0; even
 tool=""; re='"tool_name":"([A-Za-z_]+)"';  [[ $payload =~ $re ]] && tool=${BASH_REMATCH[1]}
 cwd=/;   re='"cwd":"([^"]*)"';             [[ $payload =~ $re ]] && cwd=${BASH_REMATCH[1]}
 read_rest() { [ "$full" = 1 ] && return; local rest; rest=$(cat); payload+=$rest; full=1; }
+
+# --- Stop: the idle reminder --------------------------------------------------------
+# Wired as an asyncRewake entry on Stop: the harness backgrounds it, and its exit 2 wakes the
+# session with stderr as a system reminder. When the session has written into units since its last
+# reminder and then stays idle for $CONFLICT_WATCH_IDLE seconds, it is woken once to release the
+# ones it is done with. Every other path exits 0, which wakes nothing.
+stat_of() {  # stat_of PID → STAT: the fields after the command name (ppid = 2, start time = 20)
+    local st
+    [ -r "/proc/$1/stat" ] && read -r st < "/proc/$1/stat" || return 1
+    # shellcheck disable=SC2206  # word-splitting the stat fields is the point
+    STAT=(_ ${st##*) })
+}
+idle_reminder() {
+    local idle=${CONFLICT_WATCH_IDLE:-1800} poll=${CONFLICT_WATCH_POLL:-15} stamp=$RUN/reminders/$sid
+    local since=0 p=$PPID n rj pid="" start re mark="" su status a list="" now t0 ms
+    now=${EPOCHSECONDS:-$(date +%s)}; t0=$now
+    [ -r "$stamp" ] && read -r since < "$stamp"
+    fresh() {  # this session's holds written after the last reminder → list
+        local unit hsid hlast _r; list=""
+        while IFS=$'\t' read -r unit _r hsid _r _r _r _r hlast _r; do
+            [ "$hsid" = "$sid" ] && [ "${hlast:-0}" -gt "$since" ] && list+="${list:+, }$unit (last write $(( (now - hlast) / 60 )) min ago)"
+        done < "$HOLDS"
+        [ -n "$list" ]
+    }
+    fresh || exit 0
+    # The session's claude process: the nearest ancestor registered under this session id. Under
+    # `claude -p` the harness runs an asyncRewake hook synchronously, so a wait would block the
+    # print run: a -p in its argv, or no such ancestor at all, ends it here.
+    for (( n = 0; n < 16 && p > 1; n++ )); do
+        rj=""; [ -r "$REG/$p.json" ] && IFS= read -r -d '' rj < "$REG/$p.json"
+        re='"sessionId": ?"'$sid'"'
+        [[ $rj =~ $re ]] && { pid=$p; break; }
+        stat_of "$p" || break; p=${STAT[2]}
+    done
+    [ -n "$pid" ] && stat_of "$pid" || exit 0
+    start=${STAT[20]}
+    mapfile -d '' -t argv < "/proc/$pid/cmdline"
+    for a in "${argv[@]}"; do [ "$a" = -p ] || [ "$a" = --print ] && exit 0; done
+    # Wait while the session stays idle: its registry status, and the time it went idle, unchanged.
+    # A new turn (busy) ends this waiter; that turn's Stop starts the next one.
+    while :; do
+        [ -r "$REG/$pid.json" ] || exit 0
+        IFS= read -r -d '' rj < "$REG/$pid.json"
+        stat_of "$pid" && [ "${STAT[20]}" = "$start" ] || exit 0
+        re='"status": ?"([a-z]+)"'; [[ $rj =~ $re ]] && status=${BASH_REMATCH[1]} || exit 0
+        re='"statusUpdatedAt": ?([0-9]+)'; [[ $rj =~ $re ]] && su=${BASH_REMATCH[1]} || exit 0
+        now=${EPOCHSECONDS:-$(date +%s)}
+        if [ "$status" = idle ]; then
+            [ -z "$mark" ] && mark=$su
+            [ "$su" = "$mark" ] || exit 0
+            ms=${EPOCHREALTIME/./}; [ $(( ms / 1000 - su )) -ge $(( idle * 1000 )) ] && break
+        else
+            [ -n "$mark" ] && exit 0
+            [ $(( now - t0 )) -gt 120 ] && exit 0           # never went idle after this Stop
+        fi
+        sleep "$poll"
+    done
+    fresh || exit 0
+    echo "$now" > "$stamp" || exit 0
+    echo "Conflict watch: this session has been idle for $(( idle / 60 )) min and still holds units it wrote into: $list. While it holds them, any other session that works there is stopped and has to ask the user. Release each unit whose work is finished (\`conflict-watch release <unit> …\`, or \`conflict-watch release\` for all of them) and keep the ones you will work in again; a later write there takes the hold back. This is an automated reminder from the conflict watch, not user input: answer with one short line saying what you released and what you kept." >&2
+    exit 2
+}
+[ "$event" = Stop ] && idle_reminder
 
 # --- the inbox -------------------------------------------------------------------
 ctx=""

@@ -28,7 +28,8 @@
       "mcp__notion__API-retrieve-*",
       "mcp__notion__API-list-data-source-templates",
       "mcp__notion__API-post-search",
-      "mcp__notion__API-query-data-source"
+      "mcp__notion__API-query-data-source",
+      "Bash(conflict-watch release:*)"
     ],
     "ask": [
       "mcp__notion__API-patch-*",
@@ -231,6 +232,17 @@
             "type": "command",
             "command": "bash /home/moiri/roost/code/session/session --turn-end || true",
             "timeout": 2
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/conflict-watch-hook.sh",
+            "asyncRewake": true,
+            "rewakeMessage": "Conflict watch (idle reminder):",
+            "rewakeSummary": "conflict watch: idle with held units — release reminder"
           }
         ]
       }
