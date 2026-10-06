@@ -299,6 +299,8 @@ class Attribution(RegistryFixture):
         daemon = self.procs.spawn(["bash", "-c", "sleep 60 & echo $!; wait", "shared-daemon-stand-in"],
                                   env=dict(os.environ, CLAUDE_CODE_SESSION_ID="A"))
         child = int(daemon.stdout.readline())
+        while (cw.proc_argv(child) or ["sleep"])[0] != "sleep":   # until the forked subshell has exec'd
+            time.sleep(0.001)
         self.assertTrue(cw.writer_skipped(rules, cw.Lineage(), child, session_pid=None))
         # the walk stops at the session: a session's own ancestors never decide for it
         self.assertFalse(cw.writer_skipped(rules, cw.Lineage(), child, session_pid=daemon.pid))
