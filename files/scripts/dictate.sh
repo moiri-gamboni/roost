@@ -32,22 +32,29 @@ say() { show -d 4000 "$*"; logger -t roost/dictate -- "$*"; }
 # handled failures say why and exit 0: a non-zero exit makes run-shell put the pane in view mode
 fail() { say "🎤 dictate: $*"; exit 0; }
 # A red bar in the status line of the tmux session holding the pane, for as
-# long as a recording runs or a transcription is pending (status is off
-# otherwise, and a display-message vanishes at the next keypress).
+# long as a recording runs or a transcription is pending (a display-message
+# vanishes at the next keypress). The session's own status setting (on for the
+# phone, off elsewhere: bashrc.sh) is kept in @dictate_status and put back after.
 bar() {
-    local sess
+    local sess st
     sess=$(tmux display -p -t "$1" '#{session_name}') || return 0
+    if [ -z "$(tmux show-options -qv -t "$sess" @dictate_status || true)" ]; then
+        st=$(tmux show-options -v -t "$sess" status || true)
+        tmux set -t "$sess" @dictate_status "${st:--}" || true   # - = none of its own
+    fi
     tmux set -t "$sess" status on \; set -t "$sess" status-right "" \; set -t "$sess" status-left-length 60 \
         \; set -t "$sess" status-left "#[bg=red,fg=white,bold] 🎤 $2 #[default]" || true
     # @dictating makes Esc cancel in this session (tmux.conf), only while recording
     if [ "${2#REC}" != "$2" ]; then tmux set -t "$sess" @dictating 1 || true; else tmux set -u -t "$sess" @dictating || true; fi
 }
 unbar() {
-    local sess o
+    local sess o st
     sess=$(tmux display -p -t "$1" '#{session_name}') || return 0
     # a newer recording runs: its own pane keeps (or regains) the bar
     if [ -f "$STATE/current" ]; then bar "$(sed -n 2p "$STATE/current")" "REC · Alt+M to stop · Esc to cancel"; return 0; fi
-    for o in status status-left status-right status-left-length @dictating; do tmux set -u -t "$sess" "$o" || true; done
+    st=$(tmux show-options -qv -t "$sess" @dictate_status || true)
+    for o in status status-left status-right status-left-length @dictating @dictate_status; do tmux set -u -t "$sess" "$o" || true; done
+    if [ -n "$st" ] && [ "$st" != - ]; then tmux set -t "$sess" status "$st" || true; fi
 }
 # Claude Code treats more than 800 characters arriving in one read as a paste
 # and collapses it into "[Pasted text #N]", so long text goes in ~300-character
