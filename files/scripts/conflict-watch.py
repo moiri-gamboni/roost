@@ -965,10 +965,10 @@ def unit_of_arg(rules, arg):
 
 
 def unit_arg(rules, arg, held=()):
-    """The unit an argument names. One of the `held` units is named exactly even when the rules
-    map it to nothing any more: a repo deleted while a session held it is still held."""
+    """The unit an argument names. A path that is exactly one of the `held` units names it, whatever
+    the rules map it to now: a repo deleted while a session held it is still held."""
     path, u = unit_of_arg(rules, arg)
-    if u is None and path in held:
+    if path in held:
         return path
     if u is None:
         raise SystemExit(f"conflict-watch: {arg} names no unit (read as {path})")

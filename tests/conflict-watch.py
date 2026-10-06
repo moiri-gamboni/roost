@@ -518,6 +518,9 @@ class UnitArguments(Fixture):
         self.assertEqual(cw.unit_arg(self.rules, "code/gone", held), f"{self.root}/code/gone")
         with self.assertRaises(SystemExit):
             cw.unit_arg(self.rules, "code/gone")
+        # a deleted nested repo maps to the repo around it by the rules, but its own hold is what it names
+        nested = f"{self.root}/code/server/files/gone"
+        self.assertEqual(cw.unit_arg(self.rules, nested, {nested: {}}), nested)
 
 
 class GitMaterialising(unittest.TestCase):
