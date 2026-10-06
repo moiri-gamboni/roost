@@ -143,6 +143,13 @@ class UnitMapping(Fixture):
         self.assertTrue(self.rules.skip_writer("/usr/bin/python3 /home/moiri/roost/work/tasksync/tasks pull --stage 1 --quiet"))
         self.assertFalse(self.rules.skip_writer("/usr/bin/python3 /home/moiri/roost/work/tasksync/tasks log t 'x'"))
 
+    def test_skip_writer_matches_the_shared_codex_daemon(self):
+        # the daemon carries the environment of whichever session started it, so crediting its
+        # writes (or its commands') through that environment names the wrong session
+        daemon = "/home/u/.codex/packages/standalone/releases/0.160.1-x86_64-unknown-linux-musl/bin/codex app-server --listen unix:// --managed-daemon"
+        self.assertTrue(self.rules.skip_writer(daemon))
+        self.assertFalse(self.rules.skip_writer("/usr/bin/python3 /home/u/bin/codex-notes.py"))
+
 
 def proc_start(pid):
     with open(f"/proc/{pid}/stat") as f:
@@ -255,6 +262,22 @@ class Attribution(RegistryFixture):
         self.assertEqual((s.sid, how), ("OUTER", "tree"))
         s, how = a.attribute(inner)
         self.assertEqual((s.sid, how), ("OUTER", "claude"))
+
+    def test_a_skipped_writer_covers_the_commands_it_runs(self):
+        # a child of a skip-writer process (a shell the shared Codex daemon runs, a subprocess
+        # of `tasks pull`) writes on its behalf too, whatever its own command line
+        rules = cw.Rules(self.root, [], [], ["*shared-daemon-stand-in*"])
+        daemon = self.procs.spawn(["bash", "-c", "sleep 60 & echo $!; wait", "shared-daemon-stand-in"],
+                                  env=dict(os.environ, CLAUDE_CODE_SESSION_ID="A"))
+        child = int(daemon.stdout.readline())
+        self.assertTrue(cw.writer_skipped(rules, cw.Lineage(), child, session_pid=None))
+        # the walk stops at the session: a session's own ancestors never decide for it
+        self.assertFalse(cw.writer_skipped(rules, cw.Lineage(), child, session_pid=daemon.pid))
+
+    def test_a_writer_outside_every_skip_rule_is_kept(self):
+        rules = cw.Rules(self.root, [], [], ["*shared-daemon-stand-in*"])
+        _, child = self.session_proc("A")
+        self.assertFalse(cw.writer_skipped(rules, cw.Lineage(), child, session_pid=None))
 
     def test_lineage_forgets_exited_processes_after_the_grace_period(self):
         lin = cw.Lineage(grace=10)

@@ -137,14 +137,6 @@ def proc_environ_sid(pid):
     return None
 
 
-def proc_cmdline(pid):
-    try:
-        with open(f"/proc/{pid}/cmdline", "rb") as f:
-            return f.read().replace(b"\0", b" ").decode(errors="replace").strip()
-    except (FileNotFoundError, ProcessLookupError):
-        return None
-
-
 # git subcommands that write committed content (a commit, a stash, the index) into the working tree:
 # a merge or fast-forward, a branch switch, a reset. Nobody's work in progress, so they hold nothing.
 GIT_MATERIALISING = {"merge", "pull", "checkout", "switch", "rebase", "reset", "restore", "cherry-pick",
@@ -267,6 +259,29 @@ class Lineage:
 
     def __len__(self):
         return len(self._parent)
+
+
+def chain_to_session(lineage, pid, session_pid, depth=16):
+    """The writer and each process between it and its session. When the session is not an
+    ancestor (a write credited through its environment), the whole chain up to init."""
+    p = pid
+    for _ in range(depth):
+        if p is None or p <= 1 or p == session_pid:
+            return
+        yield p
+        parent = lineage.parent(p)
+        if parent is None:
+            st = proc_stat(p)
+            parent = st[0] if st else None
+        p = parent
+
+
+def writer_skipped(rules, lineage, pid, session_pid):
+    """True when the writer, or a process between it and its session, matches a skip-writer rule:
+    a command a skipped tool runs writes on that tool's behalf (the shared Codex daemon's shells
+    carry the environment of whichever session started the daemon, not the one they work for)."""
+    return any(rules.skip_writer(" ".join(lineage.argv(p) or []))
+               for p in chain_to_session(lineage, pid, session_pid))
 
 
 class Attributor:
@@ -798,8 +813,7 @@ class Daemon:
         self.watch.count("by_" + how)
         if session is None:
             return False
-        cmd = proc_cmdline(pid)
-        if cmd and self.rules.skip_writer(cmd):
+        if writer_skipped(self.rules, self.lineage, pid, session.pid):
             self.watch.count("skip_writer")
             return False
         if self.by_git_materialising(pid, session.pid):
@@ -816,18 +830,8 @@ class Daemon:
     def by_git_materialising(self, pid, session_pid):
         """True when the writer, or a process between it and its session, is git laying committed
         content into the tree (a checkout hook or `git pull`'s merge child count too)."""
-        p = pid
-        for _ in range(16):
-            if p is None or p <= 1 or p == session_pid:
-                return False
-            if git_materialises(self.lineage.argv(p) or []):
-                return True
-            parent = self.lineage.parent(p)
-            if parent is None:
-                st = proc_stat(p)
-                parent = st[0] if st else None
-            p = parent
-        return False
+        return any(git_materialises(self.lineage.argv(p) or [])
+                   for p in chain_to_session(self.lineage, pid, session_pid))
 
     SETTLE = 0.2
     MAX_SETTLING = 4096         # a burst beyond this is named early rather than hold more fds
