@@ -240,7 +240,8 @@ _roost_status_for_client() {
 
 # Kill grouped sessions whose PID suffix no longer exists. Only sweeps
 # PID-style suffixes (main-<pid>, main-vsc<pid>), never named ones
-# (laptop/pixel/etc).
+# (laptop/pixel/etc), and only once no client holds them: kill-session under a
+# client the server still has can segfault it (extras/vscode-tmux-tabs/vsc-pin.sh).
 _sweep_dead_groups() {
     tmux list-sessions -F '#{session_name}' 2>/dev/null | while read -r s; do
         local pid
@@ -250,7 +251,8 @@ _sweep_dead_groups() {
             *)         continue ;;
         esac
         [[ "$pid" =~ ^[0-9]+$ ]] || continue  # named group — keep
-        kill -0 "$pid" 2>/dev/null || tmux kill-session -t "$s" 2>/dev/null
+        kill -0 "$pid" 2>/dev/null && continue
+        [ -z "$(tmux list-clients -t "$s")" ] && tmux kill-session -t "$s" 2>/dev/null
     done
 }
 
