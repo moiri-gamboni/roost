@@ -492,6 +492,17 @@ class UnitArguments(Fixture):
         os.makedirs(f"{self.root}/work/tasks/t9")
         self.assertEqual(cw.unit_arg(self.rules, f"{self.root}/work/tasks/t9"), f"{self.root}/work/tasks/t9")
 
+    def test_a_unit_as_status_prints_it_from_inside_another_repo(self):
+        # status names units from the root; run from inside a repo, that name is not a path there
+        os.makedirs(f"{self.root}/work/tasks/t9")
+        os.makedirs(f"{self.root}/code/server/files", exist_ok=True)
+        cwd = os.getcwd()
+        self.addCleanup(os.chdir, cwd)
+        os.chdir(f"{self.root}/code/server")
+        self.assertEqual(cw.unit_arg(self.rules, "work/tasks/t9"), f"{self.root}/work/tasks/t9")
+        self.assertEqual(cw.unit_arg(self.rules, "code/server/files/private"), f"{self.root}/code/server/files/private")
+        self.assertEqual(cw.unit_arg(self.rules, "files"), f"{self.root}/code/server")    # a path from here stays one
+
 
 class GitMaterialising(unittest.TestCase):
     """Writes git makes while laying committed content into the tree hold nothing."""

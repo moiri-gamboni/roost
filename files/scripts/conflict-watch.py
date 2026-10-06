@@ -951,8 +951,13 @@ def resolve_session(registry, ref):
 
 def unit_arg(rules, arg):
     """The unit a path names, as the daemon would map a write there: a directory is resolved from
-    inside (a nested repo's directory is that repo, not the one around it)."""
+    inside (a nested repo's directory is that repo, not the one around it). A relative path that
+    exists only under the root is a unit name as `status` prints it."""
     path = os.path.abspath(os.path.expanduser(arg)).rstrip("/")
+    if not os.path.isabs(os.path.expanduser(arg)) and not os.path.lexists(path):
+        under_root = os.path.join(rules.root, arg).rstrip("/")
+        if os.path.lexists(under_root):
+            path = under_root
     u = (rules.unit_of(os.path.join(path, ".probe")) if os.path.isdir(path) else None) or rules.unit_of(path)
     if u is None:
         raise SystemExit(f"conflict-watch: {path} is in no unit")
