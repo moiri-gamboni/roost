@@ -85,7 +85,7 @@ Install and connect Tailscale. The optional tools in `files/laptop/` each have a
 ### Phone (GrapheneOS / Android)
 
 1. **Tailscale** from F-Droid; join your tailnet.
-2. **Termux** from F-Droid (not Google Play; on GrapheneOS it may need "exploit protection compatibility mode"), then `pkg install et openssh pulseaudio`. For the microphone, also install **Termux:API** from F-Droid and allow it Microphone in Android's app settings (Termux runs under the same Android user ID, so it gets the grant). Add to the phone's `~/.bashrc`:
+2. **Termux** from F-Droid (not Google Play; on GrapheneOS it may need "exploit protection compatibility mode"), then `pkg install et openssh pulseaudio`. For the microphone, also install the **Termux:API** app from the same source as Termux (F-Droid and GitHub builds are signed with different keys and refuse to mix; `termux-info` shows `TERMUX_APK_RELEASE`) and allow it Microphone in Android's app settings (Termux runs under the same Android user ID, so it gets the grant). Add to the phone's `~/.bashrc`:
 
    ```bash
    cc() {
