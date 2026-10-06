@@ -7,12 +7,33 @@
 # grouped session. The VS Code extension bundles and calls this.
 #
 # Usage: vsc-pin <grouped-session-name> <window-target>
+#        vsc-pin --close <grouped-session-name>
 #   window-target: a window id (@N, preferred — stable), index, or exact name.
 # Env:
 #   ROOST_BASE          base session (default: main); override only for testing.
 #   ROOST_TMUX_STATUS   on|off (default off) — tmux status bar inside the tab;
 #                       off by default since the VS Code tab already labels it.
 set -uo pipefail
+
+# --close: the only way a grouped view is ended (the pin hook below and the
+# extension both call it). Never kill-session a session a client still holds:
+# that sets the client's session to NULL while it is still alive and reading its
+# tty, and tmux (3.4 and master alike) dereferences it unchecked on a focus
+# in/out key (tty-keys.c, window_update_focus(c->session->curw->window)), so one
+# VS Code focus change in that window segfaults the server and every session in
+# it. detach-client keeps the pointer until the client exits; kill once
+# list-clients is empty. Not #{session_attached}: it reads 0 while a detaching
+# client still holds the session. A client still there after 5s keeps the
+# session; the extension's orphan sweep comes back to it.
+if [ "${1:-}" = --close ]; then
+  s=${2:?usage: vsc-pin --close <session-name>}
+  tmux detach-client -s "$s"
+  for _ in $(seq 50); do
+    [ -z "$(tmux list-clients -t "$s")" ] && exec tmux kill-session -t "$s"
+    sleep 0.1
+  done
+  exit 1
+fi
 
 name=${1:?usage: vsc-pin <session-name> <window-target>}
 win=${2:?usage: vsc-pin <session-name> <window-target>}
@@ -59,16 +80,17 @@ tmux set-option -t "$name" set-titles on
 tmux set-option -t "$name" set-titles-string '#{pane_title}'
 
 # Pin: on any active-window change of this grouped session, snap back to the
-# pinned window if it still exists, and ONLY self-destruct if it has truly
-# closed. `select-window` is both the test and the snap-back: it fails (→ kill)
+# pinned window if it still exists, and ONLY self-destruct (--close) if it has
+# truly closed. `select-window` is both the test and the snap-back: it fails (→ close)
 # exactly when the pinned window is gone (agent exited), and otherwise just
 # re-pins (a manual switch, or a spurious change from some other tmux op — the
 # latter is what used to kill healthy tabs and cause flicker). Scoped to THIS
 # session, armed AFTER the pin so it doesn't fire on the pin itself.
 if [ "${ROOST_PIN:-1}" = 1 ]; then
   pinned=$(tmux display-message -p -t "$name" '#{window_id}')
+  self=$(realpath "$0")
   tmux set-hook -t "$name" session-window-changed \
-    "run-shell -b 'tmux select-window -t \"$name:$pinned\" || tmux kill-session -t \"$name\"'"
+    "run-shell -b 'tmux select-window -t \"$name:$pinned\" || bash \"$self\" --close \"$name\"'"
 fi
 
 exec tmux attach-session -t "$name"

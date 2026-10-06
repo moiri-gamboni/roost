@@ -126,10 +126,16 @@ async function listWindows() {
   return wins;
 }
 
-const killSession = (name) => tmux(['kill-session', '-t', name]);
+// End one of our grouped sessions through `vsc-pin.sh --close`: detach, then
+// kill once no client holds it. A bare kill-session under a still-attached
+// client can segfault the tmux server (the reason is in vsc-pin.sh).
+const closeSession = (name) => new Promise((resolve) => {
+  execFile('/bin/bash', [wrapperPath, '--close', name], () => resolve());
+});
 
-// Kill our grouped sessions with no client attached (orphans from a closed tab,
-// crash, or reload). An in-use tab keeps its session attached, so it's spared.
+// Close our grouped sessions with no client attached (orphans from a closed tab,
+// crash, or reload). An in-use tab keeps its session attached, so it's spared;
+// a client still detaching reads as unattached, which --close waits out.
 async function sweepOrphans() {
   const r = await tmux(['list-sessions', '-F', '#{session_name}\t#{session_attached}']);
   if (r.code !== 0) return;
@@ -138,7 +144,7 @@ async function sweepOrphans() {
     const [name, attached] = line.split('\t');
     if (name.startsWith(SESSION_PREFIX) && attached === '0') {
       dbg(`sweep ${name} (unattached orphan)`);
-      await killSession(name);
+      await closeSession(name);
     }
   }
 }
@@ -316,11 +322,11 @@ function openTab(win) {
   dbg(`open  ${win.id} win=${win.windowName} title=${JSON.stringify(win.title || '')} owned=${owned.size}`);
 }
 
-// Dispose a tab and forget it (kill our session first so onClose is a no-op).
+// Dispose a tab and forget it (close our session first so onClose is a no-op).
 async function dropTab(id, term, reason = '?') {
   owned.delete(id);
   tabName.delete(id);
-  await killSession(sessionName(id));
+  await closeSession(sessionName(id));
   term.dispose();
   dbg(`drop  ${id} reason=${reason} owned=${owned.size}`);
 }
@@ -393,14 +399,14 @@ async function reconcile({ explicit = false } = {}) {
   }
 }
 
-// User closed one of our tabs by hand: kill its session; if its window still
+// User closed one of our tabs by hand: close its session; if its window still
 // exists, remember the dismissal so autosync won't reopen it.
 function onCloseTerminal(term) {
   for (const [id, t] of owned) {
     if (t !== term) continue;
     owned.delete(id);
     tabName.delete(id);
-    killSession(sessionName(id));
+    closeSession(sessionName(id));
     dbg(`close ${id} (user closed the tab) owned=${owned.size}`);
     listWindows().then((wins) => {
       if (wins && wins.some((w) => w.id === id)) { dismissed.add(id); dbg(`dismiss ${id} (window still alive)`); }

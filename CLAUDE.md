@@ -42,7 +42,7 @@ and carry a drifted overlay key into the overlay by hand. Make the change in whi
 
 ## File Layout
 
-- `deploy.sh`, `test-server.sh`; `plans/` design docs; `reviews/`; `docs/runbooks/`; `tests/` (`agent-worktree.sh`, `agent-launch.sh`, `bashrc-reload.sh`, `conflict-watch.py`, `conflict-watch-daemon.sh`, `conflict-watch-e2e.sh`, `git-hook.sh`, `ram-monitor.sh`)
+- `deploy.sh`, `test-server.sh`; `plans/` design docs; `reviews/`; `docs/runbooks/`; `tests/` (`agent-worktree.sh`, `agent-launch.sh`, `bashrc-reload.sh`, `conflict-watch.py`, `conflict-watch-daemon.sh`, `conflict-watch-e2e.sh`, `git-hook.sh`, `ram-monitor.sh`, `vsc-pin-close.sh`)
 - `files/` — everything deployed to the server; per-file detail in `files/CLAUDE.md`
   - `setup/` — one script per concern, run by `deploy.sh`, all sourcing `files/_setup-env.sh`
   - `hooks/` → `~/roost/claude/hooks/` — Claude Code event hooks, wired in `settings.json`: `notify`, `shellcheck-edit`, `instruction-file-edit`, `notion-write-guard`, `beeper-send-guard`, `truncation-guard` (deployed but unwired), `fork-context-guard`, `redelegation-guard`, `light-subagents-to-codex`, `subagent-context`, `roughdraft-write-guard`, `agent-browser-session`, `conflict-watch-hook`, plus `session-switch-notify` (the `session` CLI's push when the login switches by itself). Table and mechanism: `files/hooks/CLAUDE.md`; what a session does when one fires: the global CLAUDE.md. The usage, time-tracking and auto-resume hooks and the statusline come from the `session` clone. Hook config is read at session start, so a wiring change reaches new sessions only

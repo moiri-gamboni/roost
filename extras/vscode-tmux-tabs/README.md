@@ -27,7 +27,7 @@ in tmux.
 - **Auto-sync**: re-syncs when VS Code regains focus and polls every few seconds
   while focused, so new agents get a tab and closed ones lose theirs on their
   own. Manual close of a tab is remembered (not reopened until an explicit sync).
-- **No leaks**: grouped sessions are killed when their tab closes; orphans (from
+- **No leaks**: grouped sessions are closed when their tab closes (`vsc-pin.sh --close`: detach the tab's client, kill the session once no client holds it, since killing it under a live client can segfault the tmux server); orphans (from
   a reload/crash) are swept on startup — only *unattached* `vsc-*` sessions, so
   a live tab is never touched.
 
