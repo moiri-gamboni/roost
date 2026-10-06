@@ -22,7 +22,7 @@ The global `core.hooksPath` is `~/roost/claude/git-hooks/`, where each hook name
 
 The CLI, its statusline, its settings.json hook entries and the `~/bin/session` symlink come from the clone at `~/roost/code/session`, installed by its `install.sh` (README = ops contract; `session --help`). This repo deploys what feeds it on this box:
 
-- `files/session.conf` → `~/roost/claude/session.conf` — a copy of what `install.sh` writes: the data root `~/roost/claude/usage`, the tmux main guard, the attention bridge and tail, and the primary config dir. Keep it identical to the installer's output; `roost-apply diff` shows drift.
+- `files/session.conf` → `~/roost/claude/session.conf` — a copy of what `install.sh` writes: the data root `~/roost/claude/usage`, the tmux main guard, the attention bridge and tail, and the primary config dir, plus the hand-set lines the installer keeps: `SESSION_SWITCH_NOTIFY` and `SESSION_TASK_WORKSPACES` (`~/roost/*`: every task workspace under it, whose session-task pointer gives the statusline its task for a session working outside them, such as one in a code repo). Keep it identical to the installer's output; `roost-apply diff` shows drift.
 - `files/tmux.conf` — the focus hooks (`session --focus-mark`) behind attended time.
 - `files/cron-roost` — the hourly `session account expiry --notify`, which pushes two days and six hours before a saved login's sign-in ends.
 - `files/session-focus-tick.{service,timer}` — the 10 s activity sampler. The unit comments explain why `AccuracySec=1s` and `CLAUDE_CONFIG_DIR` must stay.
