@@ -476,7 +476,8 @@ class HoldLifecycle(WatchFixture):
 
 
 class UnitArguments(Fixture):
-    """`conflict-watch release/allow/unit PATH` resolve a path to the unit the daemon would."""
+    """`conflict-watch release/allow/unit` resolve a path, or a unit as `status` prints it, to the unit
+    the daemon would map a write there to."""
 
     def test_a_nested_repo_directory_is_its_own_unit(self):
         self.assertEqual(cw.unit_arg(self.rules, f"{self.root}/code/server/files/private"),
@@ -495,7 +496,6 @@ class UnitArguments(Fixture):
     def test_a_unit_as_status_prints_it_from_inside_another_repo(self):
         # status names units from the root; run from inside a repo, that name is not a path there
         os.makedirs(f"{self.root}/work/tasks/t9")
-        os.makedirs(f"{self.root}/code/server/files", exist_ok=True)
         cwd = os.getcwd()
         self.addCleanup(os.chdir, cwd)
         os.chdir(f"{self.root}/code/server")
@@ -503,6 +503,20 @@ class UnitArguments(Fixture):
         self.assertEqual(cw.unit_arg(self.rules, "code/server/files/private"), f"{self.root}/code/server/files/private")
         self.assertEqual(cw.unit_arg(self.rules, "files"), f"{self.root}/code/server")    # a path from here stays one
         with self.assertRaises(SystemExit):     # a name found nowhere never falls back to the repo it is typed in
+            cw.unit_arg(self.rules, "code/gone")
+        self.assertEqual(cw.unit_arg(self.rules, "work/tasks/gone"), f"{self.root}/work/tasks/gone")   # a moved task folder
+        self.assertEqual(cw.unit_arg(self.rules, "code/server/../gone/../server"), f"{self.root}/code/server")
+        self.assertEqual(cw.unit_of_arg(self.rules, "code/server/files/private")[0], f"{self.root}/code/server/files/private")
+
+    def test_a_held_repo_that_was_deleted_is_released_by_name(self):
+        # a deleted repo maps to no unit (no .git left), but its hold lasts until it is released
+        held = {f"{self.root}/code/gone": {}}
+        self.assertEqual(cw.unit_arg(self.rules, f"{self.root}/code/gone", held), f"{self.root}/code/gone")
+        cwd = os.getcwd()
+        self.addCleanup(os.chdir, cwd)
+        os.chdir(f"{self.root}/code/server")
+        self.assertEqual(cw.unit_arg(self.rules, "code/gone", held), f"{self.root}/code/gone")
+        with self.assertRaises(SystemExit):
             cw.unit_arg(self.rules, "code/gone")
 
 

@@ -22,8 +22,11 @@ health check alerts.
     conflict-watch release [UNIT|PATH ...] [--session NAME|ID]
                                            drop this session's holds (all of them without units)
     conflict-watch allow UNIT|PATH         the user said go ahead: work beside the holder, unflagged
-    conflict-watch unit PATH               the unit a path belongs to
-    conflict-watch run                     the daemon (root, conflict-watch.service)"""
+    conflict-watch unit UNIT|PATH          the unit a path belongs to
+    conflict-watch run                     the daemon (root, conflict-watch.service)
+
+UNIT is a unit as `status` prints it, relative to ~/roost; a relative argument that exists from the
+working directory is read as a path from there instead."""
 import collections
 import fnmatch
 import json
@@ -949,16 +952,26 @@ def resolve_session(registry, ref):
     return hits[0].sid
 
 
-def unit_arg(rules, arg):
-    """The unit a path names, as the daemon would map a write there: a directory is resolved from
-    inside (a nested repo's directory is that repo, not the one around it). A relative path that
-    does not exist from here is a unit name as `status` prints it, from the root."""
+def unit_of_arg(rules, arg):
+    """(path, unit or None) for a command-line argument, as the daemon would map a write there: a
+    directory is resolved from inside (a nested repo's directory is that repo, not the one around
+    it). A relative argument that does not exist from here is a unit as `status` prints it, from
+    the root."""
     path = os.path.abspath(os.path.expanduser(arg)).rstrip("/")
     if not os.path.isabs(os.path.expanduser(arg)) and not os.path.lexists(path):
-        path = os.path.join(rules.root, arg).rstrip("/")
+        path = os.path.abspath(os.path.join(rules.root, arg))
     u = (rules.unit_of(os.path.join(path, ".probe")) if os.path.isdir(path) else None) or rules.unit_of(path)
+    return path, u
+
+
+def unit_arg(rules, arg, held=()):
+    """The unit an argument names. One of the `held` units is named exactly even when the rules
+    map it to nothing any more: a repo deleted while a session held it is still held."""
+    path, u = unit_of_arg(rules, arg)
+    if u is None and path in held:
+        return path
     if u is None:
-        raise SystemExit(f"conflict-watch: {path} is in no unit")
+        raise SystemExit(f"conflict-watch: {arg} names no unit (read as {path})")
     return u[0]
 
 
@@ -984,10 +997,11 @@ def cmd_status(cfg, rules, registry, args):
 
 def cmd_release(cfg, rules, registry, args):
     sid = resolve_session(registry, args.session) if args.session else my_sid()
-    units = [unit_arg(rules, a) for a in args.units] or None
+    st = read_state(cfg["run"])
+    units = [unit_arg(rules, a, st["holds"] if st else ()) for a in args.units] or None
     if sid is None and units is None:
         raise SystemExit("conflict-watch: outside a session, name the units or --session")
-    if read_state(cfg["run"]) is None:
+    if st is None:
         print("conflict-watch: the daemon is not running; there are no holds to release")
         return 0
     ok = request_release(cfg["run"], sid, units)
@@ -1014,8 +1028,7 @@ def cmd_allow(cfg, rules, registry, args):
 
 
 def cmd_unit(cfg, rules, registry, args):
-    path = os.path.abspath(args.path).rstrip("/")
-    u = (rules.unit_of(os.path.join(path, ".probe")) if os.path.isdir(path) else None) or rules.unit_of(path)
+    _, u = unit_of_arg(rules, args.path)
     print(f"{u[0]}\t{u[1]}" if u else "none")
     return 0
 
@@ -1326,7 +1339,7 @@ def main(argv=None):
                                      "without its warnings or notices (both ways)")
     p.add_argument("unit", metavar="UNIT_OR_PATH")
     p = sub.add_parser("unit", help="the unit a path belongs to (a directory: the unit its contents belong to)")
-    p.add_argument("path")
+    p.add_argument("path", metavar="UNIT_OR_PATH")
     sub.add_parser("hook-git", help="(for the hook) PreToolUse payload on stdin")
     args = ap.parse_args(argv)
     cfg = defaults()
