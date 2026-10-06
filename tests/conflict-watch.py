@@ -502,6 +502,8 @@ class UnitArguments(Fixture):
         self.assertEqual(cw.unit_arg(self.rules, "work/tasks/t9"), f"{self.root}/work/tasks/t9")
         self.assertEqual(cw.unit_arg(self.rules, "code/server/files/private"), f"{self.root}/code/server/files/private")
         self.assertEqual(cw.unit_arg(self.rules, "files"), f"{self.root}/code/server")    # a path from here stays one
+        with self.assertRaises(SystemExit):     # a name found nowhere never falls back to the repo it is typed in
+            cw.unit_arg(self.rules, "code/gone")
 
 
 class GitMaterialising(unittest.TestCase):
