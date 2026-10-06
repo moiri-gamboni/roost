@@ -16,7 +16,7 @@ ok()  { printf '  ok   %s\n' "$*"; }
 bad() { printf '  FAIL %s\n' "$*"; fail=1; }
 
 # shellcheck disable=SC2086  # word-splitting the stat fields is the point
-start_of() { local st; read -r st < "/proc/$1/stat"; st=${st##*) }; set -- $st; echo "${20}"; }
+start_of() { local st; [ -r "/proc/$1/stat" ] || return 0; read -r st < "/proc/$1/stat"; st=${st##*) }; set -- $st; echo "${20}"; }
 
 # session SID NAME STATUS → pid of a live process registered as that session
 session() {
