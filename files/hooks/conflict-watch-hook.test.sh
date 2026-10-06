@@ -159,6 +159,13 @@ reset_run
 printf '{"pid":%s,"sessionId":"OUTER","name":"outer","status":"busy","procStart":"%s"}\n' "$$" "$(start_of $$)" > "$CONFLICT_WATCH_REGISTRY/$$.json"
 hold "$TASK" folder OUTER "$$" 100 outer
 expect "the hook's own ancestor session holding the unit: pass" none "$(decision "$(edit "$TASK/a.md" INNER)")"
+# a /fork runs under the shared `claude daemon run`, which may be its parent's (a script named
+# `daemon` run as `bash daemon run` has that argv): a session above the daemon is a stranger
+# shellcheck disable=SC2016  # the script expands its own $2
+printf '"$2"\n' > "$T/daemon"
+expect "a holder above a claude daemon run: warned" deny \
+    "$(decision "$(jq -nc --arg p "$TASK/a.md" '{session_id:"FORK", transcript_path:"/x.jsonl", cwd:"/tmp", hook_event_name:"PreToolUse", tool_name:"Edit", tool_input:{file_path:$p, old_string:"a", new_string:"b"}, tool_use_id:"toolu_1"}' \
+        | (cd "$T" && bash daemon run "$HOOK"))")"
 rm "$CONFLICT_WATCH_REGISTRY/$$.json"
 
 echo "== idle reminder (Stop, asyncRewake): an idle session still holding units is woken once"

@@ -9,13 +9,14 @@ user releases it (after 30 min idle, the hook wakes a session that wrote into un
 reminder, to decide which to release). The root daemon (`run`) sees every close-after-write on the
 mount holding ~/roost through fanotify — notification events only, so a dead or slow daemon never
 blocks a write — and credits it to a session by walking the writer's parent chain to the outermost
-registered claude process; the proc connector's fork events keep that chain for writers that exit
-before their event is read (`sed -i`). A write into a unit another open session holds puts a notice
-in both sessions' inboxes; the hook (hooks/conflict-watch-hook.sh) hands them to the model and warns
-before an Edit/Write there, a Bash command naming it, or a repo-wide git command that would change
-files another session wrote (`hook-git`). A warning is a deny, once per session, unit and hold; the
-retry passes. Nothing ever raises a permission prompt. If the daemon is down nothing is watched and
-nothing is blocked; the health check alerts.
+registered claude process below any `claude daemon run` (which hosts background sessions); the proc
+connector's fork events keep that chain for writers that exit before their event is read (`sed -i`).
+A write into a unit another open session holds puts a notice in both sessions' inboxes; the hook
+(hooks/conflict-watch-hook.sh) hands them to the model and warns before an Edit/Write there, a Bash
+command naming it, or a repo-wide git command that would change files another session wrote
+(`hook-git`). A warning is a deny, once per session, unit and hold; the retry passes. Nothing ever
+raises a permission prompt. If the daemon is down nothing is watched and nothing is blocked; the
+health check alerts.
 
     conflict-watch status                  which session holds which unit, and the counters
     conflict-watch release [UNIT|PATH ...] [--session NAME|ID]
@@ -164,6 +165,13 @@ def proc_argv(pid):
     return [a.decode(errors="replace") for a in raw.split(b"\0")[:-1]] if raw else None
 
 
+def hosts_sessions(argv):
+    """True for Claude Code's background-session supervisor (`claude daemon run`): one per user,
+    started by whichever session first needs it, it hosts every session's /fork and `claude --bg`
+    sessions, each a session of its own, so no walk up the tree goes past it."""
+    return bool(argv) and argv[1:3] == ["daemon", "run"]
+
+
 class Session:
     __slots__ = ("pid", "sid", "name", "status", "start")
 
@@ -285,9 +293,10 @@ def writer_skipped(rules, lineage, pid, session_pid):
 
 
 class Attributor:
-    """Which open session wrote: the outermost ancestor that is a registered claude process. A
-    `claude -p` started from a session's Bash registers as a session of its own, but it is that
-    session's helper; the outermost one is the session the user is working with."""
+    """Which open session wrote: the outermost ancestor that is a registered claude process, below
+    any `claude daemon run`. A `claude -p` started from a session's Bash registers as a session of
+    its own, but it is that session's helper; the outermost one is the session the user is working
+    with. A /fork runs under the shared daemon, which some session started: it is its own session."""
 
     MAX_DEPTH = 64
 
@@ -302,6 +311,8 @@ class Attributor:
         sessions = self.registry.open()
         p, reaped, found, first = pid, False, None, None
         for depth in range(self.MAX_DEPTH):
+            if hosts_sessions(proc_argv(p)):
+                break
             s = sessions.get(p)
             if s is not None:
                 found = s
@@ -1257,13 +1268,13 @@ def hook_git(cfg, rules, registry, payload, self_sids):
 
 
 def own_sessions(registry, sid):
-    """This session and the sessions above this process: a `claude -p` run from a session's Bash
-    registers as a session of its own, and its parent's work is its own."""
+    """This session and the sessions above this process, up to a `claude daemon run`: a `claude -p`
+    run from a session's Bash registers as a session of its own, and its parent's work is its own."""
     mine = {sid} if sid else set()
     sessions = registry.open(force=True)
     p = os.getppid()
     for _ in range(64):
-        if p <= 1:
+        if p <= 1 or hosts_sessions(proc_argv(p)):
             break
         if p in sessions:
             mine.add(sessions[p].sid)

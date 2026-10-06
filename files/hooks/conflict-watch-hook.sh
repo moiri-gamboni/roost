@@ -161,10 +161,12 @@ done < "$HOLDS"
 declare -a keep=("${!HU[@]}")
 
 declare -A ANCESTOR=()
-ancestors() {  # the pids above this hook; a holder among them is this session's own parent
+ancestors() {  # the pids above this hook, up to a `claude daemon run` (it hosts /fork sessions, which are their own)
     [ ${#ANCESTOR[@]} -gt 0 ] && return
-    local p=$PPID st n
+    local p=$PPID st n av
     for (( n = 0; n < 32 && p > 1; n++ )); do
+        { mapfile -d '' -t av < "/proc/$p/cmdline"; } 2>/dev/null || break
+        [ "${av[1]:-}" = daemon ] && [ "${av[2]:-}" = run ] && break
         ANCESTOR[$p]=1
         { read -r st < "/proc/$p/stat"; } 2>/dev/null || break
         st=${st##*) }

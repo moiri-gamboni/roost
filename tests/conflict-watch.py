@@ -17,6 +17,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "..", "files", "scripts", "conflict-watch.py")
@@ -262,6 +263,34 @@ class Attribution(RegistryFixture):
         self.assertEqual((s.sid, how), ("OUTER", "tree"))
         s, how = a.attribute(inner)
         self.assertEqual((s.sid, how), ("OUTER", "claude"))
+
+    def fork_tree(self):
+        """OUTER → `claude daemon run` → FORK → writer, as the shared daemon lays a fork out when OUTER
+        started the daemon (a script named `daemon` run as `bash daemon run` has the daemon's argv).
+        Returns (fork pid, writer pid)."""
+        with open(os.path.join(self.tmp, "daemon"), "w") as f:
+            f.write("bash -c 'sleep 60 & echo writer $!; wait' & echo fork $!; wait\n")
+        outer = self.procs.spawn(["bash", "-c", "bash daemon run & wait"], cwd=self.tmp)
+        pids = dict(outer.stdout.readline().split() for _ in range(2))
+        self.register(outer.pid, "OUTER")
+        self.register(int(pids["fork"]), "FORK")
+        return int(pids["fork"]), int(pids["writer"])
+
+    def test_a_session_the_daemon_hosts_works_for_itself(self):
+        # a /fork runs under the shared `claude daemon run`, whichever session started it, and is a
+        # session of its own
+        fork, writer = self.fork_tree()
+        a = self.attributor()
+        s, how = a.attribute(writer)
+        self.assertEqual((s.sid, how), ("FORK", "tree"))
+        s, how = a.attribute(fork)
+        self.assertEqual((s.sid, how), ("FORK", "claude"))
+
+    def test_a_session_the_daemon_hosts_does_not_own_its_parents_work(self):
+        _, writer = self.fork_tree()
+        reg = cw.Registry(self.reg)
+        with unittest.mock.patch.object(cw.os, "getppid", return_value=writer):
+            self.assertEqual(cw.own_sessions(reg, "FORK"), {"FORK"})
 
     def test_a_skipped_writer_covers_the_commands_it_runs(self):
         # a child of a skip-writer process (a shell the shared Codex daemon runs, a subprocess
