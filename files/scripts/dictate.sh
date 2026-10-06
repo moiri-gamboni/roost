@@ -1,7 +1,10 @@
 #!/bin/bash
 # dictate — push-to-talk dictation into a tmux pane (bound to Alt+M in tmux.conf).
 #
-#   dictate toggle PANE   first press: record the forwarded laptop microphone;
+#   dictate toggle PANE [SESSION]
+#                         first press: record the microphone the pressing
+#                         client forwards (SESSION is its tmux session), else
+#                         the laptop's;
 #                         second press: transcribe and type the text into the
 #                         pane where recording started, prefixed with 🎤 so the
 #                         reader knows it is speech-to-text, then a new line
@@ -13,7 +16,9 @@
 #                         Esc passes through untouched otherwise).
 #
 # Audio comes from the laptop mic forwarded over SSH (files/audio/,
-# README "Voice"). Transcription is ElevenLabs Scribe v2 in batch mode with
+# README "Voice"), or, pressed in a client's own session main-NAME, from the
+# socket that client forwards to $XDG_RUNTIME_DIR/pulse-fwd-NAME (the phone's
+# et -r, README "Phone"). Transcription is ElevenLabs Scribe v2 in batch mode with
 # no_verbatim (drops fillers, false starts, repeats) and the keyterms in
 # ~/.config/dictate/keyterms.txt (one per line, <= 5 words, keep it under 100:
 # past 100 every request bills at least 20 s). API key: ~/.config/dictate/elevenlabs-key.
@@ -22,7 +27,8 @@
 set -euo pipefail
 
 CONF="$HOME/.config/dictate"
-STATE="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/dictate"   # the recording in progress, the log
+RUN="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+STATE="$RUN/dictate"                                     # the recording in progress, the log
 KEEP="$HOME/.local/state/dictate"                        # audio or text a failure left behind
 MAX_SECONDS=600   # an abandoned recording stops itself
 
@@ -77,12 +83,16 @@ keep() { mkdir -p "$KEEP"; local to; to="$KEEP/$(date +%Y%m%d-%H%M%S)-$1"; mv "$
 start() {
     local wav
     wav="$STATE/rec-$(date +%s%N).wav"
+    local mic="$RUN/pulse-fwd-${2#main-}" from="the laptop mic forwarded over SSH"
+    if [ -S "$mic" ]; then export PULSE_SERVER="unix:$mic"; from="the mic this client forwards to $mic"; fi
     arecord -q -f S16_LE -r 16000 -c 1 -d "$MAX_SECONDS" "$wav" 2>"$wav.err" &
     printf '%s\n%s\n%s\n' "$!" "$1" "$wav" > "$STATE/current"
     sleep 0.3
     if [ ! -d "/proc/$!" ]; then
-        rm -f "$STATE/current" "$wav"
-        fail "microphone unavailable ($(head -c 200 "$wav.err")). Is the VS Code SSH connection forwarding it?"
+        local err
+        err=$(head -c 200 "$wav.err")
+        rm -f "$STATE/current" "$wav" "$wav.err"
+        fail "microphone unavailable ($err). Is $from up?"
     fi
     bar "$1" "REC · Alt+M to stop · Esc to cancel"
 }
@@ -152,16 +162,16 @@ cancel() {
 
 case "${1:-}" in
     toggle)
-        [ -n "${2:-}" ] || { echo "usage: dictate toggle PANE" >&2; exit 2; }
+        [ -n "${2:-}" ] || { echo "usage: dictate toggle PANE [SESSION]" >&2; exit 2; }
         # run-shell would show any output in the pane, so it goes to a log instead
         mkdir -p "$STATE"
         exec >>"$STATE/log" 2>&1
         trap 'say "🎤 dictate failed at line $LINENO, see $STATE/log"' ERR
-        if [ -f "$STATE/current" ]; then stop; else start "$2"; fi ;;
+        if [ -f "$STATE/current" ]; then stop; else start "$2" "${3:-}"; fi ;;
     cancel)
         mkdir -p "$STATE"
         exec >>"$STATE/log" 2>&1
         trap 'say "🎤 dictate cancel failed at line $LINENO, see $STATE/log"' ERR
         cancel ;;
-    *) sed -n '2,21s/^# \{0,1\}//p' "$0"; exit 2 ;;
+    *) sed -n '2,27s/^# \{0,1\}//p' "$0"; exit 2 ;;
 esac

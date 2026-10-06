@@ -80,18 +80,24 @@ Install and connect Tailscale. The optional tools in `files/laptop/` each have a
 - **Off-site backup** (`./files/laptop/install-btrfs-backup.sh`): the laptop pulls a daily incremental `btrfs send` of the server's snapshots into `/backup/roost/` (a btrfs partition you mount there) and keeps 5 restore points: the last 3 days, the previous week and the previous month. ntfy on failure.
 - **Branch ruleset sync** (`./files/laptop/install-gh-ruleset-sync.sh`): re-applies the "Protect main" ruleset to every repo you own, so repos created between deploys are protected too; skips forks and archived repos. Needs `gh` logged in with a token a system unit can read (`gh auth login --insecure-storage` if you use the desktop keyring).
 - **Drop folder** (`./files/laptop/install-drop-watch.sh`): watches `~/drop/` and rsyncs changes to the server, where they are served read-only at `drop.<domain>` on the tailnet.
-- **Voice** (no installer): Claude Code's `/voice` records on the machine it runs on, so the server borrows the laptop microphone through a forwarded PipeWire-pulse socket. Add `RemoteForward /run/user/1000/pulse-fwd /run/user/%i/pulse/native` to the server's `Host` block in `~/.ssh/config` (the remote path's `1000` is the server user's UID; `%i` is the laptop's), reconnect, and check on the server with `pactl info` (shows the laptop's server) and `arecord -d 3 -f cd /tmp/t.wav`. Any server process of your user can record while the connection is up; the newest connection owns the socket. The same microphone feeds **Alt+M** in tmux: press, speak, press again, and the transcript (ElevenLabs Scribe v2, fillers dropped, biased towards `~/.config/dictate/keyterms.txt`) is typed into the pane prefixed with 🎤, without pressing Enter. It needs an ElevenLabs API key in `~/.config/dictate/elevenlabs-key` (mode 600).
+- **Voice** (no installer): Claude Code's `/voice` records on the machine it runs on, so the server borrows the laptop microphone through a forwarded PipeWire-pulse socket. Add `RemoteForward /run/user/1000/pulse-fwd /run/user/%i/pulse/native` to the server's `Host` block in `~/.ssh/config` (the remote path's `1000` is the server user's UID; `%i` is the laptop's), reconnect, and check on the server with `pactl info` (shows the laptop's server) and `arecord -d 3 -f cd /tmp/t.wav`. Any server process of your user can record while the connection is up; the newest connection owns the socket. The same microphone feeds **Alt+M** in tmux (the phone uses its own, see Phone below): press, speak, press again, and the transcript (ElevenLabs Scribe v2, fillers dropped, biased towards `~/.config/dictate/keyterms.txt`) is typed into the pane prefixed with 🎤, without pressing Enter. It needs an ElevenLabs API key in `~/.config/dictate/elevenlabs-key` (mode 600).
 
 ### Phone (GrapheneOS / Android)
 
 1. **Tailscale** from F-Droid; join your tailnet.
-2. **Termux** from F-Droid (not Google Play; on GrapheneOS it may need "exploit protection compatibility mode"), then `pkg install et openssh`. Add to the phone's `~/.bashrc`:
+2. **Termux** from F-Droid (not Google Play; on GrapheneOS it may need "exploit protection compatibility mode"), then `pkg install et openssh pulseaudio`. For the microphone, also install **Termux:API** from F-Droid and allow it Microphone in Android's app settings (Termux runs under the same Android user ID, so it gets the grant). Add to the phone's `~/.bashrc`:
 
    ```bash
-   cc() { ET_NO_TELEMETRY=1 et <username>@<tailscale-ip> --command='bash -lc "ROOST_CLIENT=pixel agents"' "$@"; }
+   cc() {
+       local mic=$PREFIX/tmp/pulse-mic
+       pulseaudio --check || pulseaudio --start --exit-idle-time=-1 --load=module-sles-source \
+           --load="module-native-protocol-unix socket=$mic auth-anonymous=1"
+       ET_NO_TELEMETRY=1 et -r /run/user/1000/pulse-fwd-pixel:$mic <username>@<tailscale-ip> \
+           --command='bash -lc "ROOST_CLIENT=pixel agents"' "$@"
+   }
    ```
 
-   `cc` drops you into the tmux window picker; `ROOST_CLIENT` gives the phone its own view that it rejoins after every reconnect.
+   `cc` drops you into the tmux window picker; `ROOST_CLIENT` gives the phone its own view that it rejoins after every reconnect. The `-r` forwards the phone's microphone to the server (the socket's `pixel` suffix must match `ROOST_CLIENT`; `1000` is the server user's UID), so **Alt+M** pressed on the phone records the phone, not the laptop. An et session already running keeps its old options through reconnects, so the forward starts with the next `cc`. Check on the server with `PULSE_SERVER=unix:/run/user/1000/pulse-fwd-pixel pactl info`; if the phone's `pulseaudio` was already running without these modules, `pulseaudio -k` and run `cc` again.
 3. **ntfy** from F-Droid: under Settings > General > Manage Users add user `phone` for server `http://<tailscale-ip>:2586` (the password is in `~/services/.ntfy-phone-pass` on the server), then subscribe to `claude-<username>`.
 
 ## Use It
