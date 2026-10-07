@@ -878,8 +878,14 @@ if [ -n "${NOTION_TOKEN:-}" ]; then
     # Broad read; writes gated via permissions.ask in files/settings.json. The token
     # is baked into the server's env via -e; node/npx resolve through the ~/bin
     # symlinks set up in setup/dev-tools.sh. remove+add refreshes the token on
-    # re-deploy (stdio server, no OAuth to lose).
-    if remote "sudo -u $USERNAME $CLAUDE_CMD mcp remove --scope user notion >/dev/null 2>&1; sudo -u $USERNAME $CLAUDE_CMD mcp add --scope user notion -e NOTION_TOKEN=\"$NOTION_TOKEN\" -- npx -y @notionhq/notion-mcp-server"; then
+    # re-deploy (stdio server, no OAuth to lose). The headers go in via
+    # OPENAPI_MCP_HEADERS rather than NOTION_TOKEN because the server's bundled spec
+    # (2.5.2) gives create-a-comment no Notion-Version header, so that call fails
+    # with missing_version; a configured Notion-Version also replaces the spec's
+    # per-operation versions, and the 2026-03-11 markdown endpoints answer on
+    # 2025-09-03 too.
+    NOTION_MCP_HEADERS="{\"Authorization\":\"Bearer $NOTION_TOKEN\",\"Notion-Version\":\"2025-09-03\"}"
+    if remote "sudo -u $USERNAME $CLAUDE_CMD mcp remove --scope user notion >/dev/null 2>&1; sudo -u $USERNAME $CLAUDE_CMD mcp add --scope user notion -e OPENAPI_MCP_HEADERS='$NOTION_MCP_HEADERS' -- npx -y @notionhq/notion-mcp-server"; then
         ok "Notion integration configured"
     else
         warn "Failed to register notion MCP server"
