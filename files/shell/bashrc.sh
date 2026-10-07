@@ -209,8 +209,9 @@ esac
 # --- Agent management helpers ---
 # Helpers that agent/agents/attach call are named __roost_*: Claude Code's Bash
 # tool runs from a snapshot of this shell that drops every function matching
-# ^_[^_], so a single leading underscore is "command not found" in a session
-# (tests/agent-launch.sh checks this).
+# ^_[^_] and every unexported variable, so a single leading underscore is
+# "command not found" in a session, and these functions read only exported
+# variables (tests/agent-launch.sh checks both).
 
 # Name for this connection's grouped tmux session. $ROOST_CLIENT (set by the
 # client's alias, e.g. ROOST_CLIENT=pixel) gives stable rejoining across
@@ -290,17 +291,19 @@ __roost_await_sane_size() {
     done
 }
 
-# Ensure a tmux session exists, starting one if needed.
-# Returns 0 if already inside tmux, 1 if a new session was started (caller
-# should use tmux send-keys instead of direct commands).
+# Ensure the tmux session `main` exists. Returns 0 inside tmux, 1 when `main`
+# already exists, 2 when it was just created with its shell window (the caller
+# attaches on 1 and 2).
 __roost_ensure_tmux() {
     # `main` can be gone while its session group lives on, and then every `=main`
     # target below fails. Repair it first — inside tmux too, where this function
     # used to return early and leave `agent` failing with "can't find session:
     # main". The guard is what rejoins the group; see its header for why the
-    # breakage stays invisible until it isn't.
-    [[ -x "$_ROOST_DIR/claude/lib/tmux-main-guard.sh" ]] \
-        && "$_ROOST_DIR/claude/lib/tmux-main-guard.sh"
+    # breakage stays invisible until it isn't. The path comes from an exported
+    # variable: a Claude Code session's shell snapshot drops unexported ones
+    # like $_ROOST_DIR.
+    [[ -x "$CLAUDE_CONFIG_DIR/lib/tmux-main-guard.sh" ]] \
+        && "$CLAUDE_CONFIG_DIR/lib/tmux-main-guard.sh"
 
     if [[ -n "${TMUX:-}" ]]; then
         return 0  # inside tmux

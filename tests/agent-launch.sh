@@ -43,22 +43,33 @@ rm -f "$T_LOG"; cmd=$(launched "$T/repo" -w)
 if [[ $cmd == *"claude -w"* ]]; then ok "-w reaches claude (a composite worktree on request)"; else bad "-w: $cmd"; fi
 
 # Claude Code's Bash tool runs from a snapshot of the login shell that keeps only
-# the functions not matching ^_[^_], so a helper with a single leading underscore
-# exists in a terminal and is "command not found" in a session.
-# snapshot_errors FN ARGS... → stderr of FN run under that snapshot's function set
+# the functions not matching ^_[^_] and only the exported variables, so a helper
+# with a single leading underscore, or an unexported variable, exists in a
+# terminal and is missing in a session.
+# snapshot_errors FN ARGS... → stderr of FN run under that snapshot's shell state
 snapshot_errors() {
     # shellcheck disable=SC2016  # expands in the child shell
     env -u TMUX -u TMUX_PANE HOME="$T/home" ROOST_DIR_NAME=roost bash -c '
+        before=$(compgen -v | sort)
         . "$1" > /dev/null 2>&1
         for f in $(declare -F | cut -d" " -f3 | grep -E "^_[^_]"); do unset -f "$f"; done
+        for v in $(comm -13 <(echo "$before") <(compgen -v | sort)); do
+            read -r _ flags _ <<<"$(declare -p "$v")"
+            [[ $flags == *x* ]] || unset "$v"
+        done
         tmux() { [[ $1 == has-session ]]; }
         shift; "$@" < /dev/null > /dev/null
     ' _ "$RC" "$@" 2>&1
 }
+mkdir -p "$T/home/roost/claude/lib"
+printf '#!/bin/sh\necho "guard ran" >&2\n' > "$T/home/roost/claude/lib/tmux-main-guard.sh"
+chmod +x "$T/home/roost/claude/lib/tmux-main-guard.sh"
 for fn in agent agents attach; do
     err=$(snapshot_errors "$fn" "$T/repo") || true
     if [[ $err != *"not found"* ]]; then ok "$fn finds its helpers in a Claude Code session"; else bad "$fn under the snapshot: $err"; fi
 done
+err=$(snapshot_errors agent "$T/repo") || true
+if [[ $err == *"guard ran"* ]]; then ok "agent runs tmux-main-guard in a Claude Code session"; else bad "guard under the snapshot: $err"; fi
 
 # shellcheck disable=SC2016  # expands in the child shell
 out=$(HOME="$T/home" bash -c '. "$1" > /dev/null 2>&1; tmux() { echo "TMUX-CALLED $*"; }; agent --help' _ "$RC" 2>&1) || true
