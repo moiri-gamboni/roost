@@ -324,12 +324,18 @@ __roost_ensure_tmux() {
 # working, and a session that needs isolation takes it then: `agent-worktree
 # isolate` for one repo, or `-w` (claude --worktree) for a composite tree of
 # the launch repo and every nested repo (agent-worktree.sh).
-# Usage: agent [path] [claude-args...]
-#   agent                           # cwd
-#   agent ~/roost/code/myapp        # that dir
-#   agent ~/roost/code/myapp -c     # continue last session
-#   agent -w                        # in its own composite worktree
 agent() {
+    if [[ ${1:-} == -h || ${1:-} == --help ]]; then
+        cat <<'EOF'
+Usage: agent [path] [claude-args...]
+Launch claude in a new window of the tmux session `main`, in path (default: cwd).
+  agent                           # cwd
+  agent ~/roost/code/myapp        # that dir
+  agent ~/roost/code/myapp -c     # continue last session
+  agent -w                        # in its own composite worktree
+EOF
+        return 0
+    fi
     local dir="$PWD"
     local -a claude_args=()
     # Debug trace (hijack investigation): one line per invocation + one per

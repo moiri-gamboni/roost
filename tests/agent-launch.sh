@@ -1,8 +1,9 @@
 #!/bin/bash
 # Test for the command `agent` (files/shell/bashrc.sh) starts: a fresh session in a git repo runs
 # claude directly in the directory (no automatic worktree); -N/--no-worktree is accepted and not
-# passed on; -w still reaches claude for a composite worktree on request. tmux is a stub that
-# records its arguments, so no window is opened.
+# passed on; -w still reaches claude for a composite worktree on request; agent/agents/attach find
+# their helpers under Claude Code's shell snapshot; --help prints usage and opens nothing. tmux is
+# a stub, so no window is opened.
 #   tests/agent-launch.sh [BASHRC]          # from the repo root; BASHRC defaults to the repo's
 set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
@@ -58,6 +59,10 @@ for fn in agent agents attach; do
     err=$(snapshot_errors "$fn" "$T/repo") || true
     if [[ $err != *"not found"* ]]; then ok "$fn finds its helpers in a Claude Code session"; else bad "$fn under the snapshot: $err"; fi
 done
+
+# shellcheck disable=SC2016  # expands in the child shell
+out=$(HOME="$T/home" bash -c '. "$1" > /dev/null 2>&1; tmux() { echo "TMUX-CALLED $*"; }; agent --help' _ "$RC" 2>&1) || true
+if [[ $out == *"Usage: agent"* && $out != *TMUX-CALLED* ]]; then ok "agent --help prints usage and opens no window"; else bad "--help: $out"; fi
 
 if (( fail )); then echo "FAILURES"; exit 1; fi
 echo "all passed"
