@@ -47,7 +47,7 @@ if [ -x "$FNM_DIR/fnm" ] && ! type _roost_fnm_inited &>/dev/null; then
     _roost_path_prepend "$FNM_DIR"
     unset FNM_MULTISHELL_PATH
     if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
-        eval "$($FNM_DIR/fnm env --use-on-cd --shell bash)"
+        eval "$("$FNM_DIR"/fnm env --use-on-cd --shell bash)"
     else
         _roost_path_prepend "$FNM_DIR/aliases/default/bin"
     fi
