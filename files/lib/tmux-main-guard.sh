@@ -16,7 +16,7 @@
 # after the fact, with no way left to tell what had killed the session.
 #
 # Hence both halves of this script: rejoin the group immediately (called from
-# tmux's session-closed hook and from `_ensure_tmux`), and log the repair with
+# tmux's session-closed hook and from `__roost_ensure_tmux`), and log the repair with
 # the surviving sessions and clients, so the next occurrence names its cause.
 #
 # The same three-line rejoin is inlined in vsc-pin.sh and extension.js. They are
@@ -29,7 +29,7 @@
 #                  this a `kill-session` sweep of the last views springs `main`
 #                  back to life and keeps the whole server alive (observed while
 #                  testing this script). Callers that are themselves about to
-#                  attach — `_ensure_tmux`, vsc-pin — pass nothing and repair
+#                  attach — `__roost_ensure_tmux`, vsc-pin — pass nothing and repair
 #                  unconditionally: at that point no client is attached yet.
 set -uo pipefail
 

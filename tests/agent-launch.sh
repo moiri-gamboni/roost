@@ -41,5 +41,23 @@ if [[ $cmd == *claude* && $cmd != *" -N"* && $cmd != *--worktree* ]]; then ok "-
 rm -f "$T_LOG"; cmd=$(launched "$T/repo" -w)
 if [[ $cmd == *"claude -w"* ]]; then ok "-w reaches claude (a composite worktree on request)"; else bad "-w: $cmd"; fi
 
+# Claude Code's Bash tool runs from a snapshot of the login shell that keeps only
+# the functions not matching ^_[^_], so a helper with a single leading underscore
+# exists in a terminal and is "command not found" in a session.
+# snapshot_errors FN ARGS... → stderr of FN run under that snapshot's function set
+snapshot_errors() {
+    # shellcheck disable=SC2016  # expands in the child shell
+    env -u TMUX -u TMUX_PANE HOME="$T/home" ROOST_DIR_NAME=roost bash -c '
+        . "$1" > /dev/null 2>&1
+        for f in $(declare -F | cut -d" " -f3 | grep -E "^_[^_]"); do unset -f "$f"; done
+        tmux() { [[ $1 == has-session ]]; }
+        shift; "$@" < /dev/null > /dev/null
+    ' _ "$RC" "$@" 2>&1
+}
+for fn in agent agents attach; do
+    err=$(snapshot_errors "$fn" "$T/repo") || true
+    if [[ $err != *"not found"* ]]; then ok "$fn finds its helpers in a Claude Code session"; else bad "$fn under the snapshot: $err"; fi
+done
+
 if (( fail )); then echo "FAILURES"; exit 1; fi
 echo "all passed"

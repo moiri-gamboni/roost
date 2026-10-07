@@ -222,7 +222,7 @@ function openAttach({ focus = true } = {}) {
 // terminal profile, every `+` / Ctrl+Shift+` and every persistent-session
 // revival spawns another grouped session sitting on main's *current* window —
 // visually identical tabs that never close themselves (we don't own them, so
-// closeAll misses them, and bashrc's _sweep_dead_groups only reaps groups whose
+// closeAll misses them, and bashrc's __roost_sweep_dead_groups only reaps groups whose
 // shell already died).
 //
 // Surplus views are disposed and ours focused, so the new-terminal gesture reads

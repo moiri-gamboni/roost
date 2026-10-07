@@ -207,6 +207,10 @@ case "${PROMPT_COMMAND:-}" in
 esac
 
 # --- Agent management helpers ---
+# Helpers that agent/agents/attach call are named __roost_*: Claude Code's Bash
+# tool runs from a snapshot of this shell that drops every function matching
+# ^_[^_], so a single leading underscore is "command not found" in a session
+# (tests/agent-launch.sh checks this).
 
 # Name for this connection's grouped tmux session. $ROOST_CLIENT (set by the
 # client's alias, e.g. ROOST_CLIENT=pixel) gives stable rejoining across
@@ -214,7 +218,7 @@ esac
 # (TERM_PROGRAM=vscode, set by VS Code before tmux is entered) get the
 # distinguishable main-vsc<pid> form so `agent` can tell the tmux-tabs
 # extension's attach view from an SSH attach tab.
-_roost_group_name() {
+__roost_group_name() {
     if [[ -n "${ROOST_CLIENT:-}" ]]; then
         printf 'main-%s' "$ROOST_CLIENT"
     elif [[ "${TERM_PROGRAM:-}" == vscode ]]; then
@@ -231,7 +235,7 @@ _roost_group_name() {
 # pinned tabs for that reason), and an SSH terminal has its own title bar.
 # $ROOST_CLIENT is set by the connecting client's own alias; only the phone
 # sets one today, so a second mobile client means one more case here.
-_roost_status_for_client() {
+__roost_status_for_client() {
     case "${ROOST_CLIENT:-}" in
         pixel) printf on ;;
         *)     printf off ;;
@@ -242,7 +246,7 @@ _roost_status_for_client() {
 # PID-style suffixes (main-<pid>, main-vsc<pid>), never named ones
 # (laptop/pixel/etc), and only once no client holds them: kill-session under a
 # client the server still has can segfault it (extras/vscode-tmux-tabs/vsc-pin.sh).
-_sweep_dead_groups() {
+__roost_sweep_dead_groups() {
     tmux list-sessions -F '#{session_name}' 2>/dev/null | while read -r s; do
         local pid
         case "$s" in
@@ -266,7 +270,7 @@ _sweep_dead_groups() {
 # screen / toggle the keyboard) is what fixes it. Proceed instantly when the size
 # is sane (laptop, or a clean connect); otherwise explain the fix and wait for
 # the resize before handing the terminal to tmux.
-_roost_await_sane_size() {
+__roost_await_sane_size() {
     [[ -t 0 ]] || return 0          # no controlling tty: nothing to guard
     local sz rows cols waited=0 warned=0
     while :; do
@@ -289,7 +293,7 @@ _roost_await_sane_size() {
 # Ensure a tmux session exists, starting one if needed.
 # Returns 0 if already inside tmux, 1 if a new session was started (caller
 # should use tmux send-keys instead of direct commands).
-_ensure_tmux() {
+__roost_ensure_tmux() {
     # `main` can be gone while its session group lives on, and then every `=main`
     # target below fails. Repair it first — inside tmux too, where this function
     # used to return early and leave `agent` failing with "can't find session:
@@ -301,7 +305,7 @@ _ensure_tmux() {
     if [[ -n "${TMUX:-}" ]]; then
         return 0  # inside tmux
     fi
-    _sweep_dead_groups
+    __roost_sweep_dead_groups
     # `=main` is an exact-match target. Plain `main` also matches by prefix, so
     # with the session gone but one grouped view alive this test passes on
     # `main-pixel` and the repair below never runs.
@@ -380,9 +384,9 @@ agent() {
         cmd_parts+=("$(printf '%q' "$arg")")
     done
 
-    _ensure_tmux
+    __roost_ensure_tmux
     local state=$?
-    # Ensure a shell window exists (state=2 means _ensure_tmux already created one)
+    # Ensure a shell window exists (state=2 means __roost_ensure_tmux already created one)
     # When inside tmux (state=0), main might not exist if we're in a different session
     if [[ $state -ne 2 ]] && ! echo "$existing" | grep -Fqx shell; then
         if [[ $state -ne 0 ]] || tmux has-session -t '=main' 2>/dev/null; then
@@ -418,7 +422,7 @@ agent() {
     else
         # Outside tmux: create window in main, then attach via grouped session
         local group
-        group=$(_roost_group_name)
+        group=$(__roost_group_name)
         printf '%(%F %T)T pid=%s outside-tmux: group=%s name=%s state=%s\n' \
             -1 "$$" "$group" "$name" "$state" >> "$HOME/.roost-agent.log"
         tmux new-window -t '=main' -n "$name" "${cmd_parts[*]}"
@@ -436,7 +440,7 @@ agent() {
         # `main` itself is briefly missing. `=main` would defeat the group lookup
         # and silently start a second group literally named "=main".
         local st
-        st=$(_roost_status_for_client)
+        st=$(__roost_status_for_client)
         if tmux has-session -t "=$group" 2>/dev/null; then
             tmux set-option -t "$group" status "$st"
             tmux attach-session -t "=$group" \; select-window -t "$name"
@@ -453,16 +457,16 @@ agents() {
     if [[ -n "${TMUX:-}" ]]; then
         tmux choose-window
     else
-        _sweep_dead_groups
-        _roost_await_sane_size || return 1
+        __roost_sweep_dead_groups
+        __roost_await_sane_size || return 1
         local group
-        group=$(_roost_group_name)
+        group=$(__roost_group_name)
         # -d detaches a prior client on this session first. On the phone (stable
         # ROOST_CLIENT name) that's usually a dead/garbage-sized et connection;
         # dropping it stops the pile-up. Laptop tabs use per-PID names, so -d
         # never kicks a different live tab.
         local st
-        st=$(_roost_status_for_client)
+        st=$(__roost_status_for_client)
         if tmux has-session -t "=$group" 2>/dev/null; then
             tmux set-option -t "$group" status "$st"
             tmux attach-session -d -t "=$group" \; choose-window
@@ -478,17 +482,17 @@ agents() {
 # independent current-window state. Use this in a new SSH tab when plain
 # `tmux attach` would link window switches across already-open tabs.
 # Group name comes from $ROOST_CLIENT (stable across reconnects) or PID
-# (swept on shell exit by _sweep_dead_groups).
+# (swept on shell exit by __roost_sweep_dead_groups).
 attach() {
     if [[ -n "${TMUX:-}" ]]; then
         echo "already inside tmux" >&2
         return 1
     fi
-    _ensure_tmux
-    _roost_await_sane_size || return 1
-    local group; group=$(_roost_group_name)
+    __roost_ensure_tmux
+    __roost_await_sane_size || return 1
+    local group; group=$(__roost_group_name)
     local st
-    st=$(_roost_status_for_client)
+    st=$(__roost_status_for_client)
     if tmux has-session -t "=$group" 2>/dev/null; then
         tmux set-option -t "$group" status "$st"
         tmux attach-session -d -t "=$group"
