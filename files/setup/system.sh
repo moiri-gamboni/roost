@@ -17,7 +17,7 @@ fi
 apt update
 ok "Package list updated"
 
-apt install -y tmux build-essential jq unzip btrfs-progs snapper glances util-linux bash-completion acl
+apt install -y tmux build-essential jq unzip btrfs-progs snapper glances util-linux bash-completion acl ripgrep
 ok "Base packages installed"
 
 # Claude Code /voice over SSH: the ALSA pulse plugin plus arecord/pactl to
