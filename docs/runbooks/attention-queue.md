@@ -74,6 +74,13 @@ The bridge holds a Discord user token in `~/.local/share/bbctl/prod/sh-discord/m
 - **From the phone?** The command, yes; getting the token out of a browser realistically needs a desktop browser.
 - **Meanwhile.** Existing chats stay readable; nothing new arrives from Discord. If Discord disabled the account (the enforcement risk of a non-official client, mautrix/discord #235), expect a forced password change first.
 
+### Discord channel history
+
+mautrix-discord v0.7.7 backfills forward only: a channel's room gets older history once, when the bridge creates it (`bridge.backfill.forward_limits.initial.channel`), and after that only the messages missed while it was down (`missed.channel`, skipped in guilds above `max_guild_members`). bbctl's template hard-codes `initial.channel: 0`, so every channel room of the bridged guild started empty on the day the guild was bridged. The unit therefore runs with `--no-override-config` (drop-in `attention-bridge@discord.service.d/no-override-config.conf`), and `config.yaml` carries one hand edit: `initial.channel: 5000`. A rebuilt bridge needs it again.
+
+- **New channels** get up to 5000 messages of history when their room is created.
+- **An existing channel** gets its history only by having its room recreated. With the unit stopped, clear the portal's link the way the bridge's `Portal.RemoveMXID` does (`UPDATE portal SET mxid=NULL, avatar_set=0, name_set=0, topic_set=0, encrypted=0, in_space='', first_event_id='' WHERE dcid='<channel id>' AND receiver=''`, then `DELETE FROM message WHERE dc_chan_id='<channel id>' AND dc_chan_receiver=''`, under `PRAGMA foreign_keys=ON`), back up the database first, and start the unit: on connect the bridge creates a new room for every guild channel without one and backfills it. The old room stays readable in Beeper but is no longer bridged; archive it by hand. Fetching history is many API calls on a user token, the same enforcement risk as above, so recreate channels one at a time rather than the whole guild.
+
 ## The Gmail login
 
 The email bridge holds a Google refresh token for the work mailbox (its address in the private repo's README) in `~/.local/share/bbctl/prod/sh-email/sh-email.db`, encrypted with the passphrase in `/etc/attention-queue/matrimail.env` (root, 0600). The OAuth client is a Desktop client in an Internal Google Cloud project of the mailbox's Google Workspace, so the token has no fixed expiry; its ID and secret are in the bridge's `config.yaml` (`network.gmail_oauth`) and in `~/.config/attention-queue/gmail-oauth-client.env`. The scope is `modify` (Gmail API read, label and send), which still covers the whole mailbox.

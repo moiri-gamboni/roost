@@ -128,7 +128,7 @@ fi
 # --- units ---
 export USERNAME HOME_DIR
 CHANGED=false
-for unit in beeper-egress.service beeper-egress-ensure.service beeper-egress-ensure.timer beeper-server.service attention-bridge@.service attention-bridge@email.service.d/matrimail.conf; do
+for unit in beeper-egress.service beeper-egress-ensure.service beeper-egress-ensure.timer beeper-server.service attention-bridge@.service attention-bridge@email.service.d/matrimail.conf attention-bridge@discord.service.d/no-override-config.conf; do
     RENDERED=$(envsubst '$USERNAME $HOME_DIR' < "$REMOTE_DIR/files/beeper/$unit")
     TARGET=/etc/systemd/system/$unit
     mkdir -p "$(dirname "$TARGET")"

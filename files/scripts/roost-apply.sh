@@ -215,6 +215,7 @@ files/beeper/beeper-egress-ensure.timer|/etc/systemd/system/beeper-egress-ensure
 files/beeper/beeper-server.service|/etc/systemd/system/beeper-server.service|plain|daemon-reload
 files/beeper/attention-bridge@.service|/etc/systemd/system/attention-bridge@.service|envsubst:USERNAME,HOME_DIR|daemon-reload
 files/beeper/attention-bridge@email.service.d/matrimail.conf|/etc/systemd/system/attention-bridge@email.service.d/matrimail.conf|envsubst:HOME_DIR|daemon-reload
+files/beeper/attention-bridge@discord.service.d/no-override-config.conf|/etc/systemd/system/attention-bridge@discord.service.d/no-override-config.conf|envsubst:HOME_DIR|daemon-reload
 MANIFEST_B
 
     local private="$REPO_DIR/files/private/roost-apply.manifest"
