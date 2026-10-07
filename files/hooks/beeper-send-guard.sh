@@ -190,6 +190,13 @@ if [[ $cmd == *23373* ]]; then
         n=$(writes_in "$seg")
         [ "$n" -gt 0 ] || continue
         mapfile -t urls < <(grep -oE ':23373[^[:space:]"'"'"'`<>|;)]*' <<<"$seg")
+        # An attachment download whose host sits in a variable (`$B/assets/download`,
+        # `${B}/v1/assets/download`, an f-string `{B}/…`) is still a read: it accounts for one write
+        # call, as long as every variable-host API path in the statement is such a download.
+        var_host='(\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|\{[A-Za-z_][A-Za-z0-9_]*\})'
+        var_dl=$(grep -oE "${var_host}(/v1)?/assets/download([^A-Za-z0-9_/-]|\$)" <<<"$seg" | wc -l)
+        var_any=$(grep -oE "${var_host}/(v1|_matrix|assets|chats|messages)([^A-Za-z0-9_-]|\$)" <<<"$seg" | wc -l)
+        [ "$var_dl" -gt 0 ] && [ "$var_any" -eq "$var_dl" ] && n=$((n - var_dl))
         if [ "${#urls[@]}" -lt "$n" ]; then
             asks+=('a write call whose Beeper URL is not written out on its line (a variable or a split call), so the destination cannot be read')
             continue

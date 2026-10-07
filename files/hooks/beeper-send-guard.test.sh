@@ -138,6 +138,13 @@ check allow 'board chat (only self)' "curl -X PUT $B/v1/chats/$BOARD/messages/42
 check allow 'Matrix passthrough into the board room' "curl -X PUT $B/_matrix/client/v3/rooms/$BOARD/send/m.room.message/t1 -d '{}'"
 check allow 'two bot destinations in one command' "curl -X POST $B/v1/chats/$SLACKBOT/messages -d x && curl -X POST $B/v1/chats/$CONTROL/messages -d y"
 check allow 'attachment download (a POST-shaped read)' "curl -X POST $B/v1/assets/download -d '{\"url\":\"mxc://x/y\"}'"
+check allow 'download with the host in a variable ($B/assets/download)' "T=\$(cat tok); B=$B/v1; curl -s -X POST -H \"Authorization: Bearer \$T\" \"\$B/assets/download\" -d '{\"url\":\"mxc://x/y\"}'"
+check allow 'download with ${B}/v1/assets/download' "B=$B; curl -s -X POST \"\${B}/v1/assets/download\" -d '{\"url\":\"mxc://x/y\"}'"
+check allow 'python f-string download' "B=$B; python3 -c 'import requests; requests.post(f\"{B}/v1/assets/download\", json={\"url\": \"mxc://x/y\"})'"
+check ask 'variable-host send stays gated' "B=$B/v1; curl -s -X POST \"\$B/chats/$PERSON/messages\" -d x"
+check ask 'variable-host download beside a variable-host send asks' "B=$B/v1; curl -X POST \"\$B/assets/download\" -d x && curl -X POST \"\$B/chats/$PERSON/messages\" -d x"
+check ask 'variable-host download and send in one statement asks' "B=$B; python3 -c 'import requests as r; r.post(f\"{B}/v1/assets/download\"); r.post(f\"{B}/v1/chats/x/messages\")'"
+check ask 'variable-host upload stays gated' "B=$B/v1; curl -X POST \"\$B/assets/upload\" -F file=@x"
 
 # --- chats whose people cannot be seen ask ---
 check ask 'Discord channel listing only self (members not synced)' "curl -X POST $B/v1/chats/$DISCORD/messages -d x"
