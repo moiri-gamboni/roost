@@ -149,6 +149,7 @@ files/agents/effort-medium.md|$ROOST_DIR/claude/agents/effort-medium.md|plain|
 files/agents/effort-high.md|$ROOST_DIR/claude/agents/effort-high.md|plain|
 files/agents/effort-xhigh.md|$ROOST_DIR/claude/agents/effort-xhigh.md|plain|
 files/agents/effort-max.md|$ROOST_DIR/claude/agents/effort-max.md|plain|
+files/skills/copy/SKILL.md|$ROOST_DIR/claude/skills/copy/SKILL.md|plain|
 files/skills/html2markdown/SKILL.md|$ROOST_DIR/claude/skills/html2markdown/SKILL.md|plain|
 files/skills/havelock-api/SKILL.md|$ROOST_DIR/claude/skills/havelock-api/SKILL.md|plain|
 files/skills/humanizer/SKILL.md|$ROOST_DIR/claude/skills/humanizer/SKILL.md|plain|
