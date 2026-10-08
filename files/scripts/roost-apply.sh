@@ -140,6 +140,7 @@ files/hooks/agent-browser-session.sh|$ROOST_DIR/claude/hooks/agent-browser-sessi
 files/hooks/session-switch-notify.sh|$ROOST_DIR/claude/hooks/session-switch-notify.sh|plain+x|
 files/hooks/conflict-watch-hook.sh|$ROOST_DIR/claude/hooks/conflict-watch-hook.sh|plain+x|
 files/agent-browser-config.json|$HOME_DIR/.agent-browser/config.json|plain|
+files/git/ignore|$HOME_DIR/.config/git/ignore|plain|
 files/claude-plugins/.claude-plugin/marketplace.json|$ROOST_DIR/claude/roost-plugins/.claude-plugin/marketplace.json|plain|
 files/claude-plugins/bash-lsp/.claude-plugin/plugin.json|$ROOST_DIR/claude/roost-plugins/bash-lsp/.claude-plugin/plugin.json|plain|
 files/travel/travel-health.sh|$ROOST_DIR/claude/scheduled/health-check-apps.sh|plain+x|
