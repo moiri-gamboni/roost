@@ -218,25 +218,35 @@ describe() {  # describe IDX... — each holder: its name, state, last write, an
     for i in "$@"; do out+="${out:+; }\"${HN[$i]}\" ($(status_of "${HP[$i]}"), last wrote there $(age "${HL[$i]}") ago; SendMessage to: \"${HN[$i]}\", session ${HS[$i]:0:8})"; done
     echo "$out"
 }
-names() {  # names IDX... — each holder once, quoted
+names() {  # names IDX... — each holding session once, quoted
     local i out=""; local -A seen=()
-    for i in "$@"; do [ -n "${seen[${HN[$i]}]:-}" ] || { out+="${out:+ and }\"${HN[$i]}\""; seen[${HN[$i]}]=1; }; done
+    for i in "$@"; do [ -n "${seen[${HS[$i]}]:-}" ] || { out+="${out:+ and }\"${HN[$i]}\""; seen[${HS[$i]}]=1; }; done
     echo "$out"
 }
-ask_holder() {  # ask_holder UNITS NAMES KIND — worded as conflict-watch.py's ask_holder(), which the daemon's notices use
-    local still
-    if [ "$3" = repo ]; then still="move your work into a worktree of it (\`agent-worktree isolate ${1%% *}\`) and continue there"
-    else still="run \`conflict-watch wait $1\` in the background (run_in_background: it ends, which wakes you, once no other session holds it) and tell the user you are waiting"; fi
-    echo "Ask the holder yourself now, without waiting for the user: SendMessage to $2 with this message, followed by a line on what you are about to do there: \"Conflict watch: I need to change $1, which you hold. If your work there is finished, run \`conflict-watch release $1\` and reply 'released'; if you still need it, reply 'still holding'.\" Once it is released, go on. If it is still held, $still. If the message is not delivered or no answer comes, ask the user."
+ask_holder() {  # ask_holder NAMES — for the units in AU, the repos among them in AR; worded as conflict-watch.py's ask_holder(), which the daemon's notices use
+    local u r q us="" rest="" worktree="" wait still
+    for u in "${AU[@]}"; do printf -v q %q "$u"; us+="${us:+ }$q"; done
+    for r in "${AR[@]}"; do printf -v q %q "$r"; worktree+="${worktree:+, }\`agent-worktree isolate $q\`"; done
+    for u in "${AU[@]}"; do
+        for r in "${AR[@]}"; do [[ $u == "$r" || $u == "$r"/* ]] && continue 2; done   # covered by that repo's worktree
+        printf -v q %q "$u"; rest+="${rest:+ }$q"
+    done
+    worktree="move your work into a worktree ($worktree) and continue there"
+    wait="run \`conflict-watch wait $rest\` in the background (run_in_background: it ends, which wakes you, once no other session holds it) and tell the user you are waiting"
+    if [ ${#AR[@]} -eq 0 ]; then still=$wait; elif [ -z "$rest" ]; then still=$worktree; else still="$worktree; for the rest, $wait"; fi
+    echo "Ask the holder yourself now, without waiting for the user: SendMessage to $1 with this message, followed by a line on what you are about to do there: \"Conflict watch: I need to change $us, which you hold. If your work there is finished, run \`conflict-watch release $us\` and reply 'released'; if you still need it, reply 'still holding'.\" Once it is released, go on. If it is still held, $still. If the message is not delivered or no answer comes, ask the user."
 }
+declare -a AU=() AR=()
 warn() {  # warn WHAT IDX... — deny once, recording that this session has now been warned about these holds
-    local what=$1 i units="" list=""; shift
+    local what=$1 i units=""; shift
     local -A seen=()
     for i in "$@"; do
         printf '%s\t%s\t%s\n' "${HU[$i]}" "${HS[$i]}" "${HSI[$i]}" >> "$RUN/acks/$sid"
-        [ -n "${seen[${HU[$i]}]:-}" ] || { units+="${units:+, }${HU[$i]}"; list+="${list:+ }${HU[$i]}"; seen[${HU[$i]}]=1; }
+        [ -n "${seen[${HU[$i]}]:-}" ] && continue
+        seen[${HU[$i]}]=1; units+="${units:+, }${HU[$i]}"; AU+=("${HU[$i]}")
+        [ "${HK[$i]}" = repo ] && AR+=("${HU[$i]}")
     done
-    emit deny "Conflict watch: $what $units, which another open session holds: $(describe "$@"). Stopped once, as a warning. Change nothing there until the holder releases it or the user says go ahead, whatever that session's idle time. $(ask_holder "$list" "$(names "$@")" "${HK[$1]}") Reading there is fine, and if the user says to go ahead, retry: it passes now. Changes made there without the holder's release or the user's go-ahead are detected and reported. (\`session peers\` lists every open session's name and id.)"
+    emit deny "Conflict watch: $what $units, which another open session holds: $(describe "$@"). Stopped once, as a warning. Change nothing there until the holder releases it or the user says go ahead, whatever that session's idle time. $(ask_holder "$(names "$@")") Reading there is fine, and if the user says to go ahead, retry: it passes now. Changes made there without the holder's release or the user's go-ahead are detected and reported. (\`session peers\` lists every open session's name and id.)"
 }
 
 # --- Edit / Write ------------------------------------------------------------------------

@@ -414,6 +414,18 @@ class HoldLifecycle(WatchFixture):
         self.write("T", f"{self.task}/x.md")
         self.assertEqual(self.inbox("T"), "")
 
+    def test_a_session_renamed_after_its_writes_is_named_as_it_is_now(self):
+        # sessions get their title a few turns in, after their first writes; the name is the
+        # address SendMessage takes, so a stale one sends the warned session's message nowhere
+        self.write("S", f"{self.task}/task.md")
+        self.register(self.s_pid, "S", name="titled-S")
+        self.watch.prune()
+        self.watch.flush()
+        self.assertEqual(open(os.path.join(self.run, "holds.tsv")).read().splitlines()[1].split("\t")[6], "titled-S")
+        self.write("T", f"{self.task}/x.md")
+        self.assertIn('SendMessage to "titled-S"', self.inbox("T"))
+        self.assertNotIn("name-S", self.inbox("T"))
+
     def test_a_grant_covers_only_the_hold_it_named(self):
         self.write("S", f"{self.task}/task.md")
         cw.add_grant(self.run, "T", self.task, [("S", self.watch.since(self.task, "S") - 1)])   # an earlier hold of S
@@ -553,6 +565,19 @@ class Wait(WatchFixture):
                    CONFLICT_WATCH_CONF=os.path.join(self.tmp, "conf", "conflict-watch.conf"), CLAUDE_CODE_SESSION_ID="T")
         r = subprocess.run([sys.executable, "-S", SRC, "wait", "work/tasks/t1"], env=env, capture_output=True, text=True, timeout=10)
         self.assertEqual((r.returncode, r.stdout), (0, "work/tasks/t1: no other open session holds it\n"), r.stderr)
+
+
+class AskHolder(unittest.TestCase):
+    def test_a_unit_with_a_space_is_quoted_in_every_command(self):
+        t = cw.ask_holder(["/r/notes/a b.md"], '"x"', [])
+        self.assertIn("`conflict-watch release '/r/notes/a b.md'`", t)
+        self.assertIn("`conflict-watch wait '/r/notes/a b.md'`", t)
+
+    def test_repos_get_the_worktree_and_other_folders_the_wait(self):
+        t = cw.ask_holder(["/r/code/x", "/r/work/tasks/t1"], '"x"', ["/r/code/x"])
+        self.assertIn("`conflict-watch release /r/code/x /r/work/tasks/t1`", t)
+        self.assertIn("`agent-worktree isolate /r/code/x`", t)
+        self.assertIn("`conflict-watch wait /r/work/tasks/t1` in the background", t)
 
 
 class UnitArguments(Fixture):
@@ -734,6 +759,33 @@ class GitCheck(WatchFixture):
         for f in files:
             self.write("S", f"{self.repo}/{f}")
         self.watch.flush()
+
+    def workspace(self, sub):
+        d = os.path.join(self.root, "work", sub)
+        git("commit", "-q", "--allow-empty", "-m", "init", cwd=d)
+        return d
+
+    def test_folder_units_inside_the_repo_are_waited_for(self):
+        tasks = self.workspace("tasks")
+        write(f"{tasks}/t1/task.md")
+        self.write("S", f"{tasks}/t1/task.md")
+        self.watch.flush()
+        r = self.check("git add -A", cwd=tasks)["permissionDecisionReason"]
+        self.assertIn(f"run `conflict-watch release {tasks}/t1` and reply", r)
+        self.assertIn(f"`conflict-watch wait {tasks}/t1` in the background", r)
+        self.assertNotIn("agent-worktree isolate", r)
+
+    def test_a_held_repo_and_a_folder_inside_it_are_both_asked_for(self):
+        # releasing the repo alone would leave the folder held, and the retried sweep would take it
+        ws = self.workspace("workspace")
+        write(f"{ws}/plans/p.md"); write(f"{ws}/tools/t.md")
+        self.write("S", f"{ws}/plans/p.md")
+        self.write("S", f"{ws}/tools/t.md")
+        self.watch.flush()
+        r = self.check("git add -A", cwd=ws)["permissionDecisionReason"]
+        self.assertIn(f"run `conflict-watch release {ws} {ws}/plans/p.md` and reply", r)
+        self.assertIn(f"`agent-worktree isolate {ws}`", r)
+        self.assertNotIn("conflict-watch wait", r)          # the worktree covers the folder inside it
 
     def test_a_nested_repos_files_never_count(self):
         # files/private is its own repo: nothing run in code/server can touch it

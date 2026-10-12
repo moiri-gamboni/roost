@@ -127,7 +127,23 @@ expect "other unit still denied" deny "$(decision "$(bash_cmd "cat $TASK2/task.m
 reset_run; hold "$TASK" folder S "$S" 100 holder-S; hold "$TASK2" folder S "$S" 100 holder-S
 out=$(bash_cmd "cat $TASK/a $TASK2/b")
 has "two units of one holder: both in the message" "conflict-watch release $TASK $TASK2" "$(reason "$out")"
-if [[ $(reason "$out") == *'"holder-S" and "holder-S"'* ]]; then bad "and the holder is messaged once"; else ok "and the holder is messaged once"; fi
+has "and the holder is messaged once" 'SendMessage to "holder-S" with' "$(reason "$out")"
+reset_run; hold "$TASK" folder S "$S" 100 workspace-5a; hold "$TASK2" folder S "$S" 100 holder-S
+has "one session under two names (a hold from before its title) is still messaged once" 'SendMessage to "workspace-5a" with' "$(reason "$(bash_cmd "cat $TASK/a $TASK2/b")")"
+reset_run; hold "$REPO" repo S "$S" 100 holder-S; hold "$TASK" folder U "$U" 100 holder-U
+out=$(bash_cmd "cat $REPO/a.py $TASK/b.md")
+has "a repo and a folder: the worktree for the repo" "\`agent-worktree isolate $REPO\`" "$(reason "$out")"
+has "and the wait for the folder alone" "\`conflict-watch wait $TASK\` in the background" "$(reason "$out")"
+has "and both holders are asked about both" "SendMessage to \"holder-S\" and \"holder-U\"" "$(reason "$out")"
+reset_run; hold "$TASK" folder U "$U" 100 holder-U; hold "$REPO" repo S "$S" 100 holder-S
+out=$(bash_cmd "cat $REPO/a.py $TASK/b.md")
+has "whatever the order of the holds: the worktree for the repo" "\`agent-worktree isolate $REPO\`" "$(reason "$out")"
+has "and the wait for the folder alone" "\`conflict-watch wait $TASK\` in the background" "$(reason "$out")"
+SPACED="$ROOT/work/tasks/a b"; mkdir -p "$SPACED"
+reset_run; hold "$SPACED" folder S "$S" 100 holder-S
+out=$(edit "$SPACED/task.md")
+has "a unit with a space is quoted in the release" "conflict-watch release $ROOT/work/tasks/a\\ b\`" "$(reason "$out")"
+has "and in the wait" "conflict-watch wait $ROOT/work/tasks/a\\ b\`" "$(reason "$out")"
 reset_run; hold "$TASK" folder S "$S" 100 holder-S; hold "$TASK2" folder U "$U" 100 holder-U
 expect "waiting for a release is never a conflict" none "$(decision "$(bash_cmd "conflict-watch wait $TASK")")"
 expect "no held path passes" none "$(decision "$(bash_cmd "ls /etc && cat $ROOT/work/tasks/t3/x.md")")"

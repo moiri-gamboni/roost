@@ -374,15 +374,19 @@ def address(name, sid):
 PEERS = "(`session peers` lists every open session's name and id.)"
 
 
-def ask_holder(units, names, kind):
+def ask_holder(units, names, repos):
     """What a session stopped by another's hold does next, worded alike in every warning and notice
     (the hook's ask_holder too): ask the holder whether it still needs the units; once they are
-    released go on, else take a worktree of a repo or wait for a folder in the background."""
-    us = " ".join(units)
-    still = (f"move your work into a worktree of it (`agent-worktree isolate {units[0]}`) and continue there"
-             if kind == "repo" else
-             f"run `conflict-watch wait {us}` in the background (run_in_background: it ends, which wakes you, "
-             "once no other session holds it) and tell the user you are waiting")
+    released go on, else take a worktree of each of the `repos` among them and wait in the
+    background for the rest (a folder inside one of those repos is covered by its worktree)."""
+    q = shlex.quote
+    us = " ".join(map(q, units))
+    rest = [u for u in units if not any(u == r or u.startswith(r + "/") for r in repos)]
+    worktree = ("move your work into a worktree (" + ", ".join(f"`agent-worktree isolate {q(r)}`" for r in repos)
+                + ") and continue there")
+    wait = (f"run `conflict-watch wait {' '.join(map(q, rest))}` in the background (run_in_background: it ends, "
+            "which wakes you, once no other session holds it) and tell the user you are waiting")
+    still = wait if not repos else worktree if not rest else f"{worktree}; for the rest, {wait}"
     return (f"Ask the holder yourself now, without waiting for the user: SendMessage to {names} with this message, "
             f"followed by a line on what you are about to do there: \"Conflict watch: I need to change {us}, which "
             f"you hold. If your work there is finished, run `conflict-watch release {us}` and reply 'released'; "
@@ -606,7 +610,7 @@ class Watch:
         return (f"Conflict watch: this session just wrote {path} (by {comm}) inside {unit}, which "
                 f"another open session holds: {who}. Stop changing anything in {unit} until the holder releases "
                 "it or the user says go ahead, whatever that session's idle time. "
-                f"{ask_holder([unit], names, kind)} If the user approves working there anyway, "
+                f"{ask_holder([unit], names, [unit] if kind == 'repo' else [])} If the user approves working there anyway, "
                 f"run `conflict-watch allow {unit}` so your writes are not flagged again. {PEERS}")
 
     def _holder_text(self, writer, path, unit, rec, approved):
@@ -674,11 +678,15 @@ class Watch:
             os.unlink(p)
 
     def prune(self):
-        """Holds of sessions that are no longer open go; so do their per-session files."""
+        """Holds of sessions that are no longer open go; so do their per-session files. A session
+        titled after its writes gets its holds renamed: the name is the address SendMessage takes."""
         open_sids = self.registry.by_sid(force=True)
         for u in list(self.holds):
             for sid in [s for s in self.holds[u] if s not in open_sids]:
                 self.release(sid, u)
+            for sid, rec in self.holds.get(u, {}).items():
+                if rec["name"] != open_sids[sid].name:
+                    rec["name"], self.dirty = open_sids[sid].name, True
         now = time.time()
         for d in ("inbox", "grants", "acks", "reminders"):
             for name in os.listdir(os.path.join(self.run, d)):
@@ -1340,12 +1348,11 @@ def hook_git(cfg, rules, registry, payload, self_sids):
                         + ", ".join(os.path.relpath(p, top) for p in files[:15]) + (" …" if len(files) > 15 else "")
                         for s, _, rec, files in found)
         names = " and ".join(dict.fromkeys(quoted(s.name) for s, _, _, _ in found))
-        units = list(dict.fromkeys(u for _, u, _, _ in found))
-        kind = "repo" if top in units else "folder"
+        units = sorted({u for _, u, _, _ in found}, key=lambda u: u != top)     # the repo itself first
         reason = (f"Conflict watch: `{' '.join(toks)}` would change files in {top} that another open session "
                   f"wrote: {who}. Stopped once, as a warning. Do not run it until the holder releases "
                   f"{' and '.join(units)} or the user says go ahead, whatever that session's idle time. "
-                  f"{ask_holder([top] if kind == 'repo' else units, names, kind)} Committing, staging or "
+                  f"{ask_holder(units, names, [top] if top in units else [])} Committing, staging or "
                   f"restoring only your own files by path is always fine. If the user says to go ahead, re-run "
                   f"the command: it passes now. {PEERS}")
         return {"permissionDecision": "deny", "permissionDecisionReason": reason}
