@@ -27,6 +27,13 @@ in tmux.
 - **Auto-sync**: re-syncs when VS Code regains focus and polls every few seconds
   while focused, so new agents get a tab and closed ones lose theirs on their
   own. Manual close of a tab is remembered (not reopened until an explicit sync).
+- **Background tabs**: a window started with `agent --no-focus` (tmux window
+  option `@roost_nofocus`) gets its tab behind the one in front. VS Code has no
+  way to open a terminal tab in the background, so the tab opens as usual and,
+  once it is active, the previous tab is shown again with keyboard focus. That
+  only happens when the tab in front is one of this extension's (a pinned tab or
+  the attach view) and `location` is `editor`; otherwise the new tab stays in
+  front.
 - **No leaks**: grouped sessions are closed when their tab closes (`vsc-pin.sh --close`: detach the tab's client, kill the session once no client holds it, since killing it under a live client can segfault the tmux server); orphans (from
   a reload/crash) are swept on startup — only *unattached* `vsc-*` sessions, so
   a live tab is never touched.

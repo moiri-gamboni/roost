@@ -99,8 +99,9 @@ async function rejoinBaseGroup(base) {
   return false;
 }
 
-// Windows of the base session as [{id, windowName, title, index}] (title is the
-// session title or null), or null if the base session is absent.
+// Windows of the base session as [{id, windowName, title, index, noFocus}]
+// (title is the session title or null; noFocus is the @roost_nofocus mark
+// `agent --no-focus` sets), or null if the base session is absent.
 async function listWindows() {
   const base = cfg().get('baseSession', 'main');
   // `=base`, not `base`: tmux resolves a plain target by exact name, then
@@ -108,7 +109,7 @@ async function listWindows() {
   // the plain form silently enumerates that view's windows — which is how a
   // dead `main` went unnoticed for hours while vsc-pin.sh refused every tab.
   const target = `=${base}`;
-  const fmt = '#{window_id}\t#{window_name}\t#{window_index}';
+  const fmt = '#{window_id}\t#{window_name}\t#{window_index}\t#{@roost_nofocus}';
   let r = await tmux(['list-windows', '-t', target, '-F', fmt]);
   if (r.code !== 0 && await rejoinBaseGroup(base)) {
     r = await tmux(['list-windows', '-t', target, '-F', fmt]);
@@ -119,9 +120,9 @@ async function listWindows() {
   const wins = [];
   for (const line of r.stdout.split('\n')) {
     if (!line.trim()) continue;
-    const [id, windowName, index] = line.split('\t');
+    const [id, windowName, index, noFocus] = line.split('\t');
     if (exclude.has(windowName)) continue;
-    wins.push({ id, windowName: windowName || id, title: titles.get(id) || null, index });
+    wins.push({ id, windowName: windowName || id, title: titles.get(id) || null, index, noFocus: noFocus === '1' });
   }
   return wins;
 }
@@ -297,11 +298,42 @@ async function syncAttachTabs({ focus = false, since = 0 } = {}) {
   }
 }
 
+// The terminal in front of the active editor group, if it is one of ours: the
+// tab to put back after a background open. Ours only, because their location
+// is known — show() on a panel terminal would pop the panel open.
+function frontTerminal() {
+  if (cfg().get('location', 'editor') !== 'editor') return undefined;
+  const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
+  const term = vscode.window.activeTerminal;
+  if (!tab || !(tab.input instanceof vscode.TabInputTerminal) || !term) return undefined;
+  return term === attachTerm || [...owned.values()].includes(term) ? term : undefined;
+}
+
+// VS Code cannot open a terminal tab behind the active one: even with
+// preserveFocus the new tab comes to the front, and the terminal it covers loses
+// keyboard focus. So once the new tab has become the active terminal, show the
+// previous one again, with focus, which is where it was.
+function putBack(prev, term, id) {
+  let timer;
+  const sub = vscode.window.onDidChangeActiveTerminal((t) => {
+    if (t !== term) return;
+    sub.dispose();
+    clearTimeout(timer);
+    if (prev.exitStatus === undefined) prev.show(false);
+    dbg(`back  ${id} behind the tab in front`);
+  });
+  timer = setTimeout(() => {
+    sub.dispose();
+    dbg(`back  ${id} never became active within 5s, left as opened`);
+  }, 5000);
+}
+
 function openTab(win) {
   // liveTitle (default): don't set a name, so the tmux-forwarded pane title
   // (session name + live working spinner) drives the tab via ${sequence}. Off:
   // pin a static, clean session title (no live spinner) as the tab name.
   const live = cfg().get('liveTitle', true);
+  const prev = win.noFocus ? frontTerminal() : undefined;
   const opts = {
     shellPath: '/bin/bash',
     shellArgs: [wrapperPath, sessionName(win.id), win.id],
@@ -318,8 +350,9 @@ function openTab(win) {
   const term = vscode.window.createTerminal(opts);
   owned.set(win.id, term);
   if (!live) tabName.set(win.id, opts.name);
-  term.show(true); // reveal without stealing focus from the editor
-  dbg(`open  ${win.id} win=${win.windowName} title=${JSON.stringify(win.title || '')} owned=${owned.size}`);
+  if (!win.noFocus) term.show(true); // reveal without stealing focus from the editor
+  else if (prev) putBack(prev, term, win.id);
+  dbg(`open  ${win.id} win=${win.windowName} title=${JSON.stringify(win.title || '')} noFocus=${win.noFocus}${win.noFocus ? ` putBack=${!!prev}` : ''} owned=${owned.size}`);
 }
 
 // Dispose a tab and forget it (close our session first so onClose is a no-op).
