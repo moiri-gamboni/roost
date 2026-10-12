@@ -615,11 +615,12 @@ class Watch:
 
     def _holder_text(self, writer, path, unit, rec, approved):
         what = ("The user approved that session working there." if approved else
-                "That session has been told to stop and to ask you whether you still need it.")
+                "That session has been told to stop and to ask you whether you still need it; answer its message "
+                "when it comes.")
         return (f"Conflict watch: session {quoted(writer.name)} ({address(writer.name, writer.sid)}) wrote {path} "
                 f"inside {unit}, which this session holds (you last wrote there {fmt_age(self.now() - rec['last'])} "
-                f"ago). {what} If your work in {unit} is finished, run `conflict-watch release {unit}` so others can "
-                "work there; either way, answer its message when it comes.")
+                f"ago). {what} If your work in {unit} is finished, run `conflict-watch release {shlex.quote(unit)}` so "
+                "others can work there.")
 
     def _notify(self, sid, key, text):
         """Append a notice to the session's inbox, at most once per key until the hook takes the inbox."""
@@ -1054,7 +1055,8 @@ def cmd_allow(cfg, rules, registry, args):
 
 def read_holds(run):
     """The rows of holds.tsv (unit, kind, sid, pid, start, since, name, last write, file), or None
-    while no daemon publishes them (it removes the file when it stops)."""
+    while no daemon publishes them (the service removes the file at a stop; a file left behind
+    names a dead pid)."""
     try:
         with open(os.path.join(run, "holds.tsv")) as f:
             lines = f.read().splitlines()
@@ -1068,8 +1070,8 @@ def read_holds(run):
 
 def wait_free(run, units, mine, poll=2.0, down_grace=60.0):
     """Block until no open session outside `mine` holds any of `units`. Returns (free, {unit: names
-    of the sessions seen holding it}). A daemon restart (holds.tsv gone for a second) is waited
-    through; one down for `down_grace` seconds in a row ends the wait unfree: holds are unknown."""
+    of the sessions seen holding it}). A daemon restart (holds.tsv gone for a few seconds) is
+    waited through; one down for `down_grace` seconds in a row ends the wait unfree: holds are unknown."""
     seen, down = {}, None
     while True:
         rows = read_holds(run)

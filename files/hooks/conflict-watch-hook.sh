@@ -11,7 +11,7 @@
 # unit or the user says go ahead, and to ask the holder itself (SendMessage) whether it still needs
 # it: still held, it takes a worktree of a repo or waits for a folder (`conflict-watch wait`).
 #   - every event but Stop: hands the session's inbox (notices the daemon wrote: "you wrote into a unit
-#     another session holds, stop and ask", "another session wrote into yours") to the model;
+#     another session holds, stop and ask the holder", "another session wrote into yours") to the model;
 #   - Edit/Write/MultiEdit/NotebookEdit into a unit another open session holds, or a Bash command
 #     naming a path in one (absolute, ~/, or relative to the cwd or a `cd` in the command): the
 #     warning, naming the holder. Bash writes that happen anyway reach the daemon, which tells
@@ -113,7 +113,7 @@ idle_reminder() {
     [ -r "$stamp" ] && read -r since < "$stamp"
     fresh || exit 0
     echo "$now" > "$stamp" || exit 0
-    echo "This session has been idle for $(( idle / 60 )) min and still holds units it wrote into: $list. While it holds them, any other session that works there is stopped and has to ask the user. Release each unit whose work is finished (\`conflict-watch release <unit> …\`; with no unit it releases every unit this session holds, including any not listed here) and keep the ones you will work in again; a later write there takes the hold back. This is an automated reminder from the conflict watch, not user input: answer with one short line saying what you released and what you kept." >&2
+    echo "This session has been idle for $(( idle / 60 )) min and still holds units it wrote into: $list. While it holds them, any other session that works there is stopped and will message you to ask whether you still need them. Release each unit whose work is finished (\`conflict-watch release <unit> …\`; with no unit it releases every unit this session holds, including any not listed here) and keep the ones you will work in again; a later write there takes the hold back. This is an automated reminder from the conflict watch, not user input: answer with one short line saying what you released and what you kept." >&2
     exit 2
 }
 [ "$event" = Stop ] && idle_reminder

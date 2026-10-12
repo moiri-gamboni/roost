@@ -376,13 +376,14 @@ class HoldLifecycle(WatchFixture):
         self.assertIn(f"{self.task}/body-draft.md", t)
         self.assertNotIn("agent-worktree isolate", t)           # a task folder: no worktree offer
         self.assertIn("without waiting for the user", t)               # it asks the holder itself
-        self.assertIn(f"run `conflict-watch release {self.task}` and reply", t)   # the message it sends
+        self.assertIn(f"run `conflict-watch release {self.task}` and reply 'released'", t)   # the message it sends
+        self.assertIn("'still holding'", t)
         self.assertIn(f"`conflict-watch wait {self.task}` in the background", t)  # a folder still held: wait
         s = self.inbox("S")
         self.assertIn('SendMessage to: "name-T"', s)
         self.assertIn("session T", s)
         self.assertIn(f"conflict-watch release {self.task}", s)
-        self.assertIn("answer its message", s)
+        self.assertIn("answer its message", s)                          # a message is coming
 
     def test_a_repo_unit_offers_the_worktree(self):
         self.write("S", f"{self.repo}/a.py")
@@ -413,6 +414,7 @@ class HoldLifecycle(WatchFixture):
         cw.add_grant(self.run, "T", self.task, [("S", self.watch.since(self.task, "S"))])
         self.write("T", f"{self.task}/x.md")
         self.assertEqual(self.inbox("T"), "")
+        self.assertNotIn("answer its message", self.inbox("S"))       # an approved writer sends none
 
     def test_a_session_renamed_after_its_writes_is_named_as_it_is_now(self):
         # sessions get their title a few turns in, after their first writes; the name is the
@@ -499,7 +501,12 @@ class Wait(WatchFixture):
 
     def wait(self, *units, mine=("T",), **kw):
         kw.setdefault("poll", 0.02)
-        return cw.wait_free(self.run, set(units), set(mine), **kw)
+        out = []
+        t = threading.Thread(target=lambda: out.append(cw.wait_free(self.run, set(units), set(mine), **kw)), daemon=True)
+        t.start()
+        t.join(10)
+        self.assertFalse(t.is_alive(), "wait_free still waiting after 10 s")
+        return out[0]
 
     def later(self, delay, fn):
         t = threading.Timer(delay, fn)
@@ -557,6 +564,20 @@ class Wait(WatchFixture):
         with open(os.path.join(self.run, "holds.tsv"), "w") as f:
             f.write("#daemon\t999999999\n")                    # its pid gone
         self.assertEqual(self.wait(self.task, down_grace=0.1), (False, {}))
+
+    def test_the_cli_waits_for_the_unit_as_the_daemon_keys_it(self):
+        # a path that resolved to another key would read as free at once: a silent false free
+        self.write("S", f"{self.task}/task.md")
+        self.watch.flush()
+        env = {"CONFLICT_WATCH_ROOT": self.root, "CONFLICT_WATCH_REGISTRY": self.reg, "CONFLICT_WATCH_RUN": self.run,
+               "CONFLICT_WATCH_CONF": os.path.join(self.tmp, "conf", "conflict-watch.conf"), "CLAUDE_CODE_SESSION_ID": "T"}
+        got = []
+        with unittest.mock.patch.dict(os.environ, env), \
+             unittest.mock.patch.object(cw, "wait_free", lambda run, units, mine: (got.append(units), (True, {}))[1]), \
+             unittest.mock.patch("sys.stdout"):
+            for arg in ("work/tasks/t1", f"{self.task}/", f"{self.task}/task.md"):
+                cw.main(["wait", arg])
+        self.assertEqual(got, [{self.task}] * 3)
 
     def test_the_cli_names_the_unit_as_status_does(self):
         self.write("T", f"{self.task}/task.md")
@@ -699,7 +720,7 @@ class GitCheck(WatchFixture):
         self.assertEqual(out["permissionDecision"], "deny")
         self.assertIn("name-S", out["permissionDecisionReason"])
         self.assertIn("s.py", out["permissionDecisionReason"])
-        self.assertIn('SendMessage to "name-S" with this message', out["permissionDecisionReason"])
+        self.assertIn('SendMessage to "name-S"', out["permissionDecisionReason"])
         self.assertIn(f"run `conflict-watch release {self.repo}` and reply", out["permissionDecisionReason"])
         self.assertIsNone(self.check("git add -A && git commit -m wip", retry=True))    # the retry passes
 

@@ -65,7 +65,7 @@ say A "echo x > $ROOT/code/repo1/by-shell.py"                           # the se
 check "a write by the session's shell holds its repo" waitfor 5 bash -c "[ \"\$(awk -F'\t' '\$1 == \"$ROOT/code/repo1\" {print \$3}' $RUN/holds.tsv)\" = sid-A ]"
 say B "sed -i s/x/y/ $ROOT/code/repo1/by-shell.py"                      # a short-lived child
 check "a short-lived child's write reaches the second session" waitfor 5 test -s "$RUN/inbox/sid-B"
-check "the writer is told to stop and ask, naming the holder" grep -q '"A" (.*SendMessage to: "A", session sid-A).*Stop changing anything' "$RUN/inbox/sid-B"
+check "the writer is told to stop and ask the holder, naming it" grep -q '"A" (.*SendMessage to: "A", session sid-A).*Stop changing anything' "$RUN/inbox/sid-B"
 check "the holder is told" waitfor 5 grep -q 'session "B" (SendMessage to: "B", session sid-B) wrote' "$RUN/inbox/sid-A"
 check "the repo offers the worktree" grep -q "agent-worktree isolate $ROOT/code/repo1" "$RUN/inbox/sid-B"
 say B "bash -c '(echo n > $ROOT/work/tasks/t1/n.md); true'"   # a grandchild (the subshell forks)

@@ -7,7 +7,7 @@
 #   A writes into three repos and waits. B, never prompted:
 #   its first Edit in repo 1 is stopped with a warning naming A, the retry goes through;
 #   its first Bash command naming repo 3 is stopped the same way, the retry writes, B is told to
-#   stop and ask, and A is told B came in; A releases repo 2, and B's Edit there is not warned.
+#   stop and ask the holder, and A is told B came in; A releases repo 2, and B's Edit there is not warned.
 #   tests/conflict-watch-e2e.sh [MODEL]          # default haiku
 set -uo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
@@ -100,7 +100,7 @@ check "B's first Edit in repo 1 was stopped with a warning naming A" grep -q "th
 check "B's retry of the Edit went through" grep -q "return 2" "$REPO/a.py"
 check "B's first Bash naming repo 3 was stopped the same way" grep -q "this command names $REPO3," "$TB"
 check "B's retry wrote b.py" grep -q "from B" "$REPO3/b.py"
-check "B was told after the fact to stop and ask" grep -q "this session just wrote $REPO3/b.py" "$TB"
+check "B was told after the fact to stop and ask the holder" grep -q "this session just wrote $REPO3/b.py" "$TB"
 check "A was told B wrote in its repo" grep -q "wrote $REPO3/b.py inside $REPO3, which this session holds" "$TA"
 check "after A released repo 2, B's Edit there went through" grep -q "return 3" "$REPO2/a.py"
 check "and was not warned" bash -c "! grep -q 'this edit is in $REPO2,' '$TB'"

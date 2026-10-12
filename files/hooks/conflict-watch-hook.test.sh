@@ -87,7 +87,7 @@ expect "the first edit in another session's unit is denied (never a prompt)" den
 has "the warning names the holder" "holder-S" "$(reason "$out")"
 has "and says idle" "idle" "$(reason "$out")"
 has "and the age of its last write" "5m ago" "$(reason "$out")"
-has "and tells the model to message the holder itself" "without waiting for the user: SendMessage to \"holder-S\" with this message" "$(reason "$out")"
+has "and tells the model to message the holder itself" "without waiting for the user" "$(reason "$out")"
 has "a message asking the holder to release the unit or say it still needs it" "run \`conflict-watch release $TASK\` and reply 'released'" "$(reason "$out")"
 has "a folder still held: wait for its release in the background" "\`conflict-watch wait $TASK\` in the background" "$(reason "$out")"
 has "the holder's name in double quotes" '"holder-S" (' "$(reason "$out")"
