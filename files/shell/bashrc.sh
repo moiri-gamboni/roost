@@ -169,11 +169,17 @@ esac
 export EDITOR='code --wait --reuse-window'
 export VISUAL="$EDITOR"
 
+# Claude Code variables that settings.json `env` cannot set: Claude Code drops
+# the ones on its launch-only lists, so they must be in the environment claude
+# starts in. Reasons for each: files/CLAUDE.md, under settings.json.
+export CLAUDE_CODE_GB_DISK_CACHE_WHEN_TELEMETRY_OFF=1
+export CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT=1
+
 # Push these into tmux's server environment so windows opened via `tmux
 # new-window CMD` (which runs CMD through `sh -c`, not a fresh login shell)
 # inherit them. Without this, `agent` etc. spawn claude with empty $EDITOR.
 if [[ -n "${TMUX:-}" ]]; then
-    for _v in VSCODE_IPC_HOOK_CLI EDITOR VISUAL; do
+    for _v in VSCODE_IPC_HOOK_CLI EDITOR VISUAL CLAUDE_CODE_GB_DISK_CACHE_WHEN_TELEMETRY_OFF CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT; do
         tmux set-environment -g "$_v" "${!_v}"
     done
     unset _v
