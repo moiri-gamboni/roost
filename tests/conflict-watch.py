@@ -375,15 +375,20 @@ class HoldLifecycle(WatchFixture):
         self.assertIn("busy", t)
         self.assertIn(f"{self.task}/body-draft.md", t)
         self.assertNotIn("agent-worktree isolate", t)           # a task folder: no worktree offer
+        self.assertIn("without waiting for the user", t)               # it asks the holder itself
+        self.assertIn(f"run `conflict-watch release {self.task}` and reply", t)   # the message it sends
+        self.assertIn(f"`conflict-watch wait {self.task}` in the background", t)  # a folder still held: wait
         s = self.inbox("S")
         self.assertIn('SendMessage to: "name-T"', s)
         self.assertIn("session T", s)
-        self.assertIn("conflict-watch release", s)
+        self.assertIn(f"conflict-watch release {self.task}", s)
+        self.assertIn("answer its message", s)
 
     def test_a_repo_unit_offers_the_worktree(self):
         self.write("S", f"{self.repo}/a.py")
         self.write("T", f"{self.repo}/b.py")
         self.assertIn(f"agent-worktree isolate {self.repo}", self.inbox("T"))
+        self.assertNotIn("conflict-watch wait", self.inbox("T"))       # a repo still held: the worktree
 
     def test_notices_are_coalesced_until_the_inbox_is_read(self):
         self.write("S", f"{self.task}/task.md")
@@ -669,7 +674,8 @@ class GitCheck(WatchFixture):
         self.assertEqual(out["permissionDecision"], "deny")
         self.assertIn("name-S", out["permissionDecisionReason"])
         self.assertIn("s.py", out["permissionDecisionReason"])
-        self.assertIn("SendMessage", out["permissionDecisionReason"])
+        self.assertIn('SendMessage to "name-S" with this message', out["permissionDecisionReason"])
+        self.assertIn(f"run `conflict-watch release {self.repo}` and reply", out["permissionDecisionReason"])
         self.assertIsNone(self.check("git add -A && git commit -m wip", retry=True))    # the retry passes
 
     def test_a_new_hold_warns_again(self):

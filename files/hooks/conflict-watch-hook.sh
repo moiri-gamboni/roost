@@ -7,7 +7,9 @@
 # repo) and publishes it in holds.tsv; this hook acts on it. It
 # warns, and never raises a permission prompt: a warning is a deny, once per session, unit and
 # hold (acks/<sid>, keyed by the hold's `since`, so a release and re-hold or a new holder re-arms
-# it), and the retry passes. The model is told to ask the user in the conversation.
+# it), and the retry passes. The model is told to change nothing there until the holder releases the
+# unit or the user says go ahead, and to ask the holder itself (SendMessage) whether it still needs
+# it: still held, it takes a worktree of a repo or waits for a folder (`conflict-watch wait`).
 #   - every event but Stop: hands the session's inbox (notices the daemon wrote: "you wrote into a unit
 #     another session holds, stop and ask", "another session wrote into yours") to the model;
 #   - Edit/Write/MultiEdit/NotebookEdit into a unit another open session holds, or a Bash command
@@ -216,19 +218,25 @@ describe() {  # describe IDX... — each holder: its name, state, last write, an
     for i in "$@"; do out+="${out:+; }\"${HN[$i]}\" ($(status_of "${HP[$i]}"), last wrote there $(age "${HL[$i]}") ago; SendMessage to: \"${HN[$i]}\", session ${HS[$i]:0:8})"; done
     echo "$out"
 }
-names() { local i out=""; for i in "$@"; do out+="${out:+ or }\"${HN[$i]}\""; done; echo "$out"; }
-worktree_offer() {  # worktree_offer UNIT KIND
-    [ "$2" = repo ] && echo " Or, since this is a code repo, move your work into a worktree of it (\`agent-worktree isolate $1\`) and continue there."
+names() {  # names IDX... — each holder once, quoted
+    local i out=""; local -A seen=()
+    for i in "$@"; do [ -n "${seen[${HN[$i]}]:-}" ] || { out+="${out:+ and }\"${HN[$i]}\""; seen[${HN[$i]}]=1; }; done
+    echo "$out"
+}
+ask_holder() {  # ask_holder UNITS NAMES KIND — worded as conflict-watch.py's ask_holder(), which the daemon's notices use
+    local still
+    if [ "$3" = repo ]; then still="move your work into a worktree of it (\`agent-worktree isolate ${1%% *}\`) and continue there"
+    else still="run \`conflict-watch wait $1\` in the background (run_in_background: it ends, which wakes you, once no other session holds it) and tell the user you are waiting"; fi
+    echo "Ask the holder yourself now, without waiting for the user: SendMessage to $2 with this message, followed by a line on what you are about to do there: \"Conflict watch: I need to change $1, which you hold. If your work there is finished, run \`conflict-watch release $1\` and reply 'released'; if you still need it, reply 'still holding'.\" Once it is released, go on. If it is still held, $still. If the message is not delivered or no answer comes, ask the user."
 }
 warn() {  # warn WHAT IDX... — deny once, recording that this session has now been warned about these holds
-    local what=$1 i units="" u k; shift
+    local what=$1 i units="" list=""; shift
     local -A seen=()
     for i in "$@"; do
         printf '%s\t%s\t%s\n' "${HU[$i]}" "${HS[$i]}" "${HSI[$i]}" >> "$RUN/acks/$sid"
-        [ -n "${seen[${HU[$i]}]:-}" ] || { units+="${units:+, }${HU[$i]}"; seen[${HU[$i]}]=1; }
+        [ -n "${seen[${HU[$i]}]:-}" ] || { units+="${units:+, }${HU[$i]}"; list+="${list:+ }${HU[$i]}"; seen[${HU[$i]}]=1; }
     done
-    u=${HU[$1]}; k=${HK[$1]}
-    emit deny "Conflict watch: $what $units, which another open session holds: $(describe "$@"). Stopped once, as a warning. Changing anything there is not yours to decide, whatever that session's idle time: ask the user whether to message $(names "$@") (SendMessage) to coordinate.$(worktree_offer "$u" "$k") Reading there is fine, and if the user says to go ahead, retry: it passes now. Changes made there without asking are detected and reported. (\`session peers\` lists every open session's name and id.)"
+    emit deny "Conflict watch: $what $units, which another open session holds: $(describe "$@"). Stopped once, as a warning. Change nothing there until the holder releases it or the user says go ahead, whatever that session's idle time. $(ask_holder "$list" "$(names "$@")" "${HK[$1]}") Reading there is fine, and if the user says to go ahead, retry: it passes now. Changes made there without the holder's release or the user's go-ahead are detected and reported. (\`session peers\` lists every open session's name and id.)"
 }
 
 # --- Edit / Write ------------------------------------------------------------------------

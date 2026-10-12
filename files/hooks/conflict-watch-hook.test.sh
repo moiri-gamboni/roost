@@ -87,7 +87,9 @@ expect "the first edit in another session's unit is denied (never a prompt)" den
 has "the warning names the holder" "holder-S" "$(reason "$out")"
 has "and says idle" "idle" "$(reason "$out")"
 has "and the age of its last write" "5m ago" "$(reason "$out")"
-has "and tells the model to ask the user / SendMessage" "SendMessage" "$(reason "$out")"
+has "and tells the model to message the holder itself" "without waiting for the user: SendMessage to \"holder-S\" with this message" "$(reason "$out")"
+has "a message asking the holder to release the unit or say it still needs it" "run \`conflict-watch release $TASK\` and reply 'released'" "$(reason "$out")"
+has "a folder still held: wait for its release in the background" "\`conflict-watch wait $TASK\` in the background" "$(reason "$out")"
 has "the holder's name in double quotes" '"holder-S" (' "$(reason "$out")"
 has "the exact SendMessage address and the session id" 'SendMessage to: "holder-S", session S)' "$(reason "$out")"
 has "and where to look sessions up" "session peers" "$(reason "$out")"
@@ -97,7 +99,9 @@ expect "so does another file in the same unit" none "$(decision "$(edit "$TASK/o
 expect "edit in another unit passes" none "$(decision "$(edit "$TASK2/task.md")")"
 expect "own session's unit passes" none "$(decision "$(edit "$TASK/task.md" S)")"
 reset_run; hold "$REPO" repo S "$S" 100 holder-S
-has "repo unit offers the worktree" "agent-worktree isolate $REPO" "$(reason "$(edit "$REPO/a.py")")"
+out=$(edit "$REPO/a.py")
+has "repo unit offers the worktree" "agent-worktree isolate $REPO" "$(reason "$out")"
+if [[ $(reason "$out") == *"conflict-watch wait"* ]]; then bad "a repo still held: the worktree, no wait"; else ok "a repo still held: the worktree, no wait"; fi
 reset_run; hold "$REPO" repo S "$S" 100 holder-S
 expect "a nested repo inside a held repo is its own unit" none "$(decision "$(edit "$REPO/files/private/g.md")")"
 reset_run; hold "$TASK" folder S 999999999 100 holder-S
@@ -120,6 +124,12 @@ has "reason names the holder" "holder-S" "$(reason "$out")"
 has "reason says reading is fine" "Reading" "$(reason "$out")"
 expect "retry passes" none "$(decision "$(bash_cmd "sed -i s/a/b/ $TASK/task.md")")"
 expect "other unit still denied" deny "$(decision "$(bash_cmd "cat $TASK2/task.md")")"
+reset_run; hold "$TASK" folder S "$S" 100 holder-S; hold "$TASK2" folder S "$S" 100 holder-S
+out=$(bash_cmd "cat $TASK/a $TASK2/b")
+has "two units of one holder: both in the message" "conflict-watch release $TASK $TASK2" "$(reason "$out")"
+if [[ $(reason "$out") == *'"holder-S" and "holder-S"'* ]]; then bad "and the holder is messaged once"; else ok "and the holder is messaged once"; fi
+reset_run; hold "$TASK" folder S "$S" 100 holder-S; hold "$TASK2" folder U "$U" 100 holder-U
+expect "waiting for a release is never a conflict" none "$(decision "$(bash_cmd "conflict-watch wait $TASK")")"
 expect "no held path passes" none "$(decision "$(bash_cmd "ls /etc && cat $ROOT/work/tasks/t3/x.md")")"
 expect "a longer name sharing the prefix is another unit" none "$(decision "$(bash_cmd "cat ${TASK}0/x.md")")"
 # the holder releases and re-holds (new since) → re-armed

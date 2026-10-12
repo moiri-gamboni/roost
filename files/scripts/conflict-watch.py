@@ -15,8 +15,10 @@ A write into a unit another open session holds puts a notice in both sessions' i
 (hooks/conflict-watch-hook.sh) hands them to the model and warns before an Edit/Write there, a Bash
 command naming it, or a repo-wide git command that would change files another session wrote
 (`hook-git`). A warning is a deny, once per session, unit and hold; the retry passes. Nothing ever
-raises a permission prompt. If the daemon is down nothing is watched and nothing is blocked; the
-health check alerts.
+raises a permission prompt. Every warning tells the session to ask the holder (SendMessage) whether
+it still needs the unit, and if it does, to take a worktree of a repo or to wait for a folder with
+`wait`, run in the background so that its exit wakes the session. If the daemon is down nothing is
+watched and nothing is blocked; the health check alerts.
 
     conflict-watch status                  which session holds which unit, and the counters
     conflict-watch release [UNIT|PATH ...] [--session NAME|ID]
@@ -372,6 +374,22 @@ def address(name, sid):
 PEERS = "(`session peers` lists every open session's name and id.)"
 
 
+def ask_holder(units, names, kind):
+    """What a session stopped by another's hold does next, worded alike in every warning and notice
+    (the hook's ask_holder too): ask the holder whether it still needs the units; once they are
+    released go on, else take a worktree of a repo or wait for a folder in the background."""
+    us = " ".join(units)
+    still = (f"move your work into a worktree of it (`agent-worktree isolate {units[0]}`) and continue there"
+             if kind == "repo" else
+             f"run `conflict-watch wait {us}` in the background (run_in_background: it ends, which wakes you, "
+             "once no other session holds it) and tell the user you are waiting")
+    return (f"Ask the holder yourself now, without waiting for the user: SendMessage to {names} with this message, "
+            f"followed by a line on what you are about to do there: \"Conflict watch: I need to change {us}, which "
+            f"you hold. If your work there is finished, run `conflict-watch release {us}` and reply 'released'; "
+            f"if you still need it, reply 'still holding'.\" Once it is released, go on. If it is still held, "
+            f"{still}. If the message is not delivered or no answer comes, ask the user.")
+
+
 def fmt_age(seconds):
     s = max(0, int(seconds))
     if s < 60:
@@ -584,22 +602,20 @@ class Watch:
     def _stop_text(self, session, path, unit, kind, others, comm, open_sids):
         now = self.now()
         who = "; ".join(self._describe(sid, r, open_sids, now) for sid, r in others)
-        names = " or ".join(quoted(r["name"]) for _, r in others)
-        worktree = (f", or to move this work into a worktree of that repo with `agent-worktree isolate {unit}` "
-                    "and continue there" if kind == "repo" else "")
+        names = " and ".join(dict.fromkeys(quoted(r["name"]) for _, r in others))
         return (f"Conflict watch: this session just wrote {path} (by {comm}) inside {unit}, which "
-                f"another open session holds: {who}. Stop changing anything in {unit} and ask the user before "
-                f"you go on there: whether to message {names} (SendMessage) to coordinate{worktree}. This is not "
-                "yours to decide, whatever that session's idle time. If the user approves working there anyway, "
+                f"another open session holds: {who}. Stop changing anything in {unit} until the holder releases "
+                "it or the user says go ahead, whatever that session's idle time. "
+                f"{ask_holder([unit], names, kind)} If the user approves working there anyway, "
                 f"run `conflict-watch allow {unit}` so your writes are not flagged again. {PEERS}")
 
     def _holder_text(self, writer, path, unit, rec, approved):
         what = ("The user approved that session working there." if approved else
-                "That session has been told to stop and ask the user.")
+                "That session has been told to stop and to ask you whether you still need it.")
         return (f"Conflict watch: session {quoted(writer.name)} ({address(writer.name, writer.sid)}) wrote {path} "
                 f"inside {unit}, which this session holds (you last wrote there {fmt_age(self.now() - rec['last'])} "
-                f"ago). {what} If you are finished in {unit}, run `conflict-watch release {unit}` so others can work "
-                f"there; if you are not, consider messaging {quoted(writer.name)} (SendMessage) to coordinate.")
+                f"ago). {what} If your work in {unit} is finished, run `conflict-watch release {unit}` so others can "
+                "work there; either way, answer its message when it comes.")
 
     def _notify(self, sid, key, text):
         """Append a notice to the session's inbox, at most once per key until the hook takes the inbox."""
@@ -1323,15 +1339,15 @@ def hook_git(cfg, rules, registry, payload, self_sids):
                         f"{address(s.name, s.sid)}) wrote "
                         + ", ".join(os.path.relpath(p, top) for p in files[:15]) + (" …" if len(files) > 15 else "")
                         for s, _, rec, files in found)
-        names = " or ".join(quoted(s.name) for s, _, _, _ in found)
-        repo_unit = any(u == top for _, u, _, _ in found)
-        worktree = (f", or to move your work into a worktree of this repo (`agent-worktree isolate {top}`) and "
-                    "continue there" if repo_unit else "")
+        names = " and ".join(dict.fromkeys(quoted(s.name) for s, _, _, _ in found))
+        units = list(dict.fromkeys(u for _, u, _, _ in found))
+        kind = "repo" if top in units else "folder"
         reason = (f"Conflict watch: `{' '.join(toks)}` would change files in {top} that another open session "
-                  f"wrote: {who}. Stopped once, as a warning. Do not decide this yourself, whatever that "
-                  f"session's idle time: ask the user whether to message {names} (SendMessage) to "
-                  f"coordinate{worktree}. Committing, staging or restoring only your own files by path is "
-                  f"always fine. If the user says to go ahead, re-run the command: it passes now. {PEERS}")
+                  f"wrote: {who}. Stopped once, as a warning. Do not run it until the holder releases "
+                  f"{' and '.join(units)} or the user says go ahead, whatever that session's idle time. "
+                  f"{ask_holder([top] if kind == 'repo' else units, names, kind)} Committing, staging or "
+                  f"restoring only your own files by path is always fine. If the user says to go ahead, re-run "
+                  f"the command: it passes now. {PEERS}")
         return {"permissionDecision": "deny", "permissionDecisionReason": reason}
     return None
 
