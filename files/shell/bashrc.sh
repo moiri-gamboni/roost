@@ -330,12 +330,15 @@ __roost_ensure_tmux() {
 agent() {
     if [[ ${1:-} == -h || ${1:-} == --help ]]; then
         cat <<'EOF'
-Usage: agent [path] [claude-args...]
+Usage: agent [--no-focus] [path] [claude-args...]
 Launch claude in a new window of the tmux session `main`, in path (default: cwd).
   agent                           # cwd
   agent ~/roost/code/myapp        # that dir
   agent ~/roost/code/myapp -c     # continue last session
   agent -w                        # in its own composite worktree
+  agent --no-focus ~/roost/code/myapp   # open it without switching to it: no
+                                  # view follows it, and its VS Code tab opens
+                                  # behind the tab in front (the extension's own)
 EOF
         return 0
     fi
@@ -347,24 +350,27 @@ EOF
         -1 "$$" "$(tty 2>/dev/null)" "${TMUX:+y}" "${TMUX_PANE:-}" "${TERM_PROGRAM:-}" "$*" \
         >> "$HOME/.roost-agent.log"
 
+    # Everything passes through to claude, except agent's own flags, taken out
+    # first so they can come before the path: -N/--no-worktree (running in the
+    # directory is what agent does, and claude would reject the flag) and
+    # --no-focus.
+    local arg no_focus=0
+    local -a _pass=()
+    for arg in "$@"; do
+        case "$arg" in
+            -N|--no-worktree) ;;
+            --no-focus) no_focus=1 ;;
+            *) _pass+=("$arg") ;;
+        esac
+    done
+    set -- "${_pass[@]}"
+
     # If first arg is a directory, use it as the working dir
     if [[ $# -gt 0 ]] && [[ -d "$1" ]]; then
         dir="$1"
         shift
     fi
     claude_args=("$@")
-
-    # Everything passes through to claude, except -N/--no-worktree: running in
-    # the directory is what agent does, and claude would reject the flag.
-    local arg
-    local -a _pass=()
-    for arg in "${claude_args[@]}"; do
-        case "$arg" in
-            -N|--no-worktree) ;;
-            *) _pass+=("$arg") ;;
-        esac
-    done
-    claude_args=("${_pass[@]}")
 
     # Window name defaults to basename of the directory
     local base_name
@@ -404,6 +410,18 @@ EOF
             tmux select-pane -t '=main:shell' -T shell
         fi
     fi
+    if (( no_focus )); then
+        # Detached, never followed or attached, and marked so the VS Code
+        # tmux-tabs extension opens its tab behind the one in front. The window
+        # goes at {end} so the chained set-option can name it in the same tmux
+        # call, before any view lists it: a name target breaks on a dot in the
+        # name, and after `new-window -d` the chain's default target is still
+        # the old current window.
+        tmux new-window -d -a -t '=main:{end}' -n "$name" "${cmd_parts[*]}" \
+            \; set-option -w -t '=main:{end}' @roost_nofocus 1
+        printf '%(%F %T)T pid=%s no-focus: name=%s\n' -1 "$$" "$name" >> "$HOME/.roost-agent.log"
+        return 0
+    fi
     if [[ $state -eq 0 ]]; then
         # Inside tmux the invoking pane is shared by every grouped view, so
         # "which view was this typed into" can't come from tmux's current-
@@ -415,31 +433,33 @@ EOF
         # into. Follow it to the new window, unless it's a VS Code view
         # (main-vsc*/vsc-*): the tmux-tabs extension opens a pinned tab for
         # the window anyway, and following would show the session twice.
-        local mywin viewer
+        local mywin viewer newwin
         mywin=$(tmux display-message -p -t "$TMUX_PANE" '#{window_id}')
         viewer=$(tmux list-clients -F '#{client_activity} #{window_id} #{client_session}' \
             | awk -v w="$mywin" '$2 == w {print $1, $3}' | sort -rn | awk 'NR==1 {print $2}')
-        tmux new-window -d -t '=main' -n "$name" "${cmd_parts[*]}"
+        newwin=$(tmux new-window -d -P -F '#{window_id}' -t '=main' -n "$name" "${cmd_parts[*]}")
         printf '%(%F %T)T pid=%s inside-tmux: mywin=%s viewer=%s name=%s follow=%s\n' \
             -1 "$$" "$mywin" "${viewer:-none}" "$name" \
             "$(case "$viewer" in ''|main-vsc*|vsc-*) echo no;; *) echo "$viewer";; esac)" \
             >> "$HOME/.roost-agent.log"
         case "$viewer" in
             ''|main-vsc*|vsc-*) ;;
-            *) tmux select-window -t "$viewer:$name" ;;
+            *) tmux select-window -t "=$viewer:$newwin" ;;
         esac
     else
-        # Outside tmux: create window in main, then attach via grouped session
-        local group
+        # Outside tmux: create window in main, then attach via grouped session.
+        # The new window is targeted by id from here on: a name target reads a
+        # dot in the name as the window.pane separator.
+        local group newwin
         group=$(__roost_group_name)
         printf '%(%F %T)T pid=%s outside-tmux: group=%s name=%s state=%s\n' \
             -1 "$$" "$group" "$name" "$state" >> "$HOME/.roost-agent.log"
-        tmux new-window -t '=main' -n "$name" "${cmd_parts[*]}"
+        newwin=$(tmux new-window -P -F '#{window_id}' -t '=main' -n "$name" "${cmd_parts[*]}")
         # No terminal (a timer or a cron job): there is nothing to attach, so the
         # window stays in `main`, made its current window, for the next client that
         # attaches.
         if [[ ! -t 0 || ! -t 1 ]]; then
-            tmux select-window -t "=main:$name"
+            tmux select-window -t "=main:$newwin"
             printf '%(%F %T)T pid=%s no-terminal: window left in main, not attached\n' \
                 -1 "$$" >> "$HOME/.roost-agent.log"
             return 0
@@ -452,11 +472,11 @@ EOF
         st=$(__roost_status_for_client)
         if tmux has-session -t "=$group" 2>/dev/null; then
             tmux set-option -t "$group" status "$st"
-            tmux attach-session -t "=$group" \; select-window -t "$name"
+            tmux attach-session -t "=$group" \; select-window -t "=$group:$newwin"
         else
             tmux new-session -t main -s "$group" \
                 \; set-option -t "$group" status "$st" \
-                \; select-window -t "$name"
+                \; select-window -t "=$group:$newwin"
         fi
     fi
 }

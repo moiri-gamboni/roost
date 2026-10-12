@@ -107,14 +107,15 @@ Install and connect Tailscale. The optional tools in `files/laptop/` each have a
 ```bash
 agent [path] [claude-args...]    # Claude in a new tmux window; path defaults to cwd
 agent ~/roost/code/myapp -c      # continue that directory's last session
-agent -N                         # run in the directory itself, no worktree
+agent -w                         # in its own composite worktree
+agent --no-focus ~/roost/code/myapp   # open it without switching to it; its VS Code tab opens behind
 agents                           # pick a window
 attach                           # your own view of the shared `main` session
 session reboot                   # reboot the box; running sessions reopen at boot
 session resume --scan 48         # no snapshot taken? offer sessions active in the last 48h
 ```
 
-In a git repo, `agent` gives each session its own worktree under `~/roost/worktrees/` (the repo and every nested repo on a session branch), fast-forwarded back when the session exits clean; `agent-worktree list` shows what was kept. `git config agent.noWorktree true` opts a repo out. `/rename` inside a session renames its tmux window.
+`agent` runs the session in the directory itself, and the conflict watch warns a second session, holding back its first write, before it works where another one is working. A worktree under `~/roost/worktrees/` is taken on request: `agent -w` at launch gives the repo and every nested repo their own worktree on a session branch, and `agent-worktree isolate <repo>` from a running session takes just that one repo out of the live checkout. At session end its commits fast-forward into the branch they came from when that branch has not moved on; otherwise the worktree is kept and you get a notification (`agent-worktree list` shows what was kept). `git config agent.noWorktree true` on a nested repo keeps it shared live instead of giving it a worktree under `-w`. `--no-focus` behaviour in VS Code: `extras/vscode-tmux-tabs/README.md`. `/rename` inside a session renames its tmux window.
 
 Headless one-off tasks can be scheduled through `scheduled-task.sh` (a `claude -p` run in a `cron` tmux session) with a line in `files/cron-roost`; failures, such as an expired login, arrive by ntfy.
 

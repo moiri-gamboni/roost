@@ -42,6 +42,48 @@ if [[ $cmd == *claude* && $cmd != *" -N"* && $cmd != *--worktree* ]]; then ok "-
 rm -f "$T_LOG"; cmd=$(launched "$T/repo" -w)
 if [[ $cmd == *"claude -w"* ]]; then ok "-w reaches claude (a composite worktree on request)"; else bad "-w: $cmd"; fi
 
+# calls INSIDE_TMUX ARGS... → every tmux call agent makes, one per line, args joined by "|"
+calls() {
+    local inside=$1; shift
+    # shellcheck disable=SC2016  # expands in the child shell
+    env -u TMUX -u TMUX_PANE HOME="$T/home" ROOST_DIR_NAME=roost bash -c '
+        . "$1" > /dev/null 2>&1
+        [[ $2 == 1 ]] && export TMUX=/tmp/stub,1,0 TMUX_PANE=%1
+        tmux() {
+            local IFS="|"; echo "$*" >> "$T_LOG"
+            case "$1" in
+                has-session) return 0 ;;
+                list-windows) echo shell ;;
+                display-message) echo @1 ;;
+                list-clients) echo "100 @1 main-123" ;;  # a terminal viewing the invoking window
+                new-window) [[ "$*" == *"-P"* ]] && echo @7 ;;
+            esac
+            return 0
+        }
+        shift 2; agent "$@" > /dev/null 2>&1
+        cat "$T_LOG"
+    ' _ "$RC" "$inside" "$@"
+}
+for inside in 0 1; do
+    where=$([[ $inside == 1 ]] && echo "inside tmux" || echo "outside tmux")
+    rm -f "$T_LOG"; log=$(calls "$inside" --no-focus "$T/repo" -r abc "the prompt")
+    nw=$(grep '^new-window|' <<< "$log" || true)
+    if [[ $nw == *"|-d|"* && $nw == *"cd $T/repo && claude -r abc the\\ prompt|;|set-option|-w|-t|=main:{end}|@roost_nofocus|1" && $nw == *"|-a|-t|=main:{end}|"* ]]; then
+        ok "--no-focus ($where): detached window in the given dir, marked @roost_nofocus, flag not passed to claude"
+    else bad "--no-focus ($where) window: $nw"; fi
+    if ! grep -Eq '^(select-window|attach-session|new-session)\|' <<< "$log"; then
+        ok "--no-focus ($where): no view follows or attaches to the window"
+    else bad "--no-focus ($where) followed: $log"; fi
+done
+# A window is followed by its id: a name target reads a dot as the pane separator.
+mkdir -p "$T/my.dir"
+rm -f "$T_LOG"; log=$(calls 1 "$T/my.dir")
+if grep -qx 'select-window|-t|=main-123:@7' <<< "$log"; then ok "the terminal's view follows the new window by id (a dotted name)"
+else bad "follow by id: $log"; fi
+rm -f "$T_LOG"; log=$(calls 0 "$T/my.dir" < /dev/null)
+if grep -qx 'select-window|-t|=main:@7' <<< "$log"; then ok "without a terminal, the new window is made main's current one by id"
+else bad "no-terminal select by id: $log"; fi
+
 # Claude Code's Bash tool runs from a snapshot of the login shell that keeps only
 # the functions not matching ^_[^_] and only the exported variables, so a helper
 # with a single leading underscore, or an unexported variable, exists in a
