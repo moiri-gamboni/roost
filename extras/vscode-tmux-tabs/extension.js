@@ -312,7 +312,8 @@ function frontTerminal() {
 // VS Code cannot open a terminal tab behind the active one: even with
 // preserveFocus the new tab comes to the front, and the terminal it covers loses
 // keyboard focus. So once the new tab has become the active terminal, show the
-// previous one again, with focus, which is where it was.
+// previous one again, with focus: usually the user was typing in it. The API
+// cannot tell whether they were, so focus in a sidebar input moves to it too.
 function putBack(prev, term, id) {
   let timer;
   const sub = vscode.window.onDidChangeActiveTerminal((t) => {
