@@ -23,6 +23,7 @@ health check alerts.
                                            drop this session's holds (all of them without units)
     conflict-watch allow UNIT|PATH         the user said go ahead: work beside the holder, unflagged
     conflict-watch unit UNIT|PATH          the unit a path belongs to
+    conflict-watch wait UNIT|PATH ...      return once no other open session holds any of them
     conflict-watch run                     the daemon (root, conflict-watch.service)
 
 UNIT is a unit as `status` prints it, relative to ~/roost; a relative argument that exists from the
@@ -1027,6 +1028,58 @@ def cmd_allow(cfg, rules, registry, args):
     return 0
 
 
+def read_holds(run):
+    """The rows of holds.tsv (unit, kind, sid, pid, start, since, name, last write, file), or None
+    while no daemon publishes them (it removes the file when it stops)."""
+    try:
+        with open(os.path.join(run, "holds.tsv")) as f:
+            lines = f.read().splitlines()
+    except FileNotFoundError:
+        return None
+    head = lines[0].split("\t") if lines else []
+    if len(head) != 2 or head[0] != "#daemon" or not head[1].isdigit() or proc_stat(int(head[1])) is None:
+        return None
+    return [r for r in (l.split("\t") for l in lines[1:]) if len(r) >= 7]
+
+
+def wait_free(run, units, mine, poll=2.0, down_grace=60.0):
+    """Block until no open session outside `mine` holds any of `units`. Returns (free, {unit: names
+    of the sessions seen holding it}). A daemon restart (holds.tsv gone for a second) is waited
+    through; one down for `down_grace` seconds in a row ends the wait unfree: holds are unknown."""
+    seen, down = {}, None
+    while True:
+        rows = read_holds(run)
+        if rows is None:
+            down = down or time.monotonic()
+            if time.monotonic() - down >= down_grace:
+                return False, seen
+        else:
+            down = None
+            held = False
+            for unit, _, sid, pid, start, _, name, *_ in rows:
+                if unit in units and sid not in mine and pid.isdigit() and (proc_stat(int(pid)) or (0, None))[1] == start:
+                    seen.setdefault(unit, set()).add(name)
+                    held = True
+            if not held:
+                return True, seen
+        time.sleep(poll)
+
+
+def cmd_wait(cfg, rules, registry, args):
+    st = read_state(cfg["run"])
+    units = list(dict.fromkeys(unit_arg(rules, a, st["holds"] if st else ()) for a in args.units))
+    free, seen = wait_free(cfg["run"], set(units), own_sessions(registry, my_sid()))
+    if not free:
+        print("conflict-watch: the daemon has not been running for a minute, so who holds what is unknown "
+              "(`conflict-watch status`)")
+        return 1
+    for u in units:
+        names = " and ".join(sorted(quoted(n) for n in seen.get(u, ())))
+        print(f"{os.path.relpath(u, rules.root)}: " + (f"free now ({names} released it or closed)" if names
+                                                         else "no other open session holds it"))
+    return 0
+
+
 def cmd_unit(cfg, rules, registry, args):
     _, u = unit_of_arg(rules, args.path)
     print(f"{u[0]}\t{u[1]}" if u else "none")
@@ -1340,13 +1393,16 @@ def main(argv=None):
     p.add_argument("unit", metavar="UNIT_OR_PATH")
     p = sub.add_parser("unit", help="the unit a path belongs to (a directory: the unit its contents belong to)")
     p.add_argument("path", metavar="UNIT_OR_PATH")
+    p = sub.add_parser("wait", help="return once no other open session holds any of the units "
+                                    "(run in the background, its exit wakes the session)")
+    p.add_argument("units", nargs="+", metavar="UNIT_OR_PATH")
     sub.add_parser("hook-git", help="(for the hook) PreToolUse payload on stdin")
     args = ap.parse_args(argv)
     cfg = defaults()
     rules = Rules.load(cfg["conf"], cfg["root"])
     registry = Registry(cfg["registry"])
     fn = {"run": cmd_run, "status": cmd_status, "release": cmd_release, "allow": cmd_allow,
-          "unit": cmd_unit, "hook-git": cmd_hook_git}[args.cmd]
+          "unit": cmd_unit, "wait": cmd_wait, "hook-git": cmd_hook_git}[args.cmd]
     return fn(cfg, rules, registry, args)
 
 

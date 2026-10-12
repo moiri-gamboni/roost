@@ -15,6 +15,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 import unittest.mock
@@ -473,6 +474,80 @@ class HoldLifecycle(WatchFixture):
         self.assertEqual(lines[0], f"#daemon\t{os.getpid()}")
         unit, kind, sid, pid, start, since, name, last, lastfile = lines[1].split("\t")
         self.assertEqual((unit, kind, sid, int(pid), name, lastfile), (self.task, "folder", "S", self.s_pid, "name-S", f"{self.task}/task.md"))
+
+
+class Wait(WatchFixture):
+    """`conflict-watch wait`: blocks while another open session holds a unit, as holds.tsv publishes
+    it, so a session that runs it in the background is woken when the unit is free."""
+
+    def wait(self, *units, mine=("T",), **kw):
+        kw.setdefault("poll", 0.02)
+        return cw.wait_free(self.run, set(units), set(mine), **kw)
+
+    def later(self, delay, fn):
+        t = threading.Timer(delay, fn)
+        t.start()
+        self.addCleanup(t.cancel)
+
+    def release_later(self, delay, sid, unit):
+        self.later(delay, lambda: (self.watch.release(sid, unit), self.watch.flush()))
+
+    def test_a_unit_no_other_session_holds_is_free_at_once(self):
+        self.write("T", f"{self.task}/task.md")                  # the waiter's own hold does not count
+        self.watch.flush()
+        self.assertEqual(self.wait(self.task), (True, {}))
+
+    def test_free_once_the_holder_releases(self):
+        self.write("S", f"{self.task}/task.md")
+        self.watch.flush()
+        self.release_later(0.3, "S", self.task)
+        t0 = time.monotonic()
+        self.assertEqual(self.wait(self.task), (True, {self.task: {"name-S"}}))
+        self.assertGreater(time.monotonic() - t0, 0.25)
+
+    def test_every_unit_named_has_to_be_free(self):
+        self.write("S", f"{self.task}/task.md")
+        self.write("S", f"{self.repo}/a.py")
+        self.watch.flush()
+        self.release_later(0.1, "S", self.task)
+        self.release_later(0.4, "S", self.repo)
+        t0 = time.monotonic()
+        self.assertTrue(self.wait(self.task, self.repo)[0])
+        self.assertGreater(time.monotonic() - t0, 0.35)
+
+    def test_a_holder_that_closed_holds_nothing(self):
+        self.write("S", f"{self.task}/task.md")
+        self.watch.flush()
+        os.kill(self.s_pid, signal.SIGKILL)
+        os.waitpid(self.s_pid, 0)
+        self.assertTrue(self.wait(self.task)[0])                 # before the daemon prunes it
+
+    def test_a_daemon_restart_is_waited_through(self):
+        # a stop removes holds.tsv; the restarted daemon publishes the same holds again
+        self.write("S", f"{self.task}/task.md")
+        self.watch.flush()
+        holds = os.path.join(self.run, "holds.tsv")
+        os.rename(holds, holds + ".away")
+        self.later(0.2, lambda: os.rename(holds + ".away", holds))
+        self.release_later(0.4, "S", self.task)
+        t0 = time.monotonic()
+        self.assertTrue(self.wait(self.task, down_grace=5)[0])
+        self.assertGreater(time.monotonic() - t0, 0.35)
+
+    def test_a_daemon_that_stays_down_ends_the_wait(self):
+        self.write("S", f"{self.task}/task.md")
+        self.watch.flush()
+        with open(os.path.join(self.run, "holds.tsv"), "w") as f:
+            f.write("#daemon\t999999999\n")                    # its pid gone
+        self.assertEqual(self.wait(self.task, down_grace=0.1), (False, {}))
+
+    def test_the_cli_names_the_unit_as_status_does(self):
+        self.write("T", f"{self.task}/task.md")
+        self.watch.flush()
+        env = dict(os.environ, CONFLICT_WATCH_ROOT=self.root, CONFLICT_WATCH_REGISTRY=self.reg, CONFLICT_WATCH_RUN=self.run,
+                   CONFLICT_WATCH_CONF=os.path.join(self.tmp, "conf", "conflict-watch.conf"), CLAUDE_CODE_SESSION_ID="T")
+        r = subprocess.run([sys.executable, "-S", SRC, "wait", "work/tasks/t1"], env=env, capture_output=True, text=True, timeout=10)
+        self.assertEqual((r.returncode, r.stdout), (0, "work/tasks/t1: no other open session holds it\n"), r.stderr)
 
 
 class UnitArguments(Fixture):
