@@ -156,11 +156,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/roost/claude/hooks/notion-write-guard.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
             "command": "~/roost/claude/hooks/beeper-send-guard.sh",
             "timeout": 15
           }
