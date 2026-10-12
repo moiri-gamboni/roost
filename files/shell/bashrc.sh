@@ -330,14 +330,15 @@ __roost_ensure_tmux() {
 agent() {
     if [[ ${1:-} == -h || ${1:-} == --help ]]; then
         cat <<'EOF'
-Usage: agent [path] [claude-args...]
+Usage: agent [--no-focus] [path] [claude-args...]
 Launch claude in a new window of the tmux session `main`, in path (default: cwd).
   agent                           # cwd
   agent ~/roost/code/myapp        # that dir
   agent ~/roost/code/myapp -c     # continue last session
   agent -w                        # in its own composite worktree
   agent --no-focus ~/roost/code/myapp   # open it without switching to it: no
-                                  # view follows it, its VS Code tab opens behind
+                                  # view follows it, and its VS Code tab opens
+                                  # behind the tab in front (the extension's own)
 EOF
         return 0
     fi
