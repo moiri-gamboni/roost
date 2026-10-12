@@ -875,7 +875,7 @@ ok "Claude Code config, hooks, and dangerous command blocker installed"
 section "Notion + DoneThat Integrations"
 
 if [ -n "${NOTION_TOKEN:-}" ]; then
-    # Broad read; writes gated via permissions.ask in files/settings.json. The token
+    # Broad read; writes gated by the auto-mode Notion Writes rule (private overlay). The token
     # is baked into the server's env via -e; node/npx resolve through the ~/bin
     # symlinks set up in setup/dev-tools.sh. remove+add refreshes the token on
     # re-deploy (stdio server, no OAuth to lose). The headers go in via
