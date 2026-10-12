@@ -30,15 +30,35 @@
       "mcp__notion__API-list-data-source-templates",
       "mcp__notion__API-post-search",
       "mcp__notion__API-query-data-source",
-      "Bash(conflict-watch release:*)"
-    ],
-    "ask": [
-      "mcp__notion__API-patch-*",
-      "mcp__notion__API-update-*",
-      "mcp__notion__API-create-*",
-      "mcp__notion__API-delete-*",
-      "mcp__notion__API-post-page",
-      "mcp__notion__API-move-page"
+      "mcp__claude_ai_Notion__notion-fetch",
+      "mcp__claude_ai_Notion__notion-search",
+      "mcp__claude_ai_Notion__notion-search-*",
+      "mcp__claude_ai_Notion__notion-query-*",
+      "mcp__claude_ai_Notion__notion-get-*",
+      "mcp__claude_ai_Notion__notion-list-*",
+      "mcp__claude_ai_Notion__notion-download-attachment",
+      "mcp__claude_ai_Notion__notion-read-session-event",
+      "mcp__claude_ai_Gmail__get_*",
+      "mcp__claude_ai_Gmail__list_*",
+      "mcp__claude_ai_Gmail__search_*",
+      "mcp__claude_ai_Google_Calendar__get_*",
+      "mcp__claude_ai_Google_Calendar__list_*",
+      "mcp__claude_ai_Google_Calendar__search_*",
+      "mcp__claude_ai_Google_Calendar__suggest_time",
+      "mcp__claude_ai_Google_Drive__get_*",
+      "mcp__claude_ai_Google_Drive__list_*",
+      "mcp__claude_ai_Google_Drive__search_*",
+      "mcp__claude_ai_Google_Drive__read_*",
+      "mcp__claude_ai_Google_Drive__download_*",
+      "mcp__claude_ai_Google_Docs__read_*",
+      "mcp__claude_ai_Google_Sheets__get_*",
+      "mcp__claude_ai_Google_Slides__read_*",
+      "mcp__claude_ai_Slack__slack_read_*",
+      "mcp__claude_ai_Slack__slack_search_*",
+      "mcp__claude_ai_Slack__slack_list_*",
+      "mcp__claude_ai_Slack__slack_get_reactions",
+      "Bash(conflict-watch release:*)",
+      "Bash(tasks:*)"
     ],
     "defaultMode": "auto"
   },
@@ -134,11 +154,6 @@
       {
         "matcher": "Bash",
         "hooks": [
-          {
-            "type": "command",
-            "command": "~/roost/claude/hooks/notion-write-guard.sh",
-            "timeout": 5
-          },
           {
             "type": "command",
             "command": "~/roost/claude/hooks/beeper-send-guard.sh",
@@ -335,7 +350,7 @@
       "effortLevel": "high"
     },
     "claude-opus-5-5": {
-      "effortLevel": "high"
+      "effortLevel": "xhigh"
     }
   },
   "promptSuggestionEnabled": false,

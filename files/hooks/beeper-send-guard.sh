@@ -12,9 +12,8 @@
 # the people in it, and the user approves or declines. Where nothing can prompt (`claude -p`,
 # a background subagent) the harness turns ask into a deny, which is the gate holding.
 #
-# What is caught, all read from the raw command string (quotes and heredocs kept, as in
-# notion-write-guard.sh, because the URL of a write sits inside quotes and an inline python
-# heredoc is a real send vector):
+# What is caught, all read from the raw command string (quotes and heredocs kept, because the
+# URL of a write sits inside quotes and an inline python heredoc is a real send vector):
 #   - `aq send …` — the send verb resolves its destination itself, so it always asks;
 #   - a write to the API: curl with -X/--request POST|PUT|PATCH|DELETE or a body flag
 #     (-d/--data*/--json/-F/--form/-T, unless -G makes it a GET), wget --post-*/--method, and in

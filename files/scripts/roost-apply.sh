@@ -128,7 +128,6 @@ files/conflict-watch.conf|$ROOST_DIR/claude/conflict-watch.conf|plain|restart:co
 files/roost-session-resume.service|$HOME_DIR/.config/systemd/user/roost-session-resume.service|plain|run:systemctl --user daemon-reload && systemctl --user enable roost-session-resume.service
 files/hooks/shellcheck-edit.sh|$ROOST_DIR/claude/hooks/shellcheck-edit.sh|plain+x|
 files/hooks/instruction-file-edit.sh|$ROOST_DIR/claude/hooks/instruction-file-edit.sh|plain+x|
-files/hooks/notion-write-guard.sh|$ROOST_DIR/claude/hooks/notion-write-guard.sh|plain+x|
 files/hooks/beeper-send-guard.sh|$ROOST_DIR/claude/hooks/beeper-send-guard.sh|plain+x|
 files/hooks/truncation-guard.sh|$ROOST_DIR/claude/hooks/truncation-guard.sh|plain+x|
 files/hooks/roughdraft-write-guard.sh|$ROOST_DIR/claude/hooks/roughdraft-write-guard.sh|plain+x|

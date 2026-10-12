@@ -52,7 +52,7 @@
 # Matching runs on the command with heredoc bodies and quoted spans STRIPPED, in that order —
 # stripping quotes first turns `<<'MSG'` into `<<`, which no longer reads as a heredoc opener,
 # and the body survives to be matched (the predecessor denied its own commit that way). The
-# inverse of notion-write-guard.sh, which matches raw: there the target sits inside quotes;
+# inverse of beeper-send-guard.sh, which matches raw: there the target sits inside quotes;
 # here a `head` inside a quoted string, a commit message or a doc is noise. Double-quoted spans
 # holding a `$` survive, because `echo "$(ls | head -5)"` is code and the common idiom for it.
 # Consequence: the body of `bash -c '… | head -3'` passes. Accepted.

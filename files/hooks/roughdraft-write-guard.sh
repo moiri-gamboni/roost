@@ -18,7 +18,7 @@
 # It does not source ../lib/_hook-env.sh. The hook fires on every Write and every Edit, so the
 # `tailscale ip` subprocess, runtime-dir mkdir and per-exit logger that sourcing costs would be
 # paid thousands of times a day for a facility used on a handful of them. Same reasoning as
-# notion-write-guard.sh, which fires on every Bash call.
+# beeper-send-guard.sh, which fires on every Bash call.
 #
 # The on-disk format is a frozen cross-repo contract, implemented twice — here and in
 # packages/server/src/checkpoint-store.ts on the Roughdraft side. Do not change the path layout,
