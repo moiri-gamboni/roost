@@ -432,31 +432,33 @@ EOF
         # into. Follow it to the new window, unless it's a VS Code view
         # (main-vsc*/vsc-*): the tmux-tabs extension opens a pinned tab for
         # the window anyway, and following would show the session twice.
-        local mywin viewer
+        local mywin viewer newwin
         mywin=$(tmux display-message -p -t "$TMUX_PANE" '#{window_id}')
         viewer=$(tmux list-clients -F '#{client_activity} #{window_id} #{client_session}' \
             | awk -v w="$mywin" '$2 == w {print $1, $3}' | sort -rn | awk 'NR==1 {print $2}')
-        tmux new-window -d -t '=main' -n "$name" "${cmd_parts[*]}"
+        newwin=$(tmux new-window -d -P -F '#{window_id}' -t '=main' -n "$name" "${cmd_parts[*]}")
         printf '%(%F %T)T pid=%s inside-tmux: mywin=%s viewer=%s name=%s follow=%s\n' \
             -1 "$$" "$mywin" "${viewer:-none}" "$name" \
             "$(case "$viewer" in ''|main-vsc*|vsc-*) echo no;; *) echo "$viewer";; esac)" \
             >> "$HOME/.roost-agent.log"
         case "$viewer" in
             ''|main-vsc*|vsc-*) ;;
-            *) tmux select-window -t "$viewer:$name" ;;
+            *) tmux select-window -t "=$viewer:$newwin" ;;
         esac
     else
-        # Outside tmux: create window in main, then attach via grouped session
-        local group
+        # Outside tmux: create window in main, then attach via grouped session.
+        # The new window is targeted by id from here on: a name target reads a
+        # dot in the name as the window.pane separator.
+        local group newwin
         group=$(__roost_group_name)
         printf '%(%F %T)T pid=%s outside-tmux: group=%s name=%s state=%s\n' \
             -1 "$$" "$group" "$name" "$state" >> "$HOME/.roost-agent.log"
-        tmux new-window -t '=main' -n "$name" "${cmd_parts[*]}"
+        newwin=$(tmux new-window -P -F '#{window_id}' -t '=main' -n "$name" "${cmd_parts[*]}")
         # No terminal (a timer or a cron job): there is nothing to attach, so the
         # window stays in `main`, made its current window, for the next client that
         # attaches.
         if [[ ! -t 0 || ! -t 1 ]]; then
-            tmux select-window -t "=main:$name"
+            tmux select-window -t "=main:$newwin"
             printf '%(%F %T)T pid=%s no-terminal: window left in main, not attached\n' \
                 -1 "$$" >> "$HOME/.roost-agent.log"
             return 0
@@ -469,11 +471,11 @@ EOF
         st=$(__roost_status_for_client)
         if tmux has-session -t "=$group" 2>/dev/null; then
             tmux set-option -t "$group" status "$st"
-            tmux attach-session -t "=$group" \; select-window -t "$name"
+            tmux attach-session -t "=$group" \; select-window -t "=$group:$newwin"
         else
             tmux new-session -t main -s "$group" \
                 \; set-option -t "$group" status "$st" \
-                \; select-window -t "$name"
+                \; select-window -t "=$group:$newwin"
         fi
     fi
 }

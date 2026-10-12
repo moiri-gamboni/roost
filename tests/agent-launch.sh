@@ -56,6 +56,7 @@ calls() {
                 list-windows) echo shell ;;
                 display-message) echo @1 ;;
                 list-clients) echo "100 @1 main-123" ;;  # a terminal viewing the invoking window
+                new-window) [[ "$*" == *"-P"* ]] && echo @7 ;;
             esac
             return 0
         }
@@ -74,6 +75,14 @@ for inside in 0 1; do
         ok "--no-focus ($where): no view follows or attaches to the window"
     else bad "--no-focus ($where) followed: $log"; fi
 done
+# A window is followed by its id: a name target reads a dot as the pane separator.
+mkdir -p "$T/my.dir"
+rm -f "$T_LOG"; log=$(calls 1 "$T/my.dir")
+if grep -qx 'select-window|-t|=main-123:@7' <<< "$log"; then ok "the terminal's view follows the new window by id (a dotted name)"
+else bad "follow by id: $log"; fi
+rm -f "$T_LOG"; log=$(calls 0 "$T/my.dir" < /dev/null)
+if grep -qx 'select-window|-t|=main:@7' <<< "$log"; then ok "without a terminal, the new window is made main's current one by id"
+else bad "no-terminal select by id: $log"; fi
 
 # Claude Code's Bash tool runs from a snapshot of the login shell that keeps only
 # the functions not matching ^_[^_] and only the exported variables, so a helper
