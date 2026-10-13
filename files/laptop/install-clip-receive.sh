@@ -7,12 +7,13 @@
 #      clipboard tool
 #   3. Enables the socket and sends a test string through it
 #
-# The server reaches the socket through a RemoteForward in ~/.ssh/config
-# (printed at the end while missing), which VS Code's Remote-SSH connection
-# carries. OSC 52 through the terminal cannot do this: Wayland drops clipboard
-# writes from a window without keyboard focus. GNOME accepts them from X11
-# clients at any time, hence xclip there; KDE and the wlroots compositors accept
-# wl-copy's through the data-control protocol, which GNOME lacks.
+# The server reaches the socket through roost-forwards.service
+# (install-roost-forwards.sh). OSC 52 through the terminal cannot do this job:
+# a Wayland compositor drops clipboard writes from a window without keyboard
+# focus. On GNOME the tool is xclip, on reports that Mutter takes X11 clipboard
+# writes from unfocused clients; elsewhere wl-copy, which sets the clipboard
+# through the data-control protocol on KDE and the wlroots compositors (GNOME
+# has none). Neither yet tried on the laptop.
 #
 # Overwrites the clipboard once (the test). No .env. Idempotent; rerun after a
 # change of desktop. Set DEBUG=1 for full command tracing.
@@ -75,13 +76,10 @@ fi
 ok "round trip works"
 
 echo
-if grep -qs 'clip-receive.sock' "$HOME/.ssh/config"; then
-    echo "Done. Check from the server once connected: echo hello | clip"
-else
-    echo "Done. One step left: add this line to the server's Host block in ~/.ssh/config"
-    echo "(1000 is the server user's UID, ssh expands %i to yours), then reconnect:"
-    echo
-    echo "    RemoteForward /run/user/1000/clip-receive.sock /run/user/%i/clip-receive.sock"
-    echo
-    echo "Check from the server once reconnected: echo hello | clip"
+echo "Done."
+if ! systemctl --user is-active --quiet roost-forwards.service; then
+    echo "One step left: ./files/laptop/install-roost-forwards.sh, which carries this"
+    echo "socket to the server."
 fi
+echo "Check: in a server terminal run  sleep 5; echo hello | clip  then switch to"
+echo "another window on the laptop before it fires, and paste there."
