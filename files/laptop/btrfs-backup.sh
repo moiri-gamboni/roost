@@ -119,7 +119,11 @@ meter() {
 
 # ClearAllForwardings: a data pull needs none, and the backup key is `restrict`ed
 # server-side, so a RemoteForward inherited from ~/.ssh/config would only warn.
-SSH=(ssh -o ClearAllForwardings=yes)
+# ControlPath=none: the Host block shares one connection (README, SSH forwards);
+# sharing would run the pull over the user's session instead of the backup key,
+# and a backup that opened the shared connection would hand its `restrict`ed
+# session to VS Code, which needs port forwarding.
+SSH=(ssh -o ClearAllForwardings=yes -o ControlPath=none)
 if [ -n "$SSH_KEY" ]; then
     [ -f "$SSH_KEY" ] || die "ROOST_SSH_KEY=$SSH_KEY does not exist"
     SSH+=(-i "$SSH_KEY" -o IdentitiesOnly=yes)
