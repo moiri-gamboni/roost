@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install development tools: fnm + Node.js + pnpm, Go, uv, pytest, pipenv, Docker, gitleaks.
+# Install development tools: fnm + Node.js + pnpm, Go, uv, pytest, pipenv, Docker, gitleaks, draw.io.
 source "$(dirname "$0")/../_setup-env.sh"
 
 # --- fnm + Node.js 22 ---
@@ -85,6 +85,22 @@ if as_user "command -v pyright-langserver && command -v typescript-language-serv
 else
     as_user "npm i -g --prefix \"\$HOME/.local\" pyright typescript-language-server typescript@6 bash-language-server"
     ok "language servers installed (pyright, typescript-language-server, bash-language-server)"
+fi
+
+# --- draw.io desktop (CLI export of .drawio files to PNG/SVG/PDF) ---
+# From the official release .deb, installed with apt so its dependencies resolve.
+# It is an Electron app with no headless mode: export under Xvfb, e.g.
+#   xvfb-run -a drawio -x -f png -p 0 -o page1.png diagram.drawio
+
+if command -v drawio &>/dev/null; then
+    skip "draw.io already installed"
+else
+    DRAWIO_VERSION=$(curl -fsSL https://api.github.com/repos/jgraph/drawio-desktop/releases/latest | jq -r .tag_name | sed 's/^v//')
+    info "Installing draw.io $DRAWIO_VERSION..."
+    curl -fsSL -o /tmp/drawio.deb "https://github.com/jgraph/drawio-desktop/releases/download/v${DRAWIO_VERSION}/drawio-amd64-${DRAWIO_VERSION}.deb"
+    apt-get install -y -qq xvfb /tmp/drawio.deb
+    rm -f /tmp/drawio.deb
+    ok "draw.io $DRAWIO_VERSION installed"
 fi
 
 # --- ast-grep (syntax-tree code search; the engine behind ~/bin/sym) ---
