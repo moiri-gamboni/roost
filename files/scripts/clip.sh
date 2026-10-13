@@ -7,8 +7,8 @@
 #
 # The text takes both routes, every time:
 #   laptop  the laptop's clipboard receiver (files/laptop/install-clip-receive.sh),
-#           through the socket files/laptop/roost-forwards.service forwards to
-#           $XDG_RUNTIME_DIR/clip-receive.sock. It sets the clipboard without
+#           through the socket the laptop's SSH connection forwards to
+#           $XDG_RUNTIME_DIR/clip-receive.sock (README, Laptop tools: SSH forwards). It sets the clipboard without
 #           the terminal having focus (desktop caveats: the installer header).
 #   OSC 52  through tmux to the terminal that last had input, the phone's
 #           included. A Wayland desktop drops it while that terminal's window is

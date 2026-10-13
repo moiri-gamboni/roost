@@ -79,7 +79,17 @@ Install and connect Tailscale. The optional tools in `files/laptop/` each have a
 
 - **Off-site backup** (`./files/laptop/install-btrfs-backup.sh`): the laptop pulls a daily incremental `btrfs send` of the server's snapshots into `/backup/roost/` (a btrfs partition you mount there) and keeps 5 restore points: the last 3 days, the previous week and the previous month. ntfy on failure.
 - **Branch ruleset sync** (`./files/laptop/install-gh-ruleset-sync.sh`): re-applies the "Protect main" ruleset to every repo you own, so repos created between deploys are protected too; skips forks and archived repos. Needs `gh` logged in with a token a system unit can read (`gh auth login --insecure-storage` if you use the desktop keyring).
-- **SSH forwards** (`./files/laptop/install-roost-forwards.sh`): one long-lived SSH connection, a user service, carrying the laptop sockets the server uses: the microphone (Voice, below) and the clipboard receiver. Remove any `RemoteForward` lines from the server's `Host` block in `~/.ssh/config`: every connection that requests a forward takes over the server's socket path and leaves it dead when it closes, so a quick `ssh` or drop-watch's rsync would break them. The installer lists any it finds.
+- **SSH forwards** (no installer): the server reaches the laptop microphone (Voice, below) and the clipboard receiver through sockets the laptop's SSH connection forwards. Add to the server's `Host` block in `~/.ssh/config` (`1000` is the server user's UID; ssh expands `%i` to the laptop's), then reconnect:
+
+  ```
+  ControlMaster auto
+  ControlPath ~/.ssh/cm-%C
+  ControlPersist 1m
+  RemoteForward /run/user/1000/pulse-fwd /run/user/%i/pulse/native
+  RemoteForward /run/user/1000/clip-receive.sock /run/user/%i/clip-receive.sock
+  ```
+
+  Connection sharing keeps the forwards alive: without it, any other connection (a quick `ssh`, drop-watch's rsync) takes over the server's socket paths and leaves them dead when it closes. They last while any connection to the server is open, plus a minute.
 - **Clipboard** (`./files/laptop/install-clip-receive.sh`): lets `clip` on the server (what the /clip skill runs) set the laptop clipboard while VS Code is unfocused, which the terminal's own OSC 52 copy cannot do on Wayland. Installs xclip (wl-clipboard on Wayland desktops other than GNOME) and a socket-activated user service, and tests them; needs the SSH forwards. Check: in a server terminal run `sleep 5; echo hello | clip`, switch to another laptop window before it fires, and paste there.
 - **Discord links** (`./files/laptop/install-discord-links.sh`): registers a handler so `discord://` links (the attention queue's and the daily planning briefing's) open in the Discord desktop app rather than doing nothing. Needs the app on PATH as `discord`.
 - **Drop folder** (`./files/laptop/install-drop-watch.sh`): watches `~/drop/` and rsyncs changes to the server, where they are served read-only at `drop.<domain>` on the tailnet.

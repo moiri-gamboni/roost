@@ -7,8 +7,8 @@
 #      clipboard tool
 #   3. Enables the socket and sends a test string through it
 #
-# The server reaches the socket through roost-forwards.service
-# (install-roost-forwards.sh). OSC 52 through the terminal cannot do this job:
+# The server reaches the socket through a RemoteForward in ~/.ssh/config
+# (README, Laptop tools: SSH forwards). OSC 52 through the terminal cannot do this job:
 # a Wayland compositor drops clipboard writes from a window without keyboard
 # focus. On GNOME the tool is xclip, on reports that Mutter takes X11 clipboard
 # writes from unfocused clients; elsewhere wl-copy, which sets the clipboard
@@ -77,8 +77,8 @@ ok "round trip works"
 
 echo
 echo "Done."
-if ! systemctl --user is-active --quiet roost-forwards.service; then
-    echo "One step left: ./files/laptop/install-roost-forwards.sh, which carries this"
+if ! grep -qs 'clip-receive.sock' "$HOME/.ssh/config"; then
+    echo "One step left: the SSH forwards (README, Laptop tools), which carry this"
     echo "socket to the server."
 fi
 echo "Check: in a server terminal run  sleep 5; echo hello | clip  then switch to"
