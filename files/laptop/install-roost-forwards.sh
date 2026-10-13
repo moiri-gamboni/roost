@@ -58,7 +58,9 @@ if grep -ns 'RemoteForward' "$HOME/.ssh/config"; then
     echo
     echo "Done, but remove the RemoteForward lines above from ~/.ssh/config:"
     echo "this service carries them now, and any other connection that requests"
-    echo "them leaves the server's sockets dead when it closes."
+    echo "them leaves the server's sockets dead when it closes. Then run"
+    echo "systemctl --user restart roost-forwards, since its connection picked"
+    echo "them up too."
 else
     echo "Done. Check from the server: pactl info (shows the laptop's sound server)"
 fi

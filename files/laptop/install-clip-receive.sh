@@ -13,7 +13,7 @@
 # focus. On GNOME the tool is xclip, on reports that Mutter takes X11 clipboard
 # writes from unfocused clients; elsewhere wl-copy, which sets the clipboard
 # through the data-control protocol on KDE and the wlroots compositors (GNOME
-# has none). Neither yet tried on the laptop.
+# has none). Tried on the laptop: files/laptop/CLAUDE.md.
 #
 # Overwrites the clipboard once (the test). No .env. Idempotent; rerun after a
 # change of desktop. Set DEBUG=1 for full command tracing.
