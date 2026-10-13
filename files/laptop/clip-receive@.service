@@ -1,0 +1,10 @@
+[Unit]
+Description=Set the clipboard from one clip-receive.socket connection
+
+# The tool reads the connection to its end, then stays up serving the text
+# until something else takes the clipboard (its foreground mode: a forked
+# server would die with this unit).
+[Service]
+ExecStart=${CLIP_CMD}
+StandardInput=socket
+StandardOutput=journal

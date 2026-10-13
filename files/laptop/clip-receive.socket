@@ -1,0 +1,10 @@
+[Unit]
+Description=Clipboard receiver for the server's clip, reached through an SSH RemoteForward
+
+[Socket]
+ListenStream=%t/clip-receive.sock
+SocketMode=0600
+Accept=yes
+
+[Install]
+WantedBy=sockets.target
