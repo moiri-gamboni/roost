@@ -85,11 +85,13 @@ Install and connect Tailscale. The optional tools in `files/laptop/` each have a
   ControlMaster auto
   ControlPath ~/.ssh/cm-%C
   ControlPersist 1m
+  ServerAliveInterval 15
+  ServerAliveCountMax 3
   RemoteForward /run/user/1000/pulse-fwd /run/user/%i/pulse/native
   RemoteForward /run/user/1000/clip-receive.sock /run/user/%i/clip-receive.sock
   ```
 
-  Connection sharing keeps the forwards alive: without it, any other connection (a quick `ssh`, drop-watch's rsync) takes over the server's socket paths and leaves them dead when it closes. They last while any connection to the server is open, plus a minute.
+  Connection sharing keeps the forwards alive: without it, any other connection (a quick `ssh`, drop-watch's rsync) takes over the server's socket paths and leaves them dead when it closes. They last while any connection to the server is open, plus a minute. The keepalives close a shared connection that died in sleep or a network change, which would otherwise stall every new connection; if one stalls anyway, `ssh -O exit <host>` closes it.
 - **Clipboard** (`./files/laptop/install-clip-receive.sh`): lets `clip` on the server (what the /clip skill runs) set the laptop clipboard while VS Code is unfocused, which the terminal's own OSC 52 copy cannot do on Wayland. Installs xclip (wl-clipboard on Wayland desktops other than GNOME) and a socket-activated user service, and tests them; needs the SSH forwards. Check: in a server terminal run `sleep 5; echo hello | clip`, switch to another laptop window before it fires, and paste there.
 - **Discord links** (`./files/laptop/install-discord-links.sh`): registers a handler so `discord://` links (the attention queue's and the daily planning briefing's) open in the Discord desktop app rather than doing nothing. Needs the app on PATH as `discord`.
 - **Drop folder** (`./files/laptop/install-drop-watch.sh`): watches `~/drop/` and rsyncs changes to the server, where they are served read-only at `drop.<domain>` on the tailnet.
