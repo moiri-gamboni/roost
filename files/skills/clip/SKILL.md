@@ -13,4 +13,4 @@ EOF
 
 To copy a file, redirect it (`clip < <file>`) instead of the heredoc.
 
-It sets the laptop clipboard through the laptop's receiver, focus or not, and also sends OSC 52 to the terminal the user last typed in (the phone's included), which lands only while that window has focus; its header has the details. Then say it's copied, in one line; don't repeat the text. If it printed `laptop: receiver unreachable`, add that the copy lands only if the terminal they last typed in still has focus.
+Then say it's copied, in one line; don't repeat the text. If it printed `laptop: receiver unreachable`, add that the copy lands only if the terminal they last typed in still has focus. If it exits 1, nothing was copied: say so.

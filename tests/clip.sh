@@ -44,6 +44,17 @@ check "tmux targets the latest client" grep -q -- '-w -t /dev/pts/3 -' "$T/tmux-
 check "reports both routes" grep -q -e '^laptop: sent' <<<"$out"
 check "  (OSC 52 line)" grep -q -e '^OSC 52: sent to /dev/pts/3' <<<"$out"
 
+echo "receiver listening, no tmux server"
+rm -f "$T/run/clip-receive.sock"   # ncat leaves its socket file behind
+ncat -l --recv-only -U "$T/run/clip-receive.sock" > "$T/laptop-in" &
+listener=$!
+for _ in $(seq 50); do [[ -S $T/run/clip-receive.sock ]] && break; sleep 0.1; done
+out=$(printf '%s' "$text" | STUB_NO_SERVER=1 "$here/files/scripts/clip.sh" 2>&1) && rc=0 || rc=$?
+wait "$listener"
+check "exit 0" test "$rc" = 0
+check "laptop still got the text" cmp -s "$T/want" "$T/laptop-in"
+check "says no client took it" grep -q '^OSC 52: no tmux client took it' <<<"$out"
+
 echo "no receiver, tmux up"
 rm -f "$T/run/clip-receive.sock" "$T/tmux-in"
 out=$(printf '%s' "$text" | "$here/files/scripts/clip.sh") && rc=0 || rc=$?
