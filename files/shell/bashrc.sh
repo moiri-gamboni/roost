@@ -91,6 +91,9 @@ unset _roost_private
 
 # ~/.cache is its own subvolume (setup/snapper.sh) and hardlinks cannot cross
 # subvolumes: without this uv warns on every install before falling back to copy.
+# On one btrfs filesystem uv's copy is a reflink, so a venv shares its packages'
+# extents with the cache and costs almost nothing. That is why the uv cache stays
+# on the root disk: from the data volume every venv would be a full copy on root.
 export UV_LINK_MODE=copy
 
 # --- VS Code Remote IPC ---
