@@ -145,11 +145,6 @@ files/claude-plugins/.claude-plugin/marketplace.json|$ROOST_DIR/claude/roost-plu
 files/claude-plugins/bash-lsp/.claude-plugin/plugin.json|$ROOST_DIR/claude/roost-plugins/bash-lsp/.claude-plugin/plugin.json|plain|
 files/travel/travel-health.sh|$ROOST_DIR/claude/scheduled/health-check-apps.sh|plain+x|
 files/shell/bashrc.sh|$HOME_DIR/.bashrc.d/roost.sh|plain|
-files/agents/effort-low.md|$ROOST_DIR/claude/agents/effort-low.md|plain|
-files/agents/effort-medium.md|$ROOST_DIR/claude/agents/effort-medium.md|plain|
-files/agents/effort-high.md|$ROOST_DIR/claude/agents/effort-high.md|plain|
-files/agents/effort-xhigh.md|$ROOST_DIR/claude/agents/effort-xhigh.md|plain|
-files/agents/effort-max.md|$ROOST_DIR/claude/agents/effort-max.md|plain|
 files/skills/clip/SKILL.md|$ROOST_DIR/claude/skills/clip/SKILL.md|plain|
 files/skills/html2markdown/SKILL.md|$ROOST_DIR/claude/skills/html2markdown/SKILL.md|plain|
 files/skills/havelock-api/SKILL.md|$ROOST_DIR/claude/skills/havelock-api/SKILL.md|plain|
