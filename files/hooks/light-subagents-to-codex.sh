@@ -2,8 +2,11 @@
 # PreToolUse hook (matcher: Agent): refuse a Sonnet- or Haiku-model subagent spawn and hand the
 # session the antiphon command that runs the same work as a Codex thread (GPT-6-Luna, max effort).
 #
-# Why: on this box the light tier of delegation is Codex through antiphon, not a light Claude
-# model; Claude subagents run on Opus (global CLAUDE.md, Agents & Subagents). Plugins such as
+# Unwired: Sonnet is the default delegate (global CLAUDE.md, Agents & Subagents), which this hook
+# would deny. Wire it again only together with a delegation section that routes light legs to Codex.
+#
+# Why (when wired): the light tier of delegation is Codex through antiphon, not a light Claude
+# model; Claude subagents run on Opus. Plugins such as
 # praxis pin `model: sonnet` in their own agent definitions and cannot know that, so the rule is
 # enforced here rather than in each plugin.
 #
