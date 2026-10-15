@@ -17,24 +17,32 @@ The body is plain text from FILE, or stdin without --body-file; --html-file adds
 alternative to it. --reply-to takes a Gmail message id (the connector's search_threads and
 get_thread show them) and files the draft in that message's thread with In-Reply-To, References
 and its subject, "Re: " added unless already there, so it refuses --subject; it sets no recipients
-(pass --to) and does not quote the original. --update replaces a draft's message: the recipients,
-subject and thread it is not given are kept from the draft, as the connector's update_draft does,
-but the body is always given again. Its id is the one this tool printed or the connector's
-list_drafts shows. An empty body is refused. No attachments, forwards or sending. Prints the draft
+(pass --to). It quotes that message as Gmail does: "On <date> <sender> wrote:", then its text
+with "> " prefixes in the plain part and its HTML in a gmail_quote blockquote in the HTML part
+(made from the plain body, URLs linked, when --html-file is not given). --update replaces a
+draft's message: the recipients, subject and thread it is not given are kept from the draft, as
+the connector's update_draft does, and a reply's quote is rebuilt from the message it answers, but
+the body is always given again. Its id is the one this tool printed or the connector's list_drafts
+shows. An empty body is refused. No attachments, forwards or sending. Prints the draft
 id, the thread id and a link that opens the draft (the form the connector's own viewUrl takes).
 
 OAuth: the Desktop client in ~/.config/attention-queue/gmail-oauth-client.env (the mailbox's own
 Workspace project), scopes gmail.compose (drafts; the scope would also let the token send, which
-this tool never does) and gmail.readonly (the headers --reply-to reads; it covers the whole
+this tool never does) and gmail.readonly (the message --reply-to quotes; it covers the whole
 mailbox); the refresh token is kept in ~/.config/gmail-draft/token.json. Nothing listens on the
 redirect's loopback port, so the browser ends on a connection error whose address bar holds the
 URL `auth` takes; the code in it is single-use and useless without the verifier kept here.
 GMAIL_DRAFT_DEBUG=1 prints each Gmail API request and raw response to stderr."""
 import argparse
 import base64
+import email
+import email.policy
+import email.utils
 import hashlib
+import html
 import json
 import os
+import re
 import secrets
 import sys
 import urllib.error
@@ -54,6 +62,7 @@ AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 API = "https://gmail.googleapis.com/gmail/v1/users/me"
 DEBUG = os.environ.get("GMAIL_DRAFT_DEBUG") == "1"
+QUOTE_STYLE = "margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex"
 
 
 def die(msg) -> NoReturn:
@@ -149,20 +158,57 @@ def header_map(message):
 
 
 def reply_headers(original):
-    """Threading headers for a reply to `original`, a messages.get response in METADATA format
-    (RFC 5322 3.6.4: References is the parent's References, or else its In-Reply-To, then its
-    Message-ID)."""
-    h = header_map(original)
-    parent_refs = h.get("references") or h.get("in-reply-to") or ""
-    subject = h.get("subject", "")
+    """Threading headers for a reply to `original`, the parsed parent message (RFC 5322 3.6.4:
+    References is the parent's References, or else its In-Reply-To, then its Message-ID)."""
+    def h(name):
+        return " ".join(str(original[name] or "").split())    # unfolded
+    parent_refs = h("References") or h("In-Reply-To")
+    subject = h("Subject")
     return {
-        "In-Reply-To": h["message-id"],
-        "References": f"{parent_refs} {h['message-id']}".strip(),
+        "In-Reply-To": h("Message-ID"),
+        "References": f"{parent_refs} {h('Message-ID')}".strip(),
         "Subject": subject if subject.lower().startswith("re:") else f"Re: {subject}",
     }
 
 
-def build_message(to, cc, bcc, subject, text, html, extra_headers):
+def part_text(msg, subtype):
+    """The decoded text of `msg`'s text/<subtype> body, or None when it has none."""
+    part = msg.get_body(preferencelist=(subtype,))
+    return part.get_content() if part is not None else None
+
+
+def text_to_html(text):
+    """Plain text as HTML with its http(s) URLs linked: a reply needs an HTML part for the quote."""
+    out = html.escape(text.rstrip("\n"), quote=False)
+    out = re.sub(r"https?://[^\s<>\"]*[^\s<>\".,;:!?)']", lambda m: f'<a href="{m[0]}">{m[0]}</a>', out)
+    return '<div dir="ltr">' + out.replace("\n", "<br>\n") + "</div>"
+
+
+def quote_reply(text, html_body, original):
+    """The reply's plain and HTML bodies with `original` quoted below them as Gmail quotes it."""
+    name, addr = email.utils.parseaddr(str(original["From"] or ""))
+    when = email.utils.parsedate_to_datetime(str(original["Date"]))
+    on = f"On {when:%a, %b} {when.day}, {when.year} at {when.hour % 12 or 12}:{when:%M %p}"
+    parent_html, parent_text = part_text(original, "html"), part_text(original, "plain")
+    if parent_text is None:    # an HTML-only message: its text, tags dropped, for the plain part
+        parent_text = html.unescape(re.sub(r"<[^>]+>", "", re.sub(r"(?i)<br\s*/?>|</p>|</div>", "\n", parent_html or "")))
+    lines = parent_text.replace("\r\n", "\n").rstrip("\n").split("\n")
+    quoted = "\n".join(">" + ("" if not line or line.startswith(">") else " ") + line for line in lines)
+    who = f"{name} <{addr}>" if name else f"<{addr}>"
+    who_html = (f"{html.escape(name)} " if name else "") + f'&lt;<a href="mailto:{html.escape(addr)}">{html.escape(addr)}</a>&gt;'
+    if parent_html is not None:
+        body = re.search(r"<body[^>]*>(.*)</body>", parent_html, re.S | re.I)
+        inner = body[1] if body else parent_html
+    else:
+        inner = html.escape(parent_text, quote=False).replace("\n", "<br>\n")
+    if html_body is None:
+        html_body = text_to_html(text)
+    return (f"{text.rstrip()}\n\n{on} {who} wrote:\n\n{quoted}\n",
+            f'{html_body}<br><div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">{on} {who_html} wrote:<br></div>'
+            f'<blockquote class="gmail_quote" style="{QUOTE_STYLE}">{inner}</blockquote></div>')
+
+
+def build_message(to, cc, bcc, subject, text, html_body, extra_headers):
     msg = EmailMessage()
     for name, addrs in (("To", to), ("Cc", cc), ("Bcc", bcc)):
         if addrs:
@@ -172,8 +218,8 @@ def build_message(to, cc, bcc, subject, text, html, extra_headers):
     if subject is not None:
         msg["Subject"] = subject
     msg.set_content(text)
-    if html is not None:
-        msg.add_alternative(html, subtype="html")
+    if html_body is not None:
+        msg.add_alternative(html_body, subtype="html")
     return msg.as_bytes(policy=SMTP)
 
 
@@ -181,7 +227,7 @@ def draft(args):
     text = open(args.body_file).read() if args.body_file else sys.stdin.read()
     if not text.strip():
         die("empty body: give it on stdin or with --body-file")
-    html = open(args.html_file).read() if args.html_file else None
+    html_body = open(args.html_file).read() if args.html_file else None
     try:
         with open(TOKEN_FILE) as f:
             saved = json.load(f)
@@ -199,15 +245,21 @@ def draft(args):
                 setattr(args, field, [h[field]])
         if args.subject is None and not args.reply_to:
             args.subject = h.get("subject")
-        if "in-reply-to" in h and not args.reply_to:
-            extra = {"In-Reply-To": h["in-reply-to"], "References": h.get("references", h["in-reply-to"])}
-            thread_id = old["threadId"]
+        if "in-reply-to" in h and not args.reply_to:    # a reply: its new body needs the quote again
+            found = http("GET", f"{API}/messages?" + urllib.parse.urlencode({"q": f"rfc822msgid:{h['in-reply-to']}"}),
+                         token=token)
+            if "messages" not in found:
+                die(f"draft {args.update} answers {h['in-reply-to']}, which is no longer in the mailbox: pass --reply-to")
+            args.reply_to = found["messages"][0]["id"]
     if args.reply_to:
-        original = http("GET", f"{API}/messages/{args.reply_to}?format=metadata&" + urllib.parse.urlencode(
-            [("metadataHeaders", n) for n in ("Message-ID", "References", "In-Reply-To", "Subject")]), token=token)
-        extra, thread_id = reply_headers(original), original["threadId"]
-        args.subject = extra.pop("Subject")
-    raw = build_message(args.to, args.cc, args.bcc, args.subject, text, html, extra)
+        parent = http("GET", f"{API}/messages/{args.reply_to}?format=raw", token=token)
+        original = email.message_from_bytes(base64.urlsafe_b64decode(parent["raw"]), policy=email.policy.default)
+        extra, thread_id = reply_headers(original), parent["threadId"]
+        subject = extra.pop("Subject")
+        if args.subject is None:
+            args.subject = subject
+        text, html_body = quote_reply(text, html_body, original)
+    raw = build_message(args.to, args.cc, args.bcc, args.subject, text, html_body, extra)
     message = {"raw": base64.urlsafe_b64encode(raw).decode()}
     if thread_id:
         message["threadId"] = thread_id

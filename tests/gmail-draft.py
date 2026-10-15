@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Tests for files/scripts/gmail-draft.py: the message it builds keeps every link and header as
-given, a reply carries the parent's threading headers, and a draft call sends what Gmail needs.
-No network: the Gmail calls are replaced by the responses captured in tests/fixtures/gmail-draft/
-(drafts-get-metadata.json with its From address and Received project number replaced).
+given, a reply carries the parent's threading headers and quotes it as Gmail does, and a draft
+call sends what Gmail needs. No network: the Gmail calls are replaced by the responses captured
+in tests/fixtures/gmail-draft/ (the From address and Received project number replaced in
+drafts-get-metadata.json and messages-get-raw.json, and a name in the latter's body).
 
     python3 tests/gmail-draft.py            # from the repo root"""
 import base64
 import email
 import email.policy
+import email.utils
 import importlib.util
 import io
 import json
@@ -16,6 +18,7 @@ import sys
 import tempfile
 import unittest
 import unittest.mock
+import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "..", "files", "scripts", "gmail-draft.py")
@@ -49,6 +52,23 @@ def fixture(name):
         return json.load(f)
 
 
+def captured_parent():
+    """The parent message of the captured reply, parsed from its messages.get RAW response."""
+    return parse(base64.urlsafe_b64decode(fixture("messages-get-raw.json")["raw"]))
+
+
+def message(text=None, html=None, **headers):
+    """A synthetic parent: headers from keywords (Message_ID -> Message-ID), a text and/or HTML body."""
+    msg = email.message.EmailMessage()
+    for name, value in headers.items():
+        msg[name.replace("_", "-")] = value
+    if text is not None:
+        msg.set_content(text)
+    if html is not None:
+        msg.add_alternative(html, subtype="html") if text is not None else msg.set_content(html, subtype="html")
+    return parse(msg.as_bytes())
+
+
 class BuildMessage(unittest.TestCase):
     def test_plain_body_is_kept_verbatim(self):
         msg = parse(gd.build_message(["a@example.com", "B <b@example.com>"], ["c@example.com"], ["d@example.com"],
@@ -77,28 +97,62 @@ class BuildMessage(unittest.TestCase):
 
 
 class ReplyHeaders(unittest.TestCase):
-    def metadata(self, **headers):
-        return {"payload": {"headers": [{"name": k.replace("_", "-"), "value": v} for k, v in headers.items()]}}
-
     def test_captured_message(self):
-        original = fixture("messages-get-metadata.json")
-        h = {x["name"].lower(): x["value"] for x in original["payload"]["headers"]}
-        got = gd.reply_headers(original)
-        self.assertEqual(got["In-Reply-To"], h["message-id"])
-        self.assertTrue(got["References"].endswith(h["message-id"]))
-        self.assertTrue(got["Subject"].lower().startswith("re:"))
+        got = gd.reply_headers(captured_parent())
+        msgid = gd.header_map(fixture("drafts-get-metadata.json")["message"])["in-reply-to"]
+        self.assertEqual(got, {"In-Reply-To": msgid, "References": msgid, "Subject": "Re: [test] gmail-draft parent"})
 
     def test_references_extend_the_parents(self):
-        got = gd.reply_headers(self.metadata(Message_Id="<p@m>", References="<a@m> <b@m>", Subject="Plan"))
+        folded = parse(b"Message-Id: <p@m>\r\nReferences: <a@m>\r\n\t<b@m>\r\nSubject: Plan\r\n\r\nx\r\n")
+        got = gd.reply_headers(folded)
         self.assertEqual(got, {"In-Reply-To": "<p@m>", "References": "<a@m> <b@m> <p@m>", "Subject": "Re: Plan"})
 
     def test_parent_in_reply_to_stands_in_for_missing_references(self):
-        got = gd.reply_headers(self.metadata(Message_ID="<p@m>", In_Reply_To="<a@m>", Subject="RE: Plan"))
+        got = gd.reply_headers(message(Message_ID="<p@m>", In_Reply_To="<a@m>", Subject="RE: Plan"))
         self.assertEqual(got, {"In-Reply-To": "<p@m>", "References": "<a@m> <p@m>", "Subject": "RE: Plan"})
 
     def test_first_message_of_a_thread(self):
-        got = gd.reply_headers(self.metadata(Message_ID="<p@m>", Subject="Plan"))
+        got = gd.reply_headers(message(Message_ID="<p@m>", Subject="Plan"))
         self.assertEqual(got, {"In-Reply-To": "<p@m>", "References": "<p@m>", "Subject": "Re: Plan"})
+
+
+class Quote(unittest.TestCase):
+    """quote_reply: Gmail's attribution line, '>' prefixes in text, a gmail_quote blockquote in HTML."""
+    HEAD = dict(From="Ann Lee <ann@example.com>", Date="Tue, 13 Oct 2026 14:58:00 -0400")
+    ON = "On Tue, Oct 13, 2026 at 2:58 PM"
+
+    def test_text_and_html_parent(self):
+        parent = message("Hi,\n\n> older line\nBye\n", "<html><head><style>p{}</style></head><body><p>Hi</p></body></html>",
+                         **self.HEAD)
+        text, html = gd.quote_reply("My answer.\n", None, parent)
+        self.assertEqual(text, f"My answer.\n\n{self.ON} Ann Lee <ann@example.com> wrote:\n\n> Hi,\n>\n>> older line\n> Bye\n")
+        self.assertTrue(html.startswith('<div dir="ltr">My answer.</div><br><div class="gmail_quote gmail_quote_container">'))
+        self.assertIn(f'{self.ON} Ann Lee &lt;<a href="mailto:ann@example.com">ann@example.com</a>&gt; wrote:<br>', html)
+        self.assertIn(f'<blockquote class="gmail_quote" style="{gd.QUOTE_STYLE}"><p>Hi</p></blockquote>', html)
+        self.assertNotIn("<style>", html)
+
+    def test_given_html_body_is_kept(self):
+        _, html = gd.quote_reply("My answer.\n", "<p>My <b>answer</b>.</p>", message("Hi\n", **self.HEAD))
+        self.assertTrue(html.startswith("<p>My <b>answer</b>.</p><br><div class=\"gmail_quote"))
+
+    def test_text_only_parent_is_quoted_as_escaped_html(self):
+        _, html = gd.quote_reply("x\n", None, message("a < b\nc\n", **self.HEAD))
+        self.assertIn('padding-left:1ex">a &lt; b<br>\nc<br>\n</blockquote>', html)
+
+    def test_html_only_parent_gives_the_plain_quote_its_text(self):
+        text, _ = gd.quote_reply("x\n", None, message(html="<div>Hi &amp; bye</div><div>Second<br>third</div>", **self.HEAD))
+        self.assertTrue(text.endswith("wrote:\n\n> Hi & bye\n> Second\n> third\n"), text)
+
+    def test_captured_parent(self):
+        text, html = gd.quote_reply("x\n", None, captured_parent())
+        self.assertIn("On Thu, Oct 15, 2026 at 1:31 PM Test Sender <sender@example.com> wrote:", text)
+        self.assertIn("> Long: https://example.com/a/very/long/path/that/runs/past/the/seventy-eight/column/limit?x=1&y=two%20words#frag\n", text)
+        self.assertIn("> Accent: Zoë\n", text)
+        self.assertIn('<a href="https://example.com/a/very/long/path/that/runs/past/the/seventy-eight/column/limit?x=1&amp;y=two%20words#frag">the page</a>', html)
+
+    def test_text_to_html_links_urls_without_trailing_punctuation(self):
+        self.assertEqual(gd.text_to_html("See https://example.com/a?b=1&c=2. Or <x>\n"),
+                         '<div dir="ltr">See <a href="https://example.com/a?b=1&amp;c=2">https://example.com/a?b=1&amp;c=2</a>. Or &lt;x&gt;</div>')
 
 
 class Draft(unittest.TestCase):
@@ -118,10 +172,14 @@ class Draft(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
 
+    parent_gone = False
+
     def fake_http(self, method, url, *, body=None, token=None, **_):
         self.calls.append((method, url, body))
+        if "/messages?" in url:
+            return fixture("messages-list-empty.json" if self.parent_gone else "messages-list.json")
         if "/messages/" in url:
-            return fixture("messages-get-metadata.json")
+            return fixture("messages-get-raw.json")
         if method == "GET":
             return fixture("drafts-get-metadata.json")
         return fixture("drafts-create.json")
@@ -146,35 +204,49 @@ class Draft(unittest.TestCase):
         self.assertIn(f"draft {created['id']}", out)
         self.assertIn(f"thread-f:{int(created['message']['threadId'], 16)}%2Bmsg-a:{created['id']}", out)
 
-    def test_reply_goes_into_the_parents_thread(self):
-        original = fixture("messages-get-metadata.json")
-        self.run_draft("--to", "a@example.com", "--reply-to", original["id"])
+    def assert_quotes_parent(self, msg):
+        parts = {p.get_content_type(): content(p) for p in msg.iter_parts()}
+        self.assertIn("Test Sender <sender@example.com> wrote:\n\n> Plain links test.\n", parts["text/plain"])
+        self.assertIn('<blockquote class="gmail_quote"', parts["text/html"])
+
+    def test_reply_goes_into_the_parents_thread_and_quotes_it(self):
+        parent = fixture("messages-get-raw.json")
+        self.run_draft("--to", "a@example.com", "--reply-to", parent["id"])
         get, create = self.calls
-        self.assertEqual(get[0], "GET")
-        self.assertIn(f"/messages/{original['id']}?format=metadata", get[1])
-        self.assertEqual(create[2]["message"]["threadId"], original["threadId"])
-        msg, want = self.sent(create), gd.reply_headers(original)
+        self.assertEqual((get[0], get[1]), ("GET", f"{gd.API}/messages/{parent['id']}?format=raw"))
+        self.assertEqual(create[2]["message"]["threadId"], parent["threadId"])
+        msg, want = self.sent(create), gd.reply_headers(captured_parent())
         self.assertEqual(tuple(header(msg, n) for n in ("In-Reply-To", "References", "Subject")),
                          (want["In-Reply-To"], want["References"], want["Subject"]))
+        self.assert_quotes_parent(msg)
 
-    def test_update_keeps_what_it_is_not_given(self):
+    def test_update_keeps_what_it_is_not_given_and_quotes_again(self):
         old = fixture("drafts-get-metadata.json")["message"]
         h = gd.header_map(old)
         self.assertTrue({"to", "cc", "bcc", "in-reply-to"} <= h.keys(), "the fixture must be a reply with Cc and Bcc")
         self.run_draft("--update", "r123")
-        get, put = self.calls
-        self.assertEqual((get[0], get[1]), ("GET", f"{gd.API}/drafts/r123?format=metadata"))
+        get, search, parent, put = self.calls
+        self.assertEqual(get[:2], ("GET", f"{gd.API}/drafts/r123?format=metadata"))
+        self.assertEqual(search[:2], ("GET", f"{gd.API}/messages?" + urllib.parse.urlencode({"q": f"rfc822msgid:{h['in-reply-to']}"})))
+        self.assertEqual(parent[1], f"{gd.API}/messages/{fixture('messages-list.json')['messages'][0]['id']}?format=raw")
         self.assertEqual((put[0], put[1], put[2]["id"]), ("PUT", f"{gd.API}/drafts/r123", "r123"))
         self.assertEqual(put[2]["message"]["threadId"], old["threadId"])
         msg = self.sent(put)
         for name in ("to", "cc", "bcc", "subject", "in-reply-to", "references"):
             self.assertEqual(header(msg, name), h[name], name)
+        self.assert_quotes_parent(msg)
 
     def test_update_takes_what_it_is_given(self):
         self.run_draft("--update", "r123", "--to", "new@example.com", "--subject", "New")
-        msg = self.sent(self.calls[1])
+        msg = self.sent(self.calls[-1])
         self.assertEqual((msg["To"], msg["Subject"]), ("new@example.com", "New"))
         self.assertEqual(msg["Cc"], gd.header_map(fixture("drafts-get-metadata.json")["message"])["cc"])
+
+    def test_update_of_a_reply_whose_parent_is_gone_writes_nothing(self):
+        self.parent_gone = True
+        with self.assertRaises(SystemExit):
+            self.run_draft("--update", "r123")
+        self.assertNotIn("PUT", [c[0] for c in self.calls])
 
     def test_empty_body_is_refused_before_any_request(self):
         with self.assertRaises(SystemExit):
