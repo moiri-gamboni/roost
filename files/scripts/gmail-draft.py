@@ -11,7 +11,8 @@ message stores the body verbatim. Drafts only: sending stays in Gmail.
     gmail-draft auth                    print the consent URL (once per box)
     gmail-draft auth REDIRECT_URL       finish: the URL the browser landed on after consent
     gmail-draft [--to ADDR ...] [--cc ADDR ...] [--bcc ADDR ...] [--subject TEXT]
-                [--body-file FILE] [--html-file FILE] [--reply-to MESSAGE_ID] [--update DRAFT_ID]
+                [--body-file FILE] [--html-file FILE] [--attach FILE ...]
+                [--reply-to MESSAGE_ID] [--update DRAFT_ID]
 
 The body is plain text from FILE, or stdin without --body-file; --html-file adds an HTML
 alternative to it. --reply-to takes a Gmail message id (the connector's search_threads and
@@ -19,12 +20,15 @@ get_thread show them) and files the draft in that message's thread with In-Reply
 and its subject, "Re: " added unless already there, so it refuses --subject; it sets no recipients
 (pass --to). It quotes that message as Gmail does: "On <date> <sender> wrote:", then its text
 with "> " prefixes in the plain part and its HTML in a gmail_quote blockquote in the HTML part
-(made from the plain body, URLs linked, when --html-file is not given). --update replaces a
-draft's message: the recipients, subject and thread it is not given are kept from the draft, as
-the connector's update_draft does, and a reply's quote is rebuilt from the message it answers, but
-the body is always given again. Its id is the one this tool printed or the connector's list_drafts
-shows. An empty body is refused. No attachments, forwards or sending. Prints the draft
-id, the thread id and a link that opens the draft (the form the connector's own viewUrl takes).
+(made from the plain body, URLs linked, when --html-file is not given). The date is shown in the
+zone named in ~/.config/gmail-draft/timezone (one IANA name, e.g. Europe/Paris), or in the
+sender's own offset without that file. --attach adds a file, its type guessed from its name;
+Gmail caps a message at 25 MB. --update replaces a draft's message: the recipients, subject and
+thread it is not given are kept from the draft, as the connector's update_draft does, and a
+reply's quote is rebuilt from the message it answers, but the body and attachments are always
+given again. Its id is the one this tool printed or the connector's list_drafts shows. An empty
+body is refused. No forwards or sending. Prints the draft id, the thread id and a link that opens
+the draft (the form the connector's own viewUrl takes).
 
 OAuth: the Desktop client in ~/.config/attention-queue/gmail-oauth-client.env (the mailbox's own
 Workspace project), scopes gmail.compose (drafts; the scope would also let the token send, which
@@ -41,6 +45,7 @@ import email.utils
 import hashlib
 import html
 import json
+import mimetypes
 import os
 import re
 import secrets
@@ -51,16 +56,19 @@ import urllib.request
 from email.message import EmailMessage
 from email.policy import SMTP
 from typing import NoReturn
+from zoneinfo import ZoneInfo
 
 CLIENT_FILE = os.path.expanduser("~/.config/attention-queue/gmail-oauth-client.env")
 STATE_DIR = os.path.expanduser("~/.config/gmail-draft")
 TOKEN_FILE = os.path.join(STATE_DIR, "token.json")
+TZ_FILE = os.path.join(STATE_DIR, "timezone")
 PENDING_FILE = os.path.join(STATE_DIR, "pending-auth.json")
 SCOPES = "https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.readonly"
 REDIRECT_URI = "http://127.0.0.1:8766/callback"
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 API = "https://gmail.googleapis.com/gmail/v1/users/me"
+UPLOAD = "https://gmail.googleapis.com/upload/gmail/v1/users/me"
 DEBUG = os.environ.get("GMAIL_DRAFT_DEBUG") == "1"
 QUOTE_STYLE = "margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex"
 
@@ -69,8 +77,10 @@ def die(msg) -> NoReturn:
     sys.exit(f"gmail-draft: {msg}")
 
 
-def http(method, url, *, form=None, body=None, token=None, log=True):
-    """One request; returns the parsed JSON. A non-2xx raises SystemExit carrying the raw body."""
+def http(method, url, *, form=None, body=None, upload=None, token=None, log=True):
+    """One request; returns the parsed JSON. A non-2xx raises SystemExit carrying the raw body.
+    upload=(metadata, message bytes) sends a multipart upload: the Draft resource as JSON, then the
+    RFC 5322 message, which the upload route takes up to 35 MB."""
     headers, data = {}, None
     if form is not None:
         data = urllib.parse.urlencode(form).encode()
@@ -78,10 +88,15 @@ def http(method, url, *, form=None, body=None, token=None, log=True):
     elif body is not None:
         data = json.dumps(body).encode()
         headers["Content-Type"] = "application/json"
+    elif upload is not None:
+        boundary = secrets.token_hex(16)
+        data = (f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{json.dumps(upload[0])}\r\n"
+                f"--{boundary}\r\nContent-Type: message/rfc822\r\n\r\n").encode() + upload[1] + f"\r\n--{boundary}--\r\n".encode()
+        headers["Content-Type"] = f"multipart/related; boundary={boundary}"
     if token:
         headers["Authorization"] = f"Bearer {token}"
     if DEBUG and log:
-        print(f"> {method} {url}\n{data.decode() if data else ''}", file=sys.stderr)
+        print(f"> {method} {url}\n{data.decode(errors='replace') if data else ''}", file=sys.stderr)
     try:
         with urllib.request.urlopen(urllib.request.Request(url, data, headers, method=method), timeout=60) as r:
             status, raw = r.status, r.read().decode()
@@ -99,6 +114,11 @@ def read_client():
     except FileNotFoundError:
         die(f"no OAuth client file at {CLIENT_FILE}")
     return env["GMAIL_OAUTH_CLIENT_ID"], env["GMAIL_OAUTH_CLIENT_SECRET"]
+
+
+def read(path):
+    with open(path) as f:
+        return f.read()
 
 
 def write_private(path, obj):
@@ -204,10 +224,13 @@ def without_head(markup):
     return re.sub(r"(?is)<(head|style|script)\b.*?</\1\s*>", "", markup)
 
 
-def quote_reply(text, html_body, original):
-    """The reply's plain and HTML bodies with `original` quoted below them as Gmail quotes it."""
+def quote_reply(text, html_body, original, tz=None):
+    """The reply's plain and HTML bodies with `original` quoted below them as Gmail quotes it, its
+    date in zone `tz` (the sender's own offset when None)."""
     name, addr = email.utils.parseaddr(str(original["From"] or ""))
     when = email.utils.parsedate_to_datetime(str(original["Date"]))
+    if tz is not None:
+        when = when.astimezone(tz)
     on = f"On {when:%a, %b} {when.day}, {when.year} at {when.hour % 12 or 12}:{when:%M %p}"
     parent_html, parent_text = part_text(original, "html"), part_text(original, "plain")
     if parent_text is None:    # an HTML-only message: its text, tags dropped, for the plain part
@@ -231,7 +254,7 @@ def quote_reply(text, html_body, original):
             f'<blockquote class="gmail_quote" style="{QUOTE_STYLE}">{inner}</blockquote></div>')
 
 
-def build_message(to, cc, bcc, subject, text, html_body, msgid_headers):
+def build_message(to, cc, bcc, subject, text, html_body, msgid_headers, attachments=()):
     """The draft as RFC 5322 bytes. msgid_headers (In-Reply-To, References) are written as given, one
     id per line: the email policy would RFC 2047-encode an id longer than a line (Exchange's are
     80+ characters), and no mail client threads on an encoded id."""
@@ -244,15 +267,22 @@ def build_message(to, cc, bcc, subject, text, html_body, msgid_headers):
     msg.set_content(text)
     if html_body is not None:
         msg.add_alternative(html_body, subtype="html")
+    for path in attachments:
+        kind = mimetypes.guess_type(path)[0] or "application/octet-stream"
+        with open(path, "rb") as f:
+            msg.add_attachment(f.read(), *kind.split("/", 1), filename=os.path.basename(path))
     ids = "".join(f"{name}: " + "\r\n ".join(value.split()) + "\r\n" for name, value in msgid_headers.items())
     return ids.encode() + msg.as_bytes(policy=SMTP)
 
 
 def draft(args):
-    text = open(args.body_file).read() if args.body_file else sys.stdin.read()
+    text = read(args.body_file) if args.body_file else sys.stdin.read()
     if not text.strip():
         die("empty body: give it on stdin or with --body-file")
-    html_body = open(args.html_file).read() if args.html_file else None
+    html_body = read(args.html_file) if args.html_file else None
+    for path in args.attach:    # a wrong path fails here, before anything is sent
+        if not os.path.isfile(path):
+            die(f"no file to attach at {path}")
     try:
         with open(TOKEN_FILE) as f:
             saved = json.load(f)
@@ -283,15 +313,15 @@ def draft(args):
         subject = extra.pop("Subject")
         if args.subject is None:
             args.subject = subject
-        text, html_body = quote_reply(text, html_body, original)
-    raw = build_message(args.to, args.cc, args.bcc, args.subject, text, html_body, extra)
-    message = {"raw": base64.urlsafe_b64encode(raw).decode()}
-    if thread_id:
-        message["threadId"] = thread_id
+        tz = ZoneInfo(read(TZ_FILE).strip()) if os.path.exists(TZ_FILE) else None
+        text, html_body = quote_reply(text, html_body, original, tz)
+    raw = build_message(args.to, args.cc, args.bcc, args.subject, text, html_body, extra, args.attach)
+    message = {"threadId": thread_id} if thread_id else {}
     if args.update:
-        result = http("PUT", f"{API}/drafts/{args.update}", body={"id": args.update, "message": message}, token=token)
+        result = http("PUT", f"{UPLOAD}/drafts/{args.update}?uploadType=multipart",
+                      upload=({"id": args.update, "message": message}, raw), token=token)
     else:
-        result = http("POST", f"{API}/drafts", body={"message": message}, token=token)
+        result = http("POST", f"{UPLOAD}/drafts?uploadType=multipart", upload=({"message": message}, raw), token=token)
     tid = result["message"]["threadId"]
     print(f"draft {result['id']}  thread {tid}\nhttps://mail.google.com/mail/?authuser={saved['email']}"
           f"#all?compose=thread-f:{int(tid, 16)}%2Bmsg-a:{result['id']}")
@@ -309,6 +339,7 @@ def main():
     p.add_argument("--subject")
     p.add_argument("--body-file")
     p.add_argument("--html-file")
+    p.add_argument("--attach", action="append", default=[], metavar="FILE")
     p.add_argument("--reply-to", metavar="MESSAGE_ID")
     p.add_argument("--update", metavar="DRAFT_ID")
     args = p.parse_args()

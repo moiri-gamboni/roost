@@ -185,6 +185,33 @@ class Quote(unittest.TestCase):
                          '<div dir="ltr">See <a href="https://example.com/a?b=1&amp;c=2">https://example.com/a?b=1&amp;c=2</a>. Or &lt;x&gt;</div>')
 
 
+class Upload(unittest.TestCase):
+    def test_http_sends_the_draft_as_a_multipart_upload(self):
+        seen = {}
+
+        class Response(io.BytesIO):
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+
+        def urlopen(request, timeout):
+            seen["request"] = request
+            return Response(b'{"id": "r1"}')
+
+        raw = gd.build_message(["a@example.com"], [], [], "Hi", "Body\n", None, {})
+        with unittest.mock.patch.object(gd.urllib.request, "urlopen", urlopen):
+            self.assertEqual(gd.http("POST", gd.UPLOAD + "/drafts?uploadType=multipart",
+                                     upload=({"message": {"threadId": "t1"}}, raw), token="tok"), {"id": "r1"})
+        request = seen["request"]
+        self.assertEqual(request.get_header("Authorization"), "Bearer tok")
+        body = parse(f"Content-Type: {request.get_header('Content-type')}\r\n\r\n".encode() + request.data)
+        meta, message = body.iter_parts()
+        self.assertEqual(body.get_content_type(), "multipart/related")
+        self.assertEqual((meta.get_content_type(), json.loads(meta.get_content())), ("application/json", {"message": {"threadId": "t1"}}))
+        self.assertEqual(message.get_content_type(), "message/rfc822")
+        self.assertEqual(content(message.get_content()), "Body\n")
+
+
 class Draft(unittest.TestCase):
     """draft() end to end with the Gmail calls replaced by captured responses."""
 
@@ -196,6 +223,7 @@ class Draft(unittest.TestCase):
             json.dump({"refresh_token": "r", "scope": gd.SCOPES, "email": "me@example.com"}, f)
         self.calls = []
         patches = [unittest.mock.patch.object(gd, "TOKEN_FILE", token),
+                   unittest.mock.patch.object(gd, "TZ_FILE", os.path.join(self.tmp.name, "no-timezone")),
                    unittest.mock.patch.object(gd, "access_token", lambda saved: "t"),
                    unittest.mock.patch.object(gd, "http", self.fake_http)]
         for p in patches:
@@ -204,8 +232,8 @@ class Draft(unittest.TestCase):
 
     parent_gone = False
 
-    def fake_http(self, method, url, *, body=None, token=None, **_):
-        self.calls.append((method, url, body))
+    def fake_http(self, method, url, *, body=None, upload=None, token=None, **_):
+        self.calls.append((method, url, body if upload is None else upload))
         if "/messages?" in url:
             return fixture("messages-list-empty.json" if self.parent_gone else "messages-list.json")
         if "/messages/" in url:
@@ -222,13 +250,14 @@ class Draft(unittest.TestCase):
         return out.getvalue()
 
     def sent(self, call):
-        return parse(base64.urlsafe_b64decode(call[2]["message"]["raw"]))
+        """The message an upload call sent; call[2] is its (Draft metadata, message bytes)."""
+        return parse(call[2][1])
 
     def test_new_draft(self):
         out = self.run_draft("--to", "a@example.com", "--subject", "Hello")
-        (method, url, body), = self.calls
-        self.assertEqual((method, url), ("POST", f"{gd.API}/drafts"))
-        self.assertNotIn("threadId", body["message"])
+        (method, url, (meta, _)), = self.calls
+        self.assertEqual((method, url), ("POST", f"{gd.UPLOAD}/drafts?uploadType=multipart"))
+        self.assertEqual(meta, {"message": {}})
         self.assertEqual(content(self.sent(self.calls[0])), "Body https://example.com/x?y=1\n")
         created = fixture("drafts-create.json")
         self.assertIn(f"draft {created['id']}", out)
@@ -244,7 +273,7 @@ class Draft(unittest.TestCase):
         self.run_draft("--to", "a@example.com", "--reply-to", parent["id"])
         get, create = self.calls
         self.assertEqual((get[0], get[1]), ("GET", f"{gd.API}/messages/{parent['id']}?format=raw"))
-        self.assertEqual(create[2]["message"]["threadId"], parent["threadId"])
+        self.assertEqual(create[2][0], {"message": {"threadId": parent["threadId"]}})
         msg, want = self.sent(create), gd.reply_headers(captured_parent())
         self.assertEqual(tuple(header(msg, n) for n in ("In-Reply-To", "References", "Subject")),
                          (want["In-Reply-To"], want["References"], want["Subject"]))
@@ -259,8 +288,8 @@ class Draft(unittest.TestCase):
         self.assertEqual(get[:2], ("GET", f"{gd.API}/drafts/r123?format=metadata"))
         self.assertEqual(search[:2], ("GET", f"{gd.API}/messages?" + urllib.parse.urlencode({"q": f"rfc822msgid:{h['in-reply-to']}"})))
         self.assertEqual(parent[1], f"{gd.API}/messages/{fixture('messages-list.json')['messages'][0]['id']}?format=raw")
-        self.assertEqual((put[0], put[1], put[2]["id"]), ("PUT", f"{gd.API}/drafts/r123", "r123"))
-        self.assertEqual(put[2]["message"]["threadId"], old["threadId"])
+        self.assertEqual((put[0], put[1]), ("PUT", f"{gd.UPLOAD}/drafts/r123?uploadType=multipart"))
+        self.assertEqual(put[2][0], {"id": "r123", "message": {"threadId": old["threadId"]}})
         msg = self.sent(put)
         for name in ("to", "cc", "bcc", "subject", "in-reply-to", "references"):
             self.assertEqual(header(msg, name), h[name], name)
@@ -277,6 +306,28 @@ class Draft(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.run_draft("--update", "r123")
         self.assertNotIn("PUT", [c[0] for c in self.calls])
+
+    def test_attachments_ride_along(self):
+        path = os.path.join(self.tmp.name, "notes.pdf")
+        with open(path, "wb") as f:
+            f.write(b"%PDF-1.4 x")
+        self.run_draft("--to", "a@example.com", "--subject", "Hello", "--attach", path)
+        att, = self.sent(self.calls[0]).iter_attachments()
+        self.assertEqual((att.get_content_type(), att.get_filename(), att.get_content()), ("application/pdf", "notes.pdf", b"%PDF-1.4 x"))
+
+    def test_missing_attachment_is_refused_before_any_request(self):
+        with self.assertRaises(SystemExit):
+            self.run_draft("--to", "a@example.com", "--subject", "Hello", "--attach", "/nonexistent/file.pdf")
+        self.assertEqual(self.calls, [])
+
+    def test_reply_quote_uses_the_configured_zone(self):
+        tz_file = os.path.join(self.tmp.name, "timezone")
+        with open(tz_file, "w") as f:
+            f.write("Europe/Paris\n")
+        with unittest.mock.patch.object(gd, "TZ_FILE", tz_file):
+            self.run_draft("--to", "a@example.com", "--reply-to", fixture("messages-get-raw.json")["id"])
+        # the captured parent is dated 13:31 -0400, 19:31 in Paris
+        self.assertIn("On Thu, Oct 15, 2026 at 7:31 PM Test Sender", content(self.sent(self.calls[-1]).get_body(("plain",))))
 
     def test_empty_body_is_refused_before_any_request(self):
         with self.assertRaises(SystemExit):
