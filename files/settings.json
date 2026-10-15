@@ -356,7 +356,7 @@
   "autoDreamEnabled": true,
   "skipWorkflowUsageWarning": true,
   "verbose": false,
-  "autoCompactEnabled": true,
+  "autoCompactEnabled": false,
   "switchModelsOnFlag": true,
   "autoContinueAtUsageLimit": true,
   "autoScrollEnabled": false,

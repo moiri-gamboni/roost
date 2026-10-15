@@ -288,7 +288,7 @@ Cloudflare Tunnel carries the public web apps with no open ports; Tailscale carr
 
 **Security:** the server is `tag:server` on the tailnet, and the ACLs stop it from initiating connections to your other devices, which limits the blast radius if a prompt injection compromises a Claude session. Git uses SSH only (one ed25519 key for auth and signing), no personal access token lives on the server, `gh` has its own OAuth login, and branch rulesets block force-push and deletion on `main`.
 
-**Claude Code settings:** agent teams off, auto-compaction on, and session transcripts never cleaned up (`cleanupPeriodDays: 99999`).
+**Claude Code settings:** agent teams off, auto-compaction off (manual `/compact` still works), and session transcripts never cleaned up (`cleanupPeriodDays: 99999`).
 
 **On the server** (`roost` is `ROOST_DIR_NAME` in `.env`):
 
