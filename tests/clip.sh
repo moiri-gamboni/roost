@@ -2,7 +2,8 @@
 # Test for files/scripts/clip.sh: the text reaches both the laptop receiver's
 # socket and tmux byte for byte, tmux gets the client with the latest activity,
 # an unreachable receiver or a missing tmux server leaves the other route
-# working, and the exit is 1 only when neither took the text. The receiver is
+# working, and the exit is 1 only when neither took the text; a clip that took
+# is recorded, and --auto holds back for 10 min after a manual one. The receiver is
 # an ncat listener; tmux is a stub on PATH, so no real tmux server is touched.
 #   tests/clip.sh            # from the repo root
 set -euo pipefail
@@ -66,5 +67,64 @@ echo "no receiver, no tmux server"
 out=$(printf '%s' "$text" | STUB_NO_SERVER=1 "$here/files/scripts/clip.sh" 2>&1) && rc=0 || rc=$?
 check "exit 1" test "$rc" = 1
 check "says no client took it" grep -q '^OSC 52: no tmux client took it' <<<"$out"
+
+# The record and the hold. No receiver from here on: the tmux stub stands for
+# "a route took it".
+last="$T/run/clip-last"
+clip_auto() { printf 'x' | "$here/files/scripts/clip.sh" --auto; }
+
+echo "a clip that took is recorded as manual"
+rm -f "$last"
+printf '%s' "$text" | "$here/files/scripts/clip.sh" > /dev/null || true
+read -r at kind < "$last" || true
+check "kind manual" test "${kind:-}" = manual
+check "time is now" test $(( EPOCHSECONDS - ${at:-0} )) -le 2
+
+echo "a clip that took nowhere is not recorded"
+echo "$(( EPOCHSECONDS - 3600 )) auto" > "$last"
+printf '%s' "$text" | STUB_NO_SERVER=1 "$here/files/scripts/clip.sh" > /dev/null 2>&1 || true
+check "record unchanged" grep -q ' auto$' "$last"
+
+echo "--auto under 10 min after a manual clip: held"
+echo "$(( EPOCHSECONDS - 599 )) manual" > "$last"
+rm -f "$T/tmux-in"
+out=$(clip_auto) && rc=0 || rc=$?
+check "exit 3" test "$rc" = 3
+check "nothing sent" test ! -e "$T/tmux-in"
+check "says held, with the age" grep -q '^held: a manual clip from 9 min ago' <<<"$out"
+check "record unchanged" grep -q ' manual$' "$last"
+
+echo "--auto under a minute after a manual clip: held, age in seconds"
+echo "$(( EPOCHSECONDS - 30 )) manual" > "$last"
+out=$(clip_auto) && rc=0 || rc=$?
+check "exit 3" test "$rc" = 3
+check "age in seconds" grep -q '^held: a manual clip from 30s ago' <<<"$out"
+
+echo "--auto 10 min after a manual clip: sent"
+echo "$(( EPOCHSECONDS - 600 )) manual" > "$last"
+out=$(clip_auto) && rc=0 || rc=$?
+check "exit 0" test "$rc" = 0
+check "sent" cmp -s <(printf x) "$T/tmux-in"
+check "recorded as auto" grep -q ' auto$' "$last"
+
+echo "--auto right after an auto clip: sent"
+echo "$(( EPOCHSECONDS - 5 )) auto" > "$last"
+rm -f "$T/tmux-in"
+out=$(clip_auto) && rc=0 || rc=$?
+check "exit 0" test "$rc" = 0
+check "sent" cmp -s <(printf x) "$T/tmux-in"
+
+echo "--auto with no record: sent"
+rm -f "$last" "$T/tmux-in"
+out=$(clip_auto) && rc=0 || rc=$?
+check "exit 0" test "$rc" = 0
+check "sent" cmp -s <(printf x) "$T/tmux-in"
+
+echo "a manual clip right after a manual clip: sent"
+echo "$(( EPOCHSECONDS - 5 )) manual" > "$last"
+rm -f "$T/tmux-in"
+printf 'x' | "$here/files/scripts/clip.sh" > /dev/null && rc=0 || rc=$?
+check "exit 0" test "$rc" = 0
+check "sent" cmp -s <(printf x) "$T/tmux-in"
 
 exit "$fail"
