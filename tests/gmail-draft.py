@@ -90,6 +90,14 @@ class BuildMessage(unittest.TestCase):
         for name in ("To", "Cc", "Bcc", "Subject"):
             self.assertNotIn(name, msg)
 
+    def test_long_message_ids_are_written_as_given(self):
+        exchange = "<DM6PR12MB4251E1CE9E5C1C2F5F1D7A1BCA9A9@DM6PR12MB4251.namprd12.prod.outlook.com>"
+        raw = gd.build_message(["a@example.com"], [], [], "Re: x", "x\n", None,
+                               {"In-Reply-To": exchange, "References": f"<g@mail> {exchange}"})
+        self.assertIn(f"In-Reply-To: {exchange}\r\nReferences: <g@mail>\r\n {exchange}\r\n".encode(), raw)
+        msg = parse(raw)
+        self.assertEqual((header(msg, "In-Reply-To"), " ".join(str(msg["References"]).split())), (exchange, f"<g@mail> {exchange}"))
+
     def test_extra_headers_are_set(self):
         msg = parse(gd.build_message(["a@example.com"], [], [], "Re: x", "x\n", None,
                                      {"In-Reply-To": "<p@mail>", "References": "<g@mail> <p@mail>"}))
@@ -149,6 +157,28 @@ class Quote(unittest.TestCase):
         self.assertIn("> Long: https://example.com/a/very/long/path/that/runs/past/the/seventy-eight/column/limit?x=1&y=two%20words#frag\n", text)
         self.assertIn("> Accent: Zoë\n", text)
         self.assertIn('<a href="https://example.com/a/very/long/path/that/runs/past/the/seventy-eight/column/limit?x=1&amp;y=two%20words#frag">the page</a>', html)
+
+    def test_cid_images_are_dropped_from_the_quote(self):
+        parent = message("Hi\n", '<body><p>Hi</p><img width="80" src="cid:image001.png@01DB"><img src="https://example.com/x.png"></body>',
+                         **self.HEAD)
+        _, html = gd.quote_reply("x\n", None, parent)
+        self.assertNotIn("cid:", html)
+        self.assertIn('<img src="https://example.com/x.png">', html)
+
+    def test_head_and_styles_stay_out_of_both_quotes(self):
+        page = "<html><head><title>Big Sale</title><style>body { margin:0 }</style></head><div>Deal</div></html>"
+        text, html = gd.quote_reply("x\n", None, message(html=page, **self.HEAD))
+        self.assertTrue(text.endswith("wrote:\n\n> Deal\n"), text)
+        self.assertNotIn("body { margin", html)
+        self.assertNotIn("Big Sale", html)
+
+    def test_text_to_html_url_edges(self):
+        for given, href, after in (("see <https://example.com/foo> now", "https://example.com/foo", "&gt; now"),
+                                   ("https://en.wikipedia.org/wiki/Python_(programming_language)",
+                                    "https://en.wikipedia.org/wiki/Python_(programming_language)", ""),
+                                   ("(see https://example.com/a)", "https://example.com/a", ")"),
+                                   ("Is it https://example.com/q?", "https://example.com/q", "?")):
+            self.assertIn(f'<a href="{href}">{href}</a>{after}', gd.text_to_html(given), given)
 
     def test_text_to_html_links_urls_without_trailing_punctuation(self):
         self.assertEqual(gd.text_to_html("See https://example.com/a?b=1&c=2. Or <x>\n"),

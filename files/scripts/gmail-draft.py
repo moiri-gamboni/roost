@@ -177,11 +177,31 @@ def part_text(msg, subtype):
     return part.get_content() if part is not None else None
 
 
+def split_url(url):
+    """A matched URL and the punctuation after it: a trailing ".,;:!?'" ends the sentence, and a
+    trailing ")" closes a parenthesis opened before the URL unless the URL opened one itself."""
+    end = len(url)
+    while url[end - 1] in ".,;:!?'" or (url[end - 1] == ")" and url[:end].count(")") > url[:end].count("(")):
+        end -= 1
+    return url[:end], url[end:]
+
+
 def text_to_html(text):
     """Plain text as HTML with its http(s) URLs linked: a reply needs an HTML part for the quote."""
-    out = html.escape(text.rstrip("\n"), quote=False)
-    out = re.sub(r"https?://[^\s<>\"]*[^\s<>\".,;:!?)']", lambda m: f'<a href="{m[0]}">{m[0]}</a>', out)
-    return '<div dir="ltr">' + out.replace("\n", "<br>\n") + "</div>"
+    pieces = re.split(r"(https?://[^\s<>\"]+)", text.rstrip("\n"))    # odd pieces are URLs
+    out = []
+    for i, piece in enumerate(pieces):
+        if i % 2:
+            url, tail = split_url(piece)
+            out.append(f'<a href="{html.escape(url)}">{html.escape(url, quote=False)}</a>{html.escape(tail, quote=False)}')
+        else:
+            out.append(html.escape(piece, quote=False))
+    return '<div dir="ltr">' + "".join(out).replace("\n", "<br>\n") + "</div>"
+
+
+def without_head(markup):
+    """HTML without its <head>, <style> and <script> blocks, which must not leak into a quote."""
+    return re.sub(r"(?is)<(head|style|script)\b.*?</\1\s*>", "", markup)
 
 
 def quote_reply(text, html_body, original):
@@ -191,14 +211,17 @@ def quote_reply(text, html_body, original):
     on = f"On {when:%a, %b} {when.day}, {when.year} at {when.hour % 12 or 12}:{when:%M %p}"
     parent_html, parent_text = part_text(original, "html"), part_text(original, "plain")
     if parent_text is None:    # an HTML-only message: its text, tags dropped, for the plain part
-        parent_text = html.unescape(re.sub(r"<[^>]+>", "", re.sub(r"(?i)<br\s*/?>|</p>|</div>", "\n", parent_html or "")))
+        parent_text = html.unescape(re.sub(r"<[^>]+>", "", re.sub(r"(?i)<br\s*/?>|</p>|</div>", "\n",
+                                                                  without_head(parent_html or ""))))
     lines = parent_text.replace("\r\n", "\n").rstrip("\n").split("\n")
     quoted = "\n".join(">" + ("" if not line or line.startswith(">") else " ") + line for line in lines)
     who = f"{name} <{addr}>" if name else f"<{addr}>"
     who_html = (f"{html.escape(name)} " if name else "") + f'&lt;<a href="mailto:{html.escape(addr)}">{html.escape(addr)}</a>&gt;'
     if parent_html is not None:
         body = re.search(r"<body[^>]*>(.*)</body>", parent_html, re.S | re.I)
-        inner = body[1] if body else parent_html
+        inner = body[1] if body else without_head(parent_html)
+        # inline images (an Outlook signature logo) live in parts the draft does not carry
+        inner = re.sub(r"""(?i)<img\b[^>]*\bsrc\s*=\s*["']?cid:[^>]*>""", "", inner)
     else:
         inner = html.escape(parent_text, quote=False).replace("\n", "<br>\n")
     if html_body is None:
@@ -208,19 +231,21 @@ def quote_reply(text, html_body, original):
             f'<blockquote class="gmail_quote" style="{QUOTE_STYLE}">{inner}</blockquote></div>')
 
 
-def build_message(to, cc, bcc, subject, text, html_body, extra_headers):
+def build_message(to, cc, bcc, subject, text, html_body, msgid_headers):
+    """The draft as RFC 5322 bytes. msgid_headers (In-Reply-To, References) are written as given, one
+    id per line: the email policy would RFC 2047-encode an id longer than a line (Exchange's are
+    80+ characters), and no mail client threads on an encoded id."""
     msg = EmailMessage()
     for name, addrs in (("To", to), ("Cc", cc), ("Bcc", bcc)):
         if addrs:
             msg[name] = ", ".join(addrs)
-    for name, value in extra_headers.items():
-        msg[name] = value
     if subject is not None:
         msg["Subject"] = subject
     msg.set_content(text)
     if html_body is not None:
         msg.add_alternative(html_body, subtype="html")
-    return msg.as_bytes(policy=SMTP)
+    ids = "".join(f"{name}: " + "\r\n ".join(value.split()) + "\r\n" for name, value in msgid_headers.items())
+    return ids.encode() + msg.as_bytes(policy=SMTP)
 
 
 def draft(args):
