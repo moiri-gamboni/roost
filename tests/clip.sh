@@ -86,7 +86,7 @@ printf '%s' "$text" | STUB_NO_SERVER=1 "$here/files/scripts/clip.sh" > /dev/null
 check "record unchanged" grep -q ' auto$' "$last"
 
 echo "--auto under 10 min after a manual clip: held"
-echo "$(( EPOCHSECONDS - 599 )) manual" > "$last"
+echo "$(( EPOCHSECONDS - 590 )) manual" > "$last"
 rm -f "$T/tmux-in"
 out=$(clip_auto) && rc=0 || rc=$?
 check "exit 3" test "$rc" = 3
@@ -95,10 +95,10 @@ check "says held, with the age" grep -q '^held: a manual clip from 9 min ago' <<
 check "record unchanged" grep -q ' manual$' "$last"
 
 echo "--auto under a minute after a manual clip: held, age in seconds"
-echo "$(( EPOCHSECONDS - 30 )) manual" > "$last"
+echo "$(( EPOCHSECONDS - 20 )) manual" > "$last"
 out=$(clip_auto) && rc=0 || rc=$?
 check "exit 3" test "$rc" = 3
-check "age in seconds" grep -q '^held: a manual clip from 30s ago' <<<"$out"
+check "age in seconds" grep -qE '^held: a manual clip from 2[0-9]s ago' <<<"$out"
 
 echo "--auto 10 min after a manual clip: sent"
 echo "$(( EPOCHSECONDS - 600 )) manual" > "$last"
@@ -119,6 +119,19 @@ rm -f "$last" "$T/tmux-in"
 out=$(clip_auto) && rc=0 || rc=$?
 check "exit 0" test "$rc" = 0
 check "sent" cmp -s <(printf x) "$T/tmux-in"
+
+echo "--auto with an empty record: sent, record rewritten"
+: > "$last"
+rm -f "$T/tmux-in"
+out=$(clip_auto) && rc=0 || rc=$?
+check "exit 0" test "$rc" = 0
+check "sent" cmp -s <(printf x) "$T/tmux-in"
+check "recorded as auto" grep -q ' auto$' "$last"
+
+echo "--auto with a fresh manual record lacking its newline: still read, held"
+printf '%s manual' "$EPOCHSECONDS" > "$last"
+out=$(clip_auto) && rc=0 || rc=$?
+check "exit 3" test "$rc" = 3
 
 echo "a manual clip right after a manual clip: sent"
 echo "$(( EPOCHSECONDS - 5 )) manual" > "$last"

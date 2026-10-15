@@ -4,9 +4,9 @@
 #   clip <<'EOF'            clip < FILE
 #   the text
 #   EOF
-#   clip --auto < FILE      an automatic clip (hooks/clip-bang-command.sh)
+#   clip --auto < FILE      an automatic clip (files/hooks/clip-bang-command.sh)
 #
-# The text takes both routes, every time:
+# The text takes both routes, every time (unless --auto holds it back, below):
 #   laptop  the laptop's clipboard receiver (files/laptop/install-clip-receive.sh),
 #           through the socket the laptop's SSH connection forwards to
 #           $XDG_RUNTIME_DIR/clip-receive.sock (README, Laptop tools: SSH forwards). It sets the clipboard without
@@ -22,9 +22,10 @@
 # Each clip that took is recorded as "<epoch seconds> manual|auto" in
 # $XDG_RUNTIME_DIR/clip-last. --auto sends nothing while the last clip is a
 # manual one under 10 minutes old, so text clipped for pasting survives a
-# command copied after it; an older automatic clip is replaced freely. Held
-# back, it prints one "held:" line and exits 3. Copies made on the laptop
-# itself are invisible here and get no such protection.
+# command copied after it; an automatic clip, however recent, is replaced
+# freely, and an unreadable record holds nothing. Held back, it prints one
+# "held:" line and exits 3. Copies made on the laptop itself are invisible
+# here and get no such protection.
 set -euo pipefail
 
 RUN="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
@@ -35,7 +36,7 @@ HOLD=600   # seconds a manual clip is safe from --auto
 kind=manual
 [[ ${1:-} == --auto ]] && kind=auto
 if [[ $kind == auto && -f $LAST ]]; then
-    read -r at last_kind < "$LAST"
+    read -r at last_kind < "$LAST" || true
     age=$(( EPOCHSECONDS - at ))
     if [[ $last_kind == manual ]] && (( age < HOLD )); then
         if (( age < 60 )); then ago="${age}s"; else ago="$(( age / 60 )) min"; fi
@@ -69,4 +70,5 @@ else
 fi
 
 [[ $took == 1 ]] || exit 1
-echo "$EPOCHSECONDS $kind" > "$LAST"
+# replaced, not rewritten in place: a concurrent --auto would read it empty
+echo "$EPOCHSECONDS $kind" > "$LAST.$$" && mv "$LAST.$$" "$LAST"
