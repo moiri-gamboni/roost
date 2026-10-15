@@ -1,6 +1,6 @@
 # Runbook: attention queue credentials, updates and recovery
 
-The attention queue (`~/roost/code/attention-queue`) reads a headless Beeper Desktop on this box through self-hosted Slack, Discord and email bridges. Five credentials can expire and one binary can need rolling; this is what to do for each. Design and state reference: `files/beeper/CLAUDE.md`; the pass itself: the clone's README.
+The attention queue (`~/roost/code/attention-queue`) reads a headless Beeper Desktop on this box through self-hosted Slack, Discord and email bridges. Five credentials can expire and one binary can need rolling; this is what to do for each. Design and state reference: `files/beeper/CLAUDE.md`; `aq list`, the reader the daily planning briefing runs: the clone's README.
 
 ## What runs where
 
@@ -11,7 +11,7 @@ The attention queue (`~/roost/code/attention-queue`) reads a headless Beeper Des
 | Slack bridge (`mautrix-slack` through `bbctl run`) | `attention-bridge@slack.service` | moiri | `sudo journalctl -u attention-bridge@slack`; `~/.local/share/bbctl/prod/sh-slack/logs/bridge.log` (JSON, rotated) |
 | Discord bridge (`mautrix-discord` through `bbctl run`) | `attention-bridge@discord.service` | moiri | `sudo journalctl -u attention-bridge@discord`; `~/.local/share/bbctl/prod/sh-discord/logs/` |
 | Email bridge (the matrimail fork through `bbctl run`, type `bridgev2`) | `attention-bridge@email.service` + drop-in `matrimail.conf` | moiri | `sudo journalctl -u attention-bridge@email`; `~/.local/share/bbctl/prod/sh-email/logs/` |
-| The pass (`aq pass`) | cron, every quarter hour (`/etc/cron.d/roost-mirrors`) | moiri | `~/.local/state/attention-queue/pass.log`; API log `~/.local/state/attention-queue/api-log/` |
+| The reader (`aq list`) | on demand, from the daily planning briefing (`plan-day-gather`) | moiri | API log `~/.local/state/attention-queue/api-log/` |
 | Dead-man | every 5 min inside `health-check.sh` | moiri | `journalctl -t roost/health-check` |
 
 Everything is enabled and returns after a reboot (`setup/attention-queue.sh` does the enabling; `roost-apply push` never does). To check after a reboot:
@@ -21,16 +21,16 @@ for u in beeper-egress.service beeper-egress-ensure.timer beeper-server.service 
     printf '%-32s %s %s\n' "$u" "$(systemctl is-active "$u")" "$(systemctl is-enabled "$u")"
 done
 sudo iptables -S OUTPUT | grep beeper-egress && sudo ip6tables -S OUTPUT | grep beeper-egress
-~/roost/code/attention-queue/aq pass --dry-run; echo "exit $?"
+~/roost/code/attention-queue/aq list --json --since "$(date -u -d '-1 hour' +%FT%TZ)" > /dev/null; echo "exit $?"
 ```
 
 Every failure below also shows up as a line in the `Service health alert` ntfy within five minutes; the lines name the check.
 
 ## The Beeper Server setup token
 
-`~/.config/attention-queue/beeper-token` (0600) is the Matrix access token the headless login handed back; the pass and the dead-man send it as the bearer.
+`~/.config/attention-queue/beeper-token` (0600) is the Matrix access token the headless login handed back; `aq list` and the dead-man send it as the bearer.
 
-- **How expiry shows.** `aq pass` exits 1 with a 401 body in `~/.local/state/attention-queue/api-log/<today>.jsonl`; the dead-man reports `Beeper accounts unreadable` and, three slots later, `attention queue: no pass for over 45 min`. Beeper Server itself keeps running: the token gates the API, not the server's own session.
+- **How expiry shows.** `aq list` exits 2 with the error `chat listing accounts: HTTP 401` and a 401 body in `~/.local/state/attention-queue/api-log/<today>.jsonl`; the dead-man reports `Beeper accounts unreadable`. Beeper Server itself keeps running: the token gates the API, not the server's own session.
 - **Where to re-authenticate.** On the box, against the API. Untested for re-authentication: this sequence has run once, for the first login, before any account was set up on the server, so whether it logs in again while one is set up is unknown. The API spec marks these three calls as needing no token, but `GET /v1/app/setup`, which it marks optional-auth, answers 401 without one today, so a 401 here is possible:
 
   ```bash
@@ -43,9 +43,9 @@ Every failure below also shows up as a line in the `Service health alert` ntfy w
   chmod 600 ~/.config/attention-queue/beeper-token
   ```
 
-  At the first login the email of an existing Beeper account logged straight in, with no signup step (reply shape: `attention-queue/captures/v1-app-setup-response-redacted.json`). Then `aq pass --dry-run` must exit 0.
+  At the first login the email of an existing Beeper account logged straight in, with no signup step (reply shape: `attention-queue/captures/v1-app-setup-response-redacted.json`). Then the `aq list` check under "What runs where" must exit 0.
 - **From the phone?** No: the calls run on the box. A Claude session over SSH can run them; the code lands in the account's mailbox.
-- **Meanwhile.** The bridge is unaffected (it does not use this token); messages keep flowing into Beeper. The board goes stale until the pass runs again.
+- **Meanwhile.** The bridge is unaffected (it does not use this token); messages keep flowing into Beeper. The planning briefing's `aq list` fails until the token is replaced.
 
 ## The bridge manager login (`bbctl`)
 
@@ -60,7 +60,7 @@ Every failure below also shows up as a line in the `Service health alert` ntfy w
 
 The bridge holds a Slack browser session (`xoxc-` token + `xoxd-` cookie) in `~/.local/share/bbctl/prod/sh-slack/mautrix-slack.db`, obtained with `login token` because Slack's email login demands a CAPTCHA the command interface cannot show.
 
-- **How expiry shows.** The bridge stays up but the login goes bad: `GET /v1/accounts` shows `sh-slack_…` with a status other than `connected` (`bad-credentials` in the bridge's state), the dead-man reports `Beeper account not connected: sh-slack_… <status>`, and the bridge bot posts in its control chat. Once the chats stop listing, the pass records `No chats at all for sh-slack_…` and the dead-man reports it as `attention queue alarm: …`.
+- **How expiry shows.** The bridge stays up but the login goes bad: `GET /v1/accounts` shows `sh-slack_…` with a status other than `connected` (`bad-credentials` in the bridge's state), the dead-man reports `Beeper account not connected: sh-slack_… <status>`, and the bridge bot posts in its control chat. Once the chats stop listing, `aq list` reports `No chats at all for sh-slack_…` among its errors.
 - **Where to re-authenticate.** In the bridge's control chat (the DM with `@sh-slackbot:beeper.local`, room `!6FrQeeevFdLaH0k16dqQ:beeper.local`): send `login token`, then paste the `xoxc-…` token and the `xoxd-…` cookie value from a logged-in Slack web session (browser dev tools, `api.slack.com` requests or the `d` cookie on `app.slack.com`). No unit restart needed.
 - **From the phone?** The command and the paste, yes, from the Beeper app. Getting the token and cookie out of a browser session realistically needs a desktop browser.
 - **Meanwhile.** Existing chats stay readable; nothing new arrives from Slack and nothing sent from Beeper reaches Slack. Once logged in again the bridge backfills.
@@ -107,7 +107,7 @@ The email bridge holds a Google refresh token for the work mailbox (its address 
 - **Where to re-authenticate.** In the bridge's control chat, the encrypted DM with `@sh-emailbot:beeper.local`, room `!ciK5fRfu0IQPoBFD0vHI:beeper.local`: send `login`, then the address, then `modify`. The bot answers with a Google URL whose redirect is `http://127.0.0.1:8765/callback` on this box. Open it in a laptop browser, allow, and either run `ssh -N -L 8765:127.0.0.1:8765 moiri@100.73.69.20` first, or copy the failed-to-load callback URL from the address bar and fetch it on the box (`curl -s '<that URL>'`): the code in it is single-use, expires in minutes and is bound to a verifier only the bridge holds. Never use the bridge's `oauth paste-token`, which puts a permanent full-mailbox token into chat history. At the folder prompt, `default` keeps the mailbox's watched folders on re-login; a fresh login defaults to both INBOX and SENT. SENT is what imports replies sent from Gmail's own apps. Verify it after re-authentication with the read-only check below.
 - **From the phone?** The chat steps, yes; the callback needs the box, so a laptop or an SSH session.
 - **Meanwhile.** Nothing new arrives from Gmail and nothing sent from Beeper reaches it; mail is not lost, since the bridge reads Gmail's history from its saved cursor when it reconnects (Gmail keeps about a week of history; past that the gap is skipped with a log line).
-- **The bridge's `config.yaml` carries five hand edits**, kept across starts by `--no-override-config`: `network.gmail_oauth` (client ID and secret, `listener_address: "127.0.0.1:8765"`); `network.timezone: "Europe/Lisbon"` (the date in the "On … wrote:" line of replies); `network.beeper_sync` (`api_url: http://127.0.0.1:23373`, `token_file: /home/moiri/.config/attention-queue/beeper-token`, `interval_seconds: 60`: two-way archive and read sync between the Beeper chats and Gmail, through Beeper Server's API; state in the bridge DB table `matrimail_beeper_sync`); `logging.min_level: info`; and `bridge.only_bridge_tags: [m.favourite]` (the fork tags every email chat low priority on creation, which would hide email in Beeper's Low Priority section and make the board read every thread as dismissed). A rebuilt bridge needs all five again. The sync depends on Beeper Server: while it is down the sync pauses (one warning, one recovery line) and mail keeps bridging.
+- **The bridge's `config.yaml` carries five hand edits**, kept across starts by `--no-override-config`: `network.gmail_oauth` (client ID and secret, `listener_address: "127.0.0.1:8765"`); `network.timezone: "Europe/Lisbon"` (the date in the "On … wrote:" line of replies); `network.beeper_sync` (`api_url: http://127.0.0.1:23373`, `token_file: /home/moiri/.config/attention-queue/beeper-token`, `interval_seconds: 60`: two-way archive and read sync between the Beeper chats and Gmail, through Beeper Server's API; state in the bridge DB table `matrimail_beeper_sync`); `logging.min_level: info`; and `bridge.only_bridge_tags: [m.favourite]` (the fork tags every email chat low priority on creation, which would hide email in Beeper's Low Priority section and make `aq list` read every thread as dismissed). A rebuilt bridge needs all five again. The sync depends on Beeper Server: while it is down the sync pauses (one warning, one recovery line) and mail keeps bridging.
 - **The passphrase.** Never change `MATRIMAIL_PASSPHRASE`: nothing re-encrypts the stored token, so a new value makes it unreadable and the bridge refuses to start. If the file is lost, delete the bridge's stored login (`logout <the mailbox address>` in the control chat), create a new file and log in again.
 
 ### Restore SENT watching
@@ -132,7 +132,7 @@ sudo systemctl start attention-bridge@email
 sqlite3 -readonly "$EMAIL_DB" 'SELECT monitored_folders FROM email_accounts;'
 ```
 
-If the alarm instead says `email monitored folders unreadable`, check the DB path, permissions and bridge journal before changing folders. After recovery, check the next pass and a reply made in Gmail; a connected account alone does not prove SENT is watched.
+If the alarm instead says `email monitored folders unreadable`, check the DB path, permissions and bridge journal before changing folders. After recovery, check that a reply made in Gmail shows as replied in `aq list`; a connected account alone does not prove SENT is watched.
 
 ## The recovery key
 
@@ -182,12 +182,12 @@ sudo systemctl restart beeper-server
 EOF
 ```
 
-The block stops at the first failed step; on a sha512 mismatch it has deleted the tarball and changed nothing else. Then check the new version, the accounts and a pass:
+The block stops at the first failed step; on a sha512 mismatch it has deleted the tarball and changed nothing else. Then check the new version, the accounts and a read:
 
 ```bash
 curl -s http://127.0.0.1:23373/v1/info | jq -r .app.version
 curl -s -H "Authorization: Bearer $(cat ~/.config/attention-queue/beeper-token)" http://127.0.0.1:23373/v1/accounts | jq -r '.[] | "\(.accountID) \(.status)"'
-~/roost/code/attention-queue/aq pass --dry-run > /dev/null; echo "exit $?"
+~/roost/code/attention-queue/aq list --json --since "$(date -u -d '-1 hour' +%FT%TZ)" > /dev/null; echo "exit $?"
 ```
 
 After a good update, watch `sudo journalctl -k | grep beeper-reject` for a reject to an address outside the telemetry hosts: a new version wanting a new host shows up there (and in the dead-man as `beeper rejects to unlisted destinations`), and the fix is a line in `files/beeper/egress-hosts` pushed with `roost-apply`. Then bump `BEEPER_SERVER_VERSION` and `BEEPER_SERVER_SHA512` in `files/setup/attention-queue.sh` so a rebuilt box installs the version that is running. Remove the version before the previous one once the new one has run a day.
