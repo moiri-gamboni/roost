@@ -170,6 +170,7 @@ files/glances.service|/etc/systemd/system/glances.service|envsubst:USERNAME|daem
 files/ram-monitor.service|/etc/systemd/system/ram-monitor.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
 files/ram-monitor.timer|/etc/systemd/system/ram-monitor.timer|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload,enable:ram-monitor.timer,restart:ram-monitor.timer
 files/earlyoom.default|/etc/default/earlyoom|plain|restart:earlyoom
+files/tmpfiles-tmp.conf|/etc/tmpfiles.d/tmp.conf|plain|
 files/conflict-watch.service|/etc/systemd/system/conflict-watch.service|envsubst:HOME_DIR,ROOST_DIR_NAME|daemon-reload,restart:conflict-watch
 files/session-focus-tick.service|/etc/systemd/system/session-focus-tick.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
 files/session-focus-tick.timer|/etc/systemd/system/session-focus-tick.timer|plain|daemon-reload,enable:session-focus-tick.timer,restart:session-focus-tick.timer
