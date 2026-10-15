@@ -2,8 +2,8 @@
 """Tests for files/scripts/gmail-draft.py: the message it builds keeps every link and header as
 given, a reply carries the parent's threading headers and quotes it as Gmail does, and a draft
 call sends what Gmail needs. No network: the Gmail calls are replaced by the responses captured
-in tests/fixtures/gmail-draft/ (the From address and Received project number replaced in
-drafts-get-metadata.json and messages-get-raw.json, and a name in the latter's body).
+in tests/fixtures/gmail-draft/ (in drafts-get-raw.json and messages-get-raw.json the account's
+name and address replaced in the headers and the quote, and the Received project number).
 
     python3 tests/gmail-draft.py            # from the repo root"""
 import base64
@@ -54,7 +54,12 @@ def fixture(name):
 
 def captured_parent():
     """The parent message of the captured reply, parsed from its messages.get RAW response."""
-    return parse(base64.urlsafe_b64decode(fixture("messages-get-raw.json")["raw"]))
+    return gd.parse_raw(fixture("messages-get-raw.json")["raw"])
+
+
+def captured_reply():
+    """The captured reply draft (Cc, Bcc, report.pdf and notes.txt attached), parsed."""
+    return gd.parse_raw(fixture("drafts-get-raw.json")["message"]["raw"])
 
 
 def message(text=None, html=None, **headers):
@@ -107,8 +112,8 @@ class BuildMessage(unittest.TestCase):
 class ReplyHeaders(unittest.TestCase):
     def test_captured_message(self):
         got = gd.reply_headers(captured_parent())
-        msgid = gd.header_map(fixture("drafts-get-metadata.json")["message"])["in-reply-to"]
-        self.assertEqual(got, {"In-Reply-To": msgid, "References": msgid, "Subject": "Re: [test] gmail-draft parent"})
+        msgid = gd.header_value(captured_reply(), "In-Reply-To")
+        self.assertEqual(got, {"In-Reply-To": msgid, "References": msgid, "Subject": "Re: [test] gmail-draft parent 2"})
 
     def test_references_extend_the_parents(self):
         folded = parse(b"Message-Id: <p@m>\r\nReferences: <a@m>\r\n\t<b@m>\r\nSubject: Plan\r\n\r\nx\r\n")
@@ -153,10 +158,9 @@ class Quote(unittest.TestCase):
 
     def test_captured_parent(self):
         text, html = gd.quote_reply("x\n", None, captured_parent())
-        self.assertIn("On Thu, Oct 15, 2026 at 1:31 PM Test Sender <sender@example.com> wrote:", text)
-        self.assertIn("> Long: https://example.com/a/very/long/path/that/runs/past/the/seventy-eight/column/limit?x=1&y=two%20words#frag\n", text)
-        self.assertIn("> Accent: Zoë\n", text)
-        self.assertIn('<a href="https://example.com/a/very/long/path/that/runs/past/the/seventy-eight/column/limit?x=1&amp;y=two%20words#frag">the page</a>', html)
+        self.assertIn("On Thu, Oct 15, 2026 at 2:44 PM Test Sender <sender@example.com> wrote:\n\n"
+                      "> Parent for the attachment test, from Zoë. Link https://example.com/p\n", text)
+        self.assertIn("Parent for the attachment test, from Zoë. Link https://example.com/p<br>", html)
 
     def test_cid_images_are_dropped_from_the_quote(self):
         parent = message("Hi\n", '<body><p>Hi</p><img width="80" src="cid:image001.png@01DB"><img src="https://example.com/x.png"></body>',
@@ -239,7 +243,7 @@ class Draft(unittest.TestCase):
         if "/messages/" in url:
             return fixture("messages-get-raw.json")
         if method == "GET":
-            return fixture("drafts-get-metadata.json")
+            return fixture("drafts-get-raw.json")
         return fixture("drafts-create.json")
 
     def run_draft(self, *argv, stdin="Body https://example.com/x?y=1\n"):
@@ -264,8 +268,8 @@ class Draft(unittest.TestCase):
         self.assertIn(f"thread-f:{int(created['message']['threadId'], 16)}%2Bmsg-a:{created['id']}", out)
 
     def assert_quotes_parent(self, msg):
-        parts = {p.get_content_type(): content(p) for p in msg.iter_parts()}
-        self.assertIn("Test Sender <sender@example.com> wrote:\n\n> Plain links test.\n", parts["text/plain"])
+        parts = {p.get_content_type(): content(p) for p in msg.walk() if not p.is_multipart() and not p.get_filename()}
+        self.assertIn("Test Sender <sender@example.com> wrote:\n\n> Parent for the attachment test", parts["text/plain"])
         self.assertIn('<blockquote class="gmail_quote"', parts["text/html"])
 
     def test_reply_goes_into_the_parents_thread_and_quotes_it(self):
@@ -280,26 +284,40 @@ class Draft(unittest.TestCase):
         self.assert_quotes_parent(msg)
 
     def test_update_keeps_what_it_is_not_given_and_quotes_again(self):
-        old = fixture("drafts-get-metadata.json")["message"]
-        h = gd.header_map(old)
-        self.assertTrue({"to", "cc", "bcc", "in-reply-to"} <= h.keys(), "the fixture must be a reply with Cc and Bcc")
+        old, thread = captured_reply(), fixture("drafts-get-raw.json")["message"]["threadId"]
+        h = {name: gd.header_value(old, name) for name in ("to", "cc", "bcc", "subject", "in-reply-to", "references")}
+        self.assertTrue(all(h.values()), "the fixture must be a reply with Cc and Bcc")
         self.run_draft("--update", "r123")
         get, search, parent, put = self.calls
-        self.assertEqual(get[:2], ("GET", f"{gd.API}/drafts/r123?format=metadata"))
+        self.assertEqual(get[:2], ("GET", f"{gd.API}/drafts/r123?format=raw"))
         self.assertEqual(search[:2], ("GET", f"{gd.API}/messages?" + urllib.parse.urlencode({"q": f"rfc822msgid:{h['in-reply-to']}"})))
         self.assertEqual(parent[1], f"{gd.API}/messages/{fixture('messages-list.json')['messages'][0]['id']}?format=raw")
         self.assertEqual((put[0], put[1]), ("PUT", f"{gd.UPLOAD}/drafts/r123?uploadType=multipart"))
-        self.assertEqual(put[2][0], {"id": "r123", "message": {"threadId": old["threadId"]}})
+        self.assertEqual(put[2][0], {"id": "r123", "message": {"threadId": thread}})
         msg = self.sent(put)
-        for name in ("to", "cc", "bcc", "subject", "in-reply-to", "references"):
-            self.assertEqual(header(msg, name), h[name], name)
+        for name in h:
+            self.assertEqual(gd.header_value(msg, name), h[name], name)
         self.assert_quotes_parent(msg)
+        self.assertEqual(self.attachments(msg), self.attachments(old))
+
+    def attachments(self, msg):
+        return [(p.get_filename(), p.get_content_type(), p.get_payload(decode=True)) for p in msg.iter_attachments()]
+
+    def test_update_attach_adds_and_replaces_by_file_name(self):
+        notes, extra = os.path.join(self.tmp.name, "notes.txt"), os.path.join(self.tmp.name, "extra.csv")
+        for path, data in ((notes, "v2 notes\n"), (extra, "a,b\n")):
+            with open(path, "w") as f:
+                f.write(data)
+        self.run_draft("--update", "r123", "--attach", notes, "--attach", extra)
+        got = self.attachments(self.sent(self.calls[-1]))
+        report = [a for a in self.attachments(captured_reply()) if a[0] == "report.pdf"]
+        self.assertEqual(got, report + [("notes.txt", "text/plain", b"v2 notes\n"), ("extra.csv", "text/csv", b"a,b\n")])
 
     def test_update_takes_what_it_is_given(self):
         self.run_draft("--update", "r123", "--to", "new@example.com", "--subject", "New")
         msg = self.sent(self.calls[-1])
         self.assertEqual((msg["To"], msg["Subject"]), ("new@example.com", "New"))
-        self.assertEqual(msg["Cc"], gd.header_map(fixture("drafts-get-metadata.json")["message"])["cc"])
+        self.assertEqual(msg["Cc"], gd.header_value(captured_reply(), "Cc"))
 
     def test_update_of_a_reply_whose_parent_is_gone_writes_nothing(self):
         self.parent_gone = True
@@ -326,8 +344,8 @@ class Draft(unittest.TestCase):
             f.write("Europe/Paris\n")
         with unittest.mock.patch.object(gd, "TZ_FILE", tz_file):
             self.run_draft("--to", "a@example.com", "--reply-to", fixture("messages-get-raw.json")["id"])
-        # the captured parent is dated 13:31 -0400, 19:31 in Paris
-        self.assertIn("On Thu, Oct 15, 2026 at 7:31 PM Test Sender", content(self.sent(self.calls[-1]).get_body(("plain",))))
+        # the captured parent is dated 14:44 -0400, 20:44 in Paris
+        self.assertIn("On Thu, Oct 15, 2026 at 8:44 PM Test Sender", content(self.sent(self.calls[-1]).get_body(("plain",))))
 
     def test_empty_body_is_refused_before_any_request(self):
         with self.assertRaises(SystemExit):

@@ -24,10 +24,11 @@ with "> " prefixes in the plain part and its HTML in a gmail_quote blockquote in
 zone named in ~/.config/gmail-draft/timezone (one IANA name, e.g. Europe/Paris), or in the
 sender's own offset without that file. --attach adds a file, its type guessed from its name;
 Gmail caps a message at 25 MB. --update replaces a draft's message: the recipients, subject and
-thread it is not given are kept from the draft, as the connector's update_draft does, and a
-reply's quote is rebuilt from the message it answers, but the body and attachments are always
-given again. Its id is the one this tool printed or the connector's list_drafts shows. An empty
-body is refused. No forwards or sending. Prints the draft id, the thread id and a link that opens
+thread it is not given are kept from the draft, as the connector's update_draft does, a reply's
+quote is rebuilt from the message it answers, and the draft's attachments are kept as they are
+(those added by hand in Gmail included), --attach adding to them and replacing one of the same file
+name; the body is always given again. Its id is the one this tool printed or the connector's
+list_drafts shows. An empty body is refused. No forwards or sending. Prints the draft id, the thread id and a link that opens
 the draft (the form the connector's own viewUrl takes).
 
 OAuth: the Desktop client in ~/.config/attention-queue/gmail-oauth-client.env (the mailbox's own
@@ -172,16 +173,21 @@ def access_token(saved):
         "grant_type": "refresh_token", "refresh_token": saved["refresh_token"]})["access_token"]
 
 
-def header_map(message):
-    """A Gmail message resource's headers (METADATA format) by lowercased name."""
-    return {x["name"].lower(): x["value"] for x in message["payload"]["headers"]}
+def parse_raw(raw):
+    """A message from the base64url `raw` field of a Gmail resource in RAW format."""
+    return email.message_from_bytes(base64.urlsafe_b64decode(raw), policy=email.policy.default)
+
+
+def header_value(msg, name):
+    """A header's value unfolded, '' when absent."""
+    return " ".join(str(msg[name] or "").split())
 
 
 def reply_headers(original):
     """Threading headers for a reply to `original`, the parsed parent message (RFC 5322 3.6.4:
     References is the parent's References, or else its In-Reply-To, then its Message-ID)."""
     def h(name):
-        return " ".join(str(original[name] or "").split())    # unfolded
+        return header_value(original, name)
     parent_refs = h("References") or h("In-Reply-To")
     subject = h("Subject")
     return {
@@ -236,7 +242,8 @@ def quote_reply(text, html_body, original, tz=None):
     if parent_text is None:    # an HTML-only message: its text, tags dropped, for the plain part
         parent_text = html.unescape(re.sub(r"<[^>]+>", "", re.sub(r"(?i)<br\s*/?>|</p>|</div>", "\n",
                                                                   without_head(parent_html or ""))))
-    lines = parent_text.replace("\r\n", "\n").rstrip("\n").split("\n")
+    parent_text = parent_text.replace("\r\n", "\n")
+    lines = parent_text.rstrip("\n").split("\n")
     quoted = "\n".join(">" + ("" if not line or line.startswith(">") else " ") + line for line in lines)
     who = f"{name} <{addr}>" if name else f"<{addr}>"
     who_html = (f"{html.escape(name)} " if name else "") + f'&lt;<a href="mailto:{html.escape(addr)}">{html.escape(addr)}</a>&gt;'
@@ -254,8 +261,9 @@ def quote_reply(text, html_body, original, tz=None):
             f'<blockquote class="gmail_quote" style="{QUOTE_STYLE}">{inner}</blockquote></div>')
 
 
-def build_message(to, cc, bcc, subject, text, html_body, msgid_headers, attachments=()):
-    """The draft as RFC 5322 bytes. msgid_headers (In-Reply-To, References) are written as given, one
+def build_message(to, cc, bcc, subject, text, html_body, msgid_headers, attachments=(), kept=()):
+    """The draft as RFC 5322 bytes: `kept` attachment parts (an updated draft's) as they are, then
+    the files in `attachments`. msgid_headers (In-Reply-To, References) are written as given, one
     id per line: the email policy would RFC 2047-encode an id longer than a line (Exchange's are
     80+ characters), and no mail client threads on an encoded id."""
     msg = EmailMessage()
@@ -267,6 +275,10 @@ def build_message(to, cc, bcc, subject, text, html_body, msgid_headers, attachme
     msg.set_content(text)
     if html_body is not None:
         msg.add_alternative(html_body, subtype="html")
+    if kept and msg.get_content_type() != "multipart/mixed":
+        msg.make_mixed()
+    for part in kept:
+        msg.attach(part)
     for path in attachments:
         kind = mimetypes.guess_type(path)[0] or "application/octet-stream"
         with open(path, "rb") as f:
@@ -289,33 +301,35 @@ def draft(args):
     except FileNotFoundError:
         die("not authorized yet: run `gmail-draft auth`")
     token = access_token(saved)
-    extra, thread_id = {}, None
+    extra, thread_id, kept = {}, None, []
     if args.update:
         # drafts.update replaces the whole message: keep what this call leaves out, as the
-        # connector's update_draft does, so a partial update loses no recipient and no thread.
-        old = http("GET", f"{API}/drafts/{args.update}?format=metadata", token=token)["message"]
-        h = header_map(old)
-        for field in ("to", "cc", "bcc"):
-            if not getattr(args, field) and field in h:
-                setattr(args, field, [h[field]])
+        # connector's update_draft does, so a partial update loses no recipient, thread or file.
+        old = parse_raw(http("GET", f"{API}/drafts/{args.update}?format=raw", token=token)["message"]["raw"])
+        for field in ("To", "Cc", "Bcc"):
+            if not getattr(args, field.lower()) and old[field]:
+                setattr(args, field.lower(), [header_value(old, field)])
         if args.subject is None and not args.reply_to:
-            args.subject = h.get("subject")
-        if "in-reply-to" in h and not args.reply_to:    # a reply: its new body needs the quote again
-            found = http("GET", f"{API}/messages?" + urllib.parse.urlencode({"q": f"rfc822msgid:{h['in-reply-to']}"}),
+            args.subject = header_value(old, "Subject") or None
+        replaced = {os.path.basename(path) for path in args.attach}
+        kept = [part for part in old.iter_attachments() if part.get_filename() not in replaced]
+        in_reply_to = header_value(old, "In-Reply-To")
+        if in_reply_to and not args.reply_to:    # a reply: its new body needs the quote again
+            found = http("GET", f"{API}/messages?" + urllib.parse.urlencode({"q": f"rfc822msgid:{in_reply_to}"}),
                          token=token)
             if "messages" not in found:
-                die(f"draft {args.update} answers {h['in-reply-to']}, which is no longer in the mailbox: pass --reply-to")
+                die(f"draft {args.update} answers {in_reply_to}, which is no longer in the mailbox: pass --reply-to")
             args.reply_to = found["messages"][0]["id"]
     if args.reply_to:
         parent = http("GET", f"{API}/messages/{args.reply_to}?format=raw", token=token)
-        original = email.message_from_bytes(base64.urlsafe_b64decode(parent["raw"]), policy=email.policy.default)
+        original = parse_raw(parent["raw"])
         extra, thread_id = reply_headers(original), parent["threadId"]
         subject = extra.pop("Subject")
         if args.subject is None:
             args.subject = subject
         tz = ZoneInfo(read(TZ_FILE).strip()) if os.path.exists(TZ_FILE) else None
         text, html_body = quote_reply(text, html_body, original, tz)
-    raw = build_message(args.to, args.cc, args.bcc, args.subject, text, html_body, extra, args.attach)
+    raw = build_message(args.to, args.cc, args.bcc, args.subject, text, html_body, extra, args.attach, kept)
     message = {"threadId": thread_id} if thread_id else {}
     if args.update:
         result = http("PUT", f"{UPLOAD}/drafts/{args.update}?uploadType=multipart",
