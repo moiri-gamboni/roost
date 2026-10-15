@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch for Claude Code relinking ~/.local/bin/claude to a new version
+
+[Path]
+# The directory, not the link: a watch on the link follows it to the old binary,
+# so an atomic rename of a new link over it fires nothing. Other changes here
+# start the service too, which finds the version already refreshed and exits.
+PathChanged=$HOME_DIR/.local/bin
+
+[Install]
+WantedBy=paths.target

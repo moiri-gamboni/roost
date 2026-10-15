@@ -118,6 +118,7 @@ files/scheduled/ram-monitor.sh|$ROOST_DIR/claude/scheduled/ram-monitor.sh|plain+
 files/scheduled/vision-abuse-watch.sh|$ROOST_DIR/claude/scheduled/vision-abuse-watch.sh|plain+x|
 files/scheduled/roughdraft-watch.sh|$ROOST_DIR/claude/scheduled/roughdraft-watch.sh|plain+x|
 files/scheduled/btrfs-balance.sh|$ROOST_DIR/claude/scheduled/btrfs-balance.sh|plain+x|
+files/scheduled/claude-flags-refresh.sh|$ROOST_DIR/claude/scheduled/claude-flags-refresh.sh|plain+x|
 files/scripts/roost-apply.sh|$ROOST_DIR/claude/scripts/roost-apply.sh|plain+x|
 files/scripts/roost-net.sh|$ROOST_DIR/claude/scripts/roost-net.sh|plain+x|
 files/scripts/agent-worktree.sh|$ROOST_DIR/claude/scripts/agent-worktree.sh|plain+x|
@@ -174,6 +175,8 @@ files/tmpfiles-tmp.conf|/etc/tmpfiles.d/tmp.conf|plain|
 files/conflict-watch.service|/etc/systemd/system/conflict-watch.service|envsubst:HOME_DIR,ROOST_DIR_NAME|daemon-reload,restart:conflict-watch
 files/session-focus-tick.service|/etc/systemd/system/session-focus-tick.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
 files/session-focus-tick.timer|/etc/systemd/system/session-focus-tick.timer|plain|daemon-reload,enable:session-focus-tick.timer,restart:session-focus-tick.timer
+files/claude-flags-refresh.service|/etc/systemd/system/claude-flags-refresh.service|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|daemon-reload
+files/claude-flags-refresh.path|/etc/systemd/system/claude-flags-refresh.path|envsubst:HOME_DIR|daemon-reload,enable:claude-flags-refresh.path,restart:claude-flags-refresh.path
 files/cron-roost|/etc/cron.d/$ROOST_DIR_NAME|envsubst:USERNAME,HOME_DIR,ROOST_DIR_NAME|
 files/tmux.conf|$HOME_DIR/.tmux.conf|plain|run:tmux source-file ~/.tmux.conf
 files/sshd/50-clip-forward.conf|/etc/ssh/sshd_config.d/50-clip-forward.conf|plain|restart:ssh
