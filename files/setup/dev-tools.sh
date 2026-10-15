@@ -205,6 +205,21 @@ else
     ok "Codex CLI installed"
 fi
 
+# Codex's workspace-write sandbox cannot write ~/.cache/uv, so uv in a thread
+# fails ("Read-only file system") until the thread points UV_CACHE_DIR at a
+# fresh /tmp dir: a full copy of its packages per thread, ~800M each. One cache
+# in /tmp, which the sandbox can write, is shared by every thread instead, and
+# the host cache stays closed to the sandbox.
+CODEX_CONFIG="$HOME_DIR/.codex/config.toml"
+if as_user "grep -q UV_CACHE_DIR '$CODEX_CONFIG'" &>/dev/null; then
+    skip "Codex threads share one uv cache"
+elif as_user "grep -q '^\[shell_environment_policy\]' '$CODEX_CONFIG'" &>/dev/null; then
+    warn "$CODEX_CONFIG has a [shell_environment_policy] table: add UV_CACHE_DIR = \"/tmp/codex-uv-cache\" to its set by hand"
+else
+    as_user "mkdir -p '$HOME_DIR/.codex' && printf '\n[shell_environment_policy]\nset = { UV_CACHE_DIR = \"/tmp/codex-uv-cache\" }\n' >> '$CODEX_CONFIG'"
+    ok "Codex threads share one uv cache (/tmp/codex-uv-cache)"
+fi
+
 # Codex's Linux sandbox runs commands under bubblewrap, which needs unprivileged
 # user namespaces; Ubuntu 24.04's apparmor_restrict_unprivileged_userns blocks
 # those unless the binary has an AppArmor profile granting `userns`.
