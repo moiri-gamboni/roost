@@ -235,13 +235,18 @@ class Draft(unittest.TestCase):
             self.addCleanup(p.stop)
 
     parent_gone = False
+    thread = None    # what threads.get returns; None: a thread holding only the captured parent
+    parent = None    # what messages.get returns; None: the captured parent
 
     def fake_http(self, method, url, *, body=None, upload=None, token=None, **_):
         self.calls.append((method, url, body if upload is None else upload))
         if "/messages?" in url:
             return fixture("messages-list-empty.json" if self.parent_gone else "messages-list.json")
+        if "/threads/" in url:
+            p = fixture("messages-get-raw.json")
+            return self.thread or {"id": p["threadId"], "messages": [{"id": p["id"], "threadId": p["threadId"], "labelIds": ["INBOX"]}]}
         if "/messages/" in url:
-            return fixture("messages-get-raw.json")
+            return self.parent or fixture("messages-get-raw.json")
         if method == "GET":
             return fixture("drafts-get-raw.json")
         return fixture("drafts-create.json")
@@ -249,8 +254,10 @@ class Draft(unittest.TestCase):
     def run_draft(self, *argv, stdin="Body https://example.com/x?y=1\n"):
         with unittest.mock.patch.object(sys, "argv", ["gmail-draft", *argv]), \
              unittest.mock.patch.object(sys, "stdin", io.StringIO(stdin)), \
+             unittest.mock.patch("sys.stderr", new_callable=io.StringIO) as err, \
              unittest.mock.patch("sys.stdout", new_callable=io.StringIO) as out:
             gd.main()
+        self.stderr = err.getvalue()
         return out.getvalue()
 
     def sent(self, call):
@@ -275,13 +282,39 @@ class Draft(unittest.TestCase):
     def test_reply_goes_into_the_parents_thread_and_quotes_it(self):
         parent = fixture("messages-get-raw.json")
         self.run_draft("--to", "a@example.com", "--reply-to", parent["id"])
-        get, create = self.calls
+        get, thread, create = self.calls    # the parent is its thread's first message, and its only one
         self.assertEqual((get[0], get[1]), ("GET", f"{gd.API}/messages/{parent['id']}?format=raw"))
+        self.assertEqual(thread[1], f"{gd.API}/threads/{parent['threadId']}?format=minimal")
         self.assertEqual(create[2][0], {"message": {"threadId": parent["threadId"]}})
         msg, want = self.sent(create), gd.reply_headers(captured_parent())
         self.assertEqual(tuple(header(msg, n) for n in ("In-Reply-To", "References", "Subject")),
                          (want["In-Reply-To"], want["References"], want["Subject"]))
         self.assert_quotes_parent(msg)
+
+    def test_a_thread_id_answers_the_threads_newest_message(self):
+        self.thread = fixture("threads-get-minimal.json")
+        first, newest = self.thread["messages"][0]["id"], self.thread["messages"][-1]["id"]
+        self.parent = {**fixture("messages-get-raw.json"), "id": first, "threadId": self.thread["id"]}
+        self.run_draft("--to", "a@example.com", "--reply-to", first)
+        self.assertEqual([c[1] for c in self.calls[:3]], [f"{gd.API}/messages/{first}?format=raw",
+                                                           f"{gd.API}/threads/{first}?format=minimal",
+                                                           f"{gd.API}/messages/{newest}?format=raw"])
+        self.assertIn(f"replying to the thread's newest message, {newest}", self.stderr)
+
+    def test_drafts_in_the_thread_are_not_its_newest_message(self):
+        self.thread = fixture("threads-get-minimal.json")
+        self.thread["messages"].append({"id": "d1", "threadId": self.thread["id"], "labelIds": ["DRAFT"]})
+        first, newest = self.thread["messages"][0]["id"], self.thread["messages"][-2]["id"]
+        self.parent = {**fixture("messages-get-raw.json"), "id": first, "threadId": self.thread["id"]}
+        self.run_draft("--to", "a@example.com", "--reply-to", first)
+        self.assertEqual(self.calls[2][1], f"{gd.API}/messages/{newest}?format=raw")
+
+    def test_a_later_message_id_is_answered_as_given(self):
+        self.parent = {**fixture("messages-get-raw.json"), "id": "m2", "threadId": "t1"}
+        self.run_draft("--to", "a@example.com", "--reply-to", "m2")
+        self.assertEqual([c[0] + " " + c[1] for c in self.calls], [f"GET {gd.API}/messages/m2?format=raw",
+                                                                    f"POST {gd.UPLOAD}/drafts?uploadType=multipart"])
+        self.assertEqual(self.stderr, "")
 
     def test_update_keeps_what_it_is_not_given_and_quotes_again(self):
         old, thread = captured_reply(), fixture("drafts-get-raw.json")["message"]["threadId"]

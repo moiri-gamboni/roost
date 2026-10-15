@@ -16,7 +16,9 @@ message stores the body verbatim. Drafts only: sending stays in Gmail.
 
 The body is plain text from FILE, or stdin without --body-file; --html-file adds an HTML
 alternative to it. --reply-to takes a Gmail message id (the connector's search_threads and
-get_thread show them) and files the draft in that message's thread with In-Reply-To, References
+get_thread show them; a thread's own id is its first message's, and is read as the thread, so
+the reply answers its newest message as Gmail's Reply does, with a note on stderr) and files the
+draft in that message's thread with In-Reply-To, References
 and its subject, "Re: " added unless already there, so it refuses --subject; it sets no recipients
 (pass --to). It quotes that message as Gmail does: "On <date> <sender> wrote:", then its text
 with "> " prefixes in the plain part and its HTML in a gmail_quote blockquote in the HTML part
@@ -302,6 +304,7 @@ def draft(args):
         die("not authorized yet: run `gmail-draft auth`")
     token = access_token(saved)
     extra, thread_id, kept = {}, None, []
+    given_parent = args.reply_to    # an update's own parent, found below, is the exact message it answers
     if args.update:
         # drafts.update replaces the whole message: keep what this call leaves out, as the
         # connector's update_draft does, so a partial update loses no recipient, thread or file.
@@ -322,6 +325,14 @@ def draft(args):
             args.reply_to = found["messages"][0]["id"]
     if args.reply_to:
         parent = http("GET", f"{API}/messages/{args.reply_to}?format=raw", token=token)
+        if given_parent and parent["id"] == parent["threadId"]:
+            # the id may be the thread's (the connector's search_threads gives it): answer its newest message
+            thread = http("GET", f"{API}/threads/{parent['threadId']}?format=minimal", token=token)
+            sent = [m for m in thread["messages"] if "DRAFT" not in m.get("labelIds", [])]
+            if sent and sent[-1]["id"] != parent["id"]:
+                print(f"gmail-draft: {args.reply_to} is the first message of its thread, which is the thread's id too; "
+                      f"replying to the thread's newest message, {sent[-1]['id']}", file=sys.stderr)
+                parent = http("GET", f"{API}/messages/{sent[-1]['id']}?format=raw", token=token)
         original = parse_raw(parent["raw"])
         extra, thread_id = reply_headers(original), parent["threadId"]
         subject = extra.pop("Subject")

@@ -1,0 +1,44 @@
+{
+  "id": "1a0a248e19775b48",
+  "historyId": "2210714",
+  "messages": [
+    {
+      "id": "1a0a248e19775b48",
+      "threadId": "1a0a248e19775b48",
+      "labelIds": [
+        "Label_2538921370439277783",
+        "CATEGORY_FORUMS"
+      ],
+      "snippet": "snippet withheld from the public fixture",
+      "sizeEstimate": 23927,
+      "historyId": "2184062",
+      "internalDate": "1789429067000"
+    },
+    {
+      "id": "1a13052511af9c27",
+      "threadId": "1a0a248e19775b48",
+      "labelIds": [
+        "Label_2538921370439277783",
+        "SENT"
+      ],
+      "snippet": "snippet withheld from the public fixture",
+      "sizeEstimate": 1444,
+      "historyId": "2182295",
+      "internalDate": "1791812063000"
+    },
+    {
+      "id": "1a136a1cd5cf9215",
+      "threadId": "1a0a248e19775b48",
+      "labelIds": [
+        "UNREAD",
+        "IMPORTANT",
+        "CATEGORY_PERSONAL",
+        "INBOX"
+      ],
+      "snippet": "snippet withheld from the public fixture",
+      "sizeEstimate": 9309,
+      "historyId": "2200931",
+      "internalDate": "1791917923000"
+    }
+  ]
+}
