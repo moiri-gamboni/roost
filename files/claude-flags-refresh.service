@@ -5,5 +5,4 @@ Description=Refresh Claude Code's cached feature flags for a new Claude Code ver
 Type=oneshot
 User=$USERNAME
 Environment=CLAUDE_CONFIG_DIR=$HOME_DIR/$ROOST_DIR_NAME/claude
-WorkingDirectory=$HOME_DIR/$ROOST_DIR_NAME/claude/state
 ExecStart=/bin/bash $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/claude-flags-refresh.sh
