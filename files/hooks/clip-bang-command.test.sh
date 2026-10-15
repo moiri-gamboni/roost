@@ -4,7 +4,8 @@
 #
 # Each case feeds a Stop payload whose last_assistant_message is the reply, with `clip` a
 # stub on PATH that records its argument and stdin and answers with STUB_RC/STUB_OUT, and
-# asserts what reached the stub (byte for byte, or nothing) and the systemMessage.
+# asserts what reached the stub (byte for byte, or nothing) and, where given, the exact
+# systemMessage.
 set -uo pipefail
 
 hook="$(dirname "${BASH_SOURCE[0]}")/clip-bang-command.sh"
@@ -75,17 +76,21 @@ check "the bare prefix" "Prefix it with \`!\` to run it here." ""
 check "negation operators in spans" "Use \`!==\` here and \`!important\` there, or \`!foo\`." ""
 check "negation inside a shell line" "${fence}bash${nl}if ! grep -q x f; then echo no; fi${nl}${fence}" ""
 check "an exclamation after a span" "It's \`done\`! Now look at \`x\`." ""
+check "an exclamation after a span ending in punctuation" "Call \`foo()\`! Now see \`bar\`." ""
+check "a command span after a punctuation-final span" "Call \`foo()\`, then run \`! sudo y\`." "! sudo y"
 check "spaces only after the prefix" "Odd: \`!   \`." ""
-check "no message field" "" ""
+check "a quoted git push rejection" \
+    "The push was refused:${nl}${fence}${nl}To github.com:o/r.git${nl} ! [rejected]        main -> main (fetch first)${nl} ! [remote rejected] x -> x${nl}${fence}" ""
+check "empty message" "" ""
 
 STUB_RC=3 STUB_OUT="held: a manual clip from 4 min ago is kept for 10 min" \
     check "held by a fresh manual clip" "Run \`! sudo x\`." "! sudo x" \
     '"! sudo x" not copied to your clipboard: a manual clip from 4 min ago is kept for 10 min'
-STUB_RC=1 STUB_OUT="laptop: receiver unreachable" \
-    check "no route took it" "Run \`! sudo x\`." "! sudo x" \
-    '"! sudo x" not copied: no route to your clipboard'
+STUB_RC=1 STUB_OUT=$'laptop: receiver unreachable (timed out)\nOSC 52: no tmux client took it' \
+    check "no route took it: the routes' own lines" "Run \`! sudo x\`." "! sudo x" \
+    '"! sudo x" not copied: laptop: receiver unreachable (timed out); OSC 52: no tmux client took it'
 
-# a payload without the field at all, as an older Claude Code would send
+# a payload without the field at all
 rm -f "$tmp/clip-in"
 out=$(printf '{"hook_event_name":"Stop"}' | bash "$hook")
 if [[ ! -e $tmp/clip-in && -z $out ]]; then pass=$((pass + 1)); echo "ok    payload without last_assistant_message"
