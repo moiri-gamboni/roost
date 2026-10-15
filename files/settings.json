@@ -254,6 +254,15 @@
             "rewakeSummary": "conflict watch: idle with held units — release reminder"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/roost/claude/hooks/clip-bang-command.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "StopFailure": [
