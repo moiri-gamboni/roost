@@ -1,0 +1,3 @@
+# deploy.sh:674 in two old commits: a curl auth flag given a shell variable, not a key
+7cfd711c4d5103ed4dfef06fc1efc560dcf293cc:deploy.sh:curl-auth-user:674
+1fcff2148449e02e36fa15f4adf81e6aae432262:deploy.sh:curl-auth-user:674
