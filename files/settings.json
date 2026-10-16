@@ -378,6 +378,7 @@
   "skipWorkflowUsageWarning": true,
   "verbose": false,
   "autoCompactEnabled": true,
+  "idleCompaction": false,
   "switchModelsOnFlag": true,
   "autoContinueAtUsageLimit": true,
   "autoScrollEnabled": false,
