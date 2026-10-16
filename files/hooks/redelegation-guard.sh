@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # PreToolUse hook (matcher: Agent): deny a subagent's first spawn when it hands its own brief on.
 #
+# UNWIRED (no settings.json entry runs it; re-arm conditions in hooks/CLAUDE.md). Of its 12
+# denials from 2026-10-06 to 10-15, 11 were the first leg of a fan-out: the siblings are not on
+# disk yet when the hook looks, because the legs of one message are written as each finishes
+# streaming, 6-66 s after one another, not together as the paragraph below assumes.
+#
 # Why: a subagent that reads "delegate down by default" in the global CLAUDE.md applies it to
 # the one brief it holds, and hands that brief — near verbatim — to a single child, which
 # adds a whole agent's cost and latency and produces nothing the parent could not have had

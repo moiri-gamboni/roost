@@ -177,11 +177,6 @@
             "type": "command",
             "command": "~/roost/claude/hooks/fork-context-guard.sh",
             "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "~/roost/claude/hooks/redelegation-guard.sh",
-            "timeout": 6
           }
         ]
       },

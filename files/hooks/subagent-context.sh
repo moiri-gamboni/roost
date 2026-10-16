@@ -8,8 +8,9 @@
 # a depth-2 subagent that had just handed its brief to a single child answered "yes, I'm the
 # top-level session". SubagentStart's additionalContext is injected into the subagent's
 # conversation before its first model call (verified on 2.1.278 with a marker string), so this
-# is where the fact lands. redelegation-guard.sh is the backstop for the case the sentence
-# does not reach: it denies the hand-off itself.
+# is where the fact lands. It is the only thing against hand-offs: they fell from about 20% to
+# 0.6% of spawning subagents once it shipped, and redelegation-guard.sh, which denied the
+# hand-off itself, is unwired because it mostly denied fan-out legs.
 #
 # No depth here: the subagent's meta.json (which carries spawnDepth) is written only after this
 # hook returns, so the type is the one fact available. Always exits 0.
