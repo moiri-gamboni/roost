@@ -614,31 +614,37 @@ else
     fail "settings.json"
 fi
 
-# ── Hook Scripts ──────────────────────────────────────────────
+# ── Deployed Scripts ──────────────────────────────────────────
 echo ""
-echo "--- Hook Scripts ---"
+echo "--- Deployed Scripts (hooks, scheduled jobs, lib) ---"
 
-HOOK_DIR="$HOME_DIR/$ROOST_DIR_NAME/claude/hooks"
-for hook in _hook-env.sh session-lock.sh session-unlock.sh reflect.sh notify.sh \
-            health-check.sh scheduled-task.sh run-scheduled-task.sh auto-update.sh \
-            ram-monitor.sh reflect.md; do
-    if run test -f "$HOOK_DIR/$hook"; then
-        pass "$hook exists"
-    else
-        fail "$hook missing"
-    fi
-done
-
-# Check executability of shell scripts
-for hook in session-lock.sh session-unlock.sh reflect.sh notify.sh \
-            health-check.sh scheduled-task.sh run-scheduled-task.sh auto-update.sh \
-            ram-monitor.sh; do
-    if run test -x "$HOOK_DIR/$hook"; then
-        pass "$hook is executable"
-    else
-        fail "$hook not executable"
-    fi
-done
+# What should be there is whatever the server's own roost-apply manifest deploys under
+# claude/{hooks,scheduled,lib}: `roost-apply list` prints repo path, deployed path and
+# transform per file, and plain+x files must be executable. Taking the list from the manifest
+# keeps this block from drifting when a script is added, moved or deleted.
+APPLY="$HOME_DIR/$ROOST_DIR_NAME/claude/scripts/roost-apply.sh"
+SCRIPT_CHECK=$(run bash -s -- "$APPLY" <<'REMOTE'
+exec 2>&1
+n=0
+while read -r path transform; do
+    n=$((n + 1))
+    [ -f "$path" ] || { echo "missing $path"; continue; }
+    [ "$transform" != plain+x ] || [ -x "$path" ] || echo "not-executable $path"
+done < <("$1" list </dev/null | awk '$2 ~ /\/claude\/(hooks|scheduled|lib)\/[^\/]+$/ { print $2, $3 }')
+echo "checked $n"
+REMOTE
+)
+SCRIPTS_CHECKED=$(sed -n 's/^checked //p' <<<"$SCRIPT_CHECK")
+SCRIPT_PROBLEMS=$(grep -v '^checked ' <<<"$SCRIPT_CHECK" || true)
+if [ "${SCRIPTS_CHECKED:-0}" -eq 0 ]; then
+    fail "deployed scripts" "roost-apply list gave no hooks/scheduled/lib files${SCRIPT_PROBLEMS:+: ${SCRIPT_PROBLEMS//$'\n'/ }}"
+elif [ -z "$SCRIPT_PROBLEMS" ]; then
+    pass "$SCRIPTS_CHECKED manifest files present under hooks/, scheduled/ and lib/, executable where the manifest marks them"
+else
+    while read -r problem path; do
+        fail "$(basename "$path") $problem" "$path"
+    done <<<"$SCRIPT_PROBLEMS"
+fi
 
 # ── Agent Tools ───────────────────────────────────────────────
 echo ""

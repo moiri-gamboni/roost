@@ -106,10 +106,8 @@ files/session.conf|$ROOST_DIR/claude/session.conf|plain|
 files/lib/_hook-env.sh|$ROOST_DIR/claude/lib/_hook-env.sh|plain+x|
 files/lib/cloudflare-assemble.sh|$ROOST_DIR/claude/lib/cloudflare-assemble.sh|plain+x|
 files/lib/tmux-main-guard.sh|$ROOST_DIR/claude/lib/tmux-main-guard.sh|plain+x|
-files/hooks/reflect.sh|$ROOST_DIR/claude/hooks/reflect.sh|plain+x|
 files/hooks/notify.sh|$ROOST_DIR/claude/hooks/notify.sh|plain+x|
 files/hooks/permission-summary.sh|$ROOST_DIR/claude/hooks/permission-summary.sh|plain+x|
-files/hooks/reflect.md|$ROOST_DIR/claude/hooks/reflect.md|sed-roost|
 files/scheduled/health-check.sh|$ROOST_DIR/claude/scheduled/health-check.sh|plain+x|
 files/scheduled/scheduled-task.sh|$ROOST_DIR/claude/scheduled/scheduled-task.sh|plain+x|
 files/scheduled/run-scheduled-task.sh|$ROOST_DIR/claude/scheduled/run-scheduled-task.sh|plain+x|

@@ -42,11 +42,8 @@ for f in _hook-env cloudflare-assemble; do
 done
 
 # Claude Code event hooks
-for f in reflect notify; do
-    cp "$REMOTE_DIR/files/hooks/${f}.sh" "$CLAUDE_DIR/hooks/${f}.sh"
-    chmod +x "$CLAUDE_DIR/hooks/${f}.sh"
-done
-cp "$REMOTE_DIR/files/hooks/reflect.md" "$CLAUDE_DIR/hooks/reflect.md"
+cp "$REMOTE_DIR/files/hooks/notify.sh" "$CLAUDE_DIR/hooks/notify.sh"
+chmod +x "$CLAUDE_DIR/hooks/notify.sh"
 
 # Scheduled jobs (cron + systemd timers)
 for f in health-check scheduled-task run-scheduled-task auto-update ram-monitor; do
@@ -60,9 +57,8 @@ chmod +x "$CLAUDE_DIR/scripts/roost-apply.sh"
 
 chown -R "$USERNAME:$USERNAME" "$CLAUDE_DIR/hooks"
 
-# Substitute ~/roost/ paths in settings.json and reflect.md
+# Substitute ~/roost/ paths in settings.json
 sed -i "s|~/roost/|~/$ROOST_DIR_NAME/|g" "$CLAUDE_DIR/settings.json"
-sed -i "s|~/roost/|~/$ROOST_DIR_NAME/|g" "$CLAUDE_DIR/hooks/reflect.md"
 
 ok "All hook scripts installed"
 
