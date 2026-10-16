@@ -53,11 +53,6 @@ if [ -x "$FNM_DIR/fnm" ] && ! type _roost_fnm_inited &>/dev/null; then
     fi
 fi
 
-# clip-forward shims (must precede system xclip/wl-paste)
-if [ -d "$HOME/.local/lib/clip-forward/shims" ]; then
-    _roost_path_prepend "$HOME/.local/lib/clip-forward/shims"
-fi
-
 export PATH
 
 # Roost server management (symlink created by setup/shell-config.sh)
