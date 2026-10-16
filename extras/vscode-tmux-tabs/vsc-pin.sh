@@ -66,7 +66,7 @@ fi
 # we select the window *before* attaching.
 has_session "$name" "$sessions" || tmux new-session -d -s "$name" -t "$base"
 # Best effort: if the window vanished between enumerate and here, the view stays
-# on the window it opened on and the extension reconciles (disposes) this tab.
+# on whatever window it shows and the extension reconciles (disposes) this tab.
 tmux select-window -t "$name:$win" || true
 [ "${ROOST_TMUX_STATUS:-off}" = off ] && tmux set-option -t "$name" status off
 

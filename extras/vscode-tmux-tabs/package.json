@@ -73,7 +73,7 @@
         "roostTmuxTabs.singleAttach": {
           "type": "boolean",
           "default": true,
-          "description": "Keep at most one \"attach main\" terminal. With that profile as terminal.integrated.defaultProfile.linux, every new-terminal gesture (and every reload) opens another identical view of main's current window; with this on, the surplus tab is closed and the existing one focused instead. Turn off if you want several attach views (e.g. on different windows side by side)."
+          "description": "Keep at most one \"attach main\" terminal. With that profile as terminal.integrated.defaultProfile.linux, every new-terminal gesture (and every reload) opens another identical view of main's `shell` window; with this on, the surplus tab is closed and the existing one focused instead. Turn off if you want several attach views (e.g. on different windows side by side)."
         },
         "roostTmuxTabs.excludeNames": {
           "type": "array",
