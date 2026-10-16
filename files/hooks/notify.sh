@@ -13,12 +13,12 @@ rate_limit_ok || exit 0
 # message names no tool. A file older than two minutes belongs to a prompt that was answered
 # before this notification could fire.
 if [ -n "$SID" ]; then
-    SUMMARY_FILE="$HOOK_RUNTIME_DIR/perm-summary-$SID"
-    if [ -n "$(find "$HOOK_RUNTIME_DIR" -maxdepth 1 -name "${SUMMARY_FILE##*/}" -newermt '2 minutes ago')" ]; then
-        SUMMARY=$(<"$SUMMARY_FILE")
+    SUMMARY_NAME="perm-summary-$SID"
+    if [ -n "$(find "$HOOK_RUNTIME_DIR" -maxdepth 1 -name "$SUMMARY_NAME" -newermt '2 minutes ago')" ]; then
+        SUMMARY=$(<"$HOOK_RUNTIME_DIR/$SUMMARY_NAME")
         [ -n "$SUMMARY" ] && MESSAGE=$SUMMARY
     fi
-    rm -f "$SUMMARY_FILE"
+    rm -f "$HOOK_RUNTIME_DIR/$SUMMARY_NAME"
 fi
 
 # The session's title (/rename or the auto-title), which is how the session is

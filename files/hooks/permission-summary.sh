@@ -6,15 +6,17 @@
 # tool), yet 36 of the 51 pushes traced on 2026-10-16 were AskUserQuestion dialogs, whose whole
 # content is the question. PermissionRequest fires as the prompt opens, about six seconds before
 # that Notification, with tool_name and tool_input: for AskUserQuestion, Write, Edit, Bash and a
-# prompt a PreToolUse hook forced with "ask" alike (all captured). So the text is stored per
+# prompt a PreToolUse hook forced with "ask" alike (all observed). So the text is stored per
 # session and notify.sh reads it when the Notification arrives.
 #
 # The newest prompt wins: one file per session, overwritten. A prompt answered within the six
 # seconds never gets a Notification and leaves its text behind, which is why notify.sh ignores
-# a file older than two minutes. A tool without a case below is named without its input, since
-# an MCP tool's input can be a message that should not reach a lock screen.
+# a file older than two minutes; with two prompts open at once, the first push shows the
+# second's text. A Bash command and a file path are shown (clipped) because judging an approval
+# needs them; any other tool is named without its input, since an MCP tool's input can be a
+# message that should not reach a lock screen.
 #
-# Prints nothing and always exits 0: any output or other exit code could be read as a decision.
+# Prints nothing and always exits 0: stdout from a PermissionRequest hook is read as a decision.
 # A payload this cannot read stores nothing, and the push falls back to the generic text.
 source "$(dirname "$0")/../lib/_hook-env.sh"
 
@@ -40,7 +42,7 @@ SUMMARY=$(hook_input | jq -r '
         ($in.file_path // empty) as $p | "\($tool): \($p)" | clip
       else
         "Claude needs your permission to use \($tool)"
-      end') || true
+      end')
 
 [ -n "$SUMMARY" ] && printf '%s\n' "$SUMMARY" > "$HOOK_RUNTIME_DIR/perm-summary-$SID"
 exit 0
