@@ -607,12 +607,16 @@ if run test -f "$SETTINGS"; then
         fail "cleanupPeriodDays" "got $CLEANUP"
     fi
 
-    COMPACT=$(run jq -r '.autoCompactEnabled' "$SETTINGS" 2>/dev/null)
-    if [ "$COMPACT" = "false" ]; then
-        pass "autoCompactEnabled = false"
-    else
-        fail "autoCompactEnabled" "got $COMPACT"
-    fi
+    # The compaction keys change by decision, so the repo copy is the expectation.
+    for key in autoCompactEnabled idleCompaction; do
+        want=$(jq -r ".$key" "$SCRIPT_DIR/files/settings.json")
+        got=$(run jq -r ".$key" "$SETTINGS")
+        if [ "$got" = "$want" ]; then
+            pass "$key = $got"
+        else
+            fail "$key" "got $got, the repo has $want"
+        fi
+    done
 else
     fail "settings.json"
 fi
