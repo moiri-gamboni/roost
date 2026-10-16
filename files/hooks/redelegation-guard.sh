@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # PreToolUse hook (matcher: Agent): deny a subagent's first spawn when it hands its own brief on.
 #
-# UNWIRED (no settings.json entry runs it; re-arm conditions in hooks/CLAUDE.md). Of its 12
-# denials from 2026-10-06 to 10-15, 11 were the first leg of a fan-out: the siblings are not on
-# disk yet when the hook looks, because the legs of one message are written as each finishes
-# streaming, 6-66 s after one another, not together as the paragraph below assumes.
+# UNWIRED (no settings.json entry runs it; re-arm conditions in hooks/CLAUDE.md): it mostly
+# denied the first leg of a fan-out, because the siblings are not on disk yet when it looks
+# (see the last sentences of the mechanism paragraph).
 #
 # Why: a subagent that reads "delegate down by default" in the global CLAUDE.md applies it to
 # the one brief it holds, and hands that brief — near verbatim — to a single child, which
@@ -26,11 +25,12 @@
 # <session-dir>/subagents/agent-<agent_id>.jsonl. The brief is that file's first user row —
 # for a fork, the directive in the last user row whose text starts with `<fork-boilerplate>`
 # (the text after the closing tag), and only rows from that row on are the fork's own: a
-# fork's transcript starts with the parent's whole history, parent-side Agent calls included. Tools run as the model streams them, so the assistant
-# row holding this call is usually not on disk when the hook fires; siblings in the same
-# message land together with it about half a second later (hooks for parallel calls run
-# concurrently, so the wait costs nothing extra). The hook polls up to 3 s for its own
-# tool_use_id, then counts the Agent calls sharing that row's message id.
+# fork's transcript starts with the parent's whole history, parent-side Agent calls included.
+# Tools run as the model streams them, so the assistant row holding this call is usually not
+# on disk when the hook fires, and the other calls of its message are written only as each
+# finishes streaming (6-66 s between calls for long fan-out prompts). The hook polls up to 3 s for its
+# own tool_use_id, then counts the Agent calls sharing that row's message id; at that moment
+# a lone call and the first leg of a fan-out look alike, and no longer wait separates them.
 #
 # Friction, not a boundary: below the threshold nothing waits; a row that never appears, a
 # missing transcript, or any parse problem allows, the first two with a journald line.
