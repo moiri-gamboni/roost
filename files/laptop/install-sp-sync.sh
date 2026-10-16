@@ -69,7 +69,8 @@ step "Checking the archive"
 import json, sys
 w = json.load(open(sys.argv[1]))["windows"]
 assert w, "no covered window"
-print(f"  [+] archive covers {w[0][\"start\"]} .. {w[-1][\"end\"]}")' \
+first, last = w[0]["start"], w[-1]["end"]
+print(f"  [+] archive covers {first} .. {last}")' \
     "$ARCHIVE/derived/extraction-summary.json" || die "seed $ARCHIVE first (this script's header)"
 
 step "Push key"

@@ -43,8 +43,14 @@ num() { local v=0; [ -f "$1" ] && v=$(< "$1"); [[ $v =~ ^[0-9]+$ ]] || v=0; echo
 
 mkdir -p "$STATE/outbox/days"
 exec 9>"$STATE/lock"
-if ! flock -n 9; then
-    log "another run holds the lock; this one is skipped"
+# A save that lands while a run is pushing would be stranded by skipping: the
+# next trigger may be SP's next write, five minutes off, or never if the lid
+# closes first. So a path or manual run waits for the lock and then pushes the
+# newer data; only the fallback timer, which has nothing new to bring, skips.
+if [ "$TRIGGER" = timer ]; then
+    flock -n 9 || { log "another run holds the lock; this one is skipped"; exit 0; }
+elif ! flock -w 300 9; then
+    log "the lock was held for 5 minutes; skipping"
     exit 0
 fi
 
