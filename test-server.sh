@@ -580,8 +580,7 @@ echo ""
 echo "--- Directory Structure ---"
 
 for dir in "$ROOST_DIR_NAME" "$ROOST_DIR_NAME/claude" "$ROOST_DIR_NAME/claude/hooks" \
-           "$ROOST_DIR_NAME/claude/skills" "$ROOST_DIR_NAME/claude/locks" \
-           "$ROOST_DIR_NAME/memory" "$ROOST_DIR_NAME/code" "$ROOST_DIR_NAME/code/life"; do
+           "$ROOST_DIR_NAME/claude/skills" "$ROOST_DIR_NAME/code"; do
     if run test -d "$HOME_DIR/$dir"; then
         pass "~/$dir exists"
     else

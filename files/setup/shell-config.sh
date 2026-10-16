@@ -56,13 +56,8 @@ for dir in \
     "$ROOST_DIR/claude/scheduled" \
     "$ROOST_DIR/claude/lib" \
     "$ROOST_DIR/claude/skills" \
-    "$ROOST_DIR/claude/locks" \
     "$ROOST_DIR/cloudflared/apps" \
     "$HOME_DIR/.bashrc.d" \
-    "$ROOST_DIR/memory/debugging" \
-    "$ROOST_DIR/memory/projects" \
-    "$ROOST_DIR/memory/patterns" \
-    "$ROOST_DIR/code/life" \
     "$HOME_DIR/.cloudflared" \
     "$HOME_DIR/.locks" \
     "$HOME_DIR/services" \

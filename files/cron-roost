@@ -7,10 +7,6 @@ BASH_ENV=$HOME_DIR/.bashrc.d/roost.sh
 # Health check every 5 minutes
 */5 * * * * $USERNAME flock -n $HOME_DIR/.locks/health-check $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/health-check.sh
 
-# Weekly memory cleanup — DISABLED. The ~/memory note system is not in use.
-# To re-enable, uncomment the line below and roost-apply push.
-#0 10 * * 0 $USERNAME flock -n $HOME_DIR/.locks/memory-cleanup $HOME_DIR/$ROOST_DIR_NAME/claude/scheduled/scheduled-task.sh "Review ~/$ROOST_DIR_NAME/memory/ for duplicate or mergeable notes. Deduplicate and merge where appropriate. Do not delete notes that passed the 6-month test at write time unless you can document a clear reason in the commit message." $HOME_DIR/$ROOST_DIR_NAME/code/life
-
 # Attention ticker: moved to session-focus-tick.timer (10s). cron cannot go
 # below a minute, and a minute is the resolution of every attended figure that
 # comes out of it — a pause is measured up to a minute longer than it was,
