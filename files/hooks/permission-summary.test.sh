@@ -79,13 +79,16 @@ expect 'a long question is clipped to 120 characters' "$(rep 117 q)..." "$got"
 mid=$(rep 100 q)
 expect 'options that would push the text past 120 are dropped' \
     "$mid" "$(summary_of "$(with permission-request-askuserquestion.json ".tool_input.questions[0].question = \"$mid\" | .tool_input.questions[0].options += [{label: \"$(rep 30 o)\"}]")")"
-expect 'a command is named after the tool' \
-    'Bash: touch /tmp/pushprobe/cwd/y.txt' "$(summary_of "$fx/permission-request-bash.json")"
-expect 'a multi-line command runs together on one line' \
-    'Bash: cd /srv && make install' \
-    "$(summary_of "$(with permission-request-bash.json '.tool_input.command = "cd /srv &&\n\tmake   install\n"')")"
-got=$(summary_of "$(with permission-request-bash.json ".tool_input.command = \"echo $long\"")")
-expect 'a long command is clipped to 120 characters' "Bash: echo $(rep 106 q)..." "$got"
+expect 'a command shows its description, not the command' \
+    'Bash: Create empty file y.txt' "$(summary_of "$fx/permission-request-bash.json")"
+expect 'a multi-line description runs together on one line' \
+    'Bash: Run the install' \
+    "$(summary_of "$(with permission-request-bash.json '.tool_input.description = "Run\n\tthe   install\n"')")"
+got=$(summary_of "$(with permission-request-bash.json ".tool_input.description = \"$long\"")")
+expect 'a long description is clipped to 120 characters' "Bash: $(rep 111 q)..." "$got"
+expect 'with no description, only the program is named (a message in the command stays off the lock screen)' \
+    'Bash: aq' \
+    "$(summary_of "$(with permission-request-bash.json 'del(.tool_input.description) | .tool_input.command = "aq send x \"private words\""')")"
 expect 'a write names its file' \
     'Write: /tmp/pushprobe/cwd/x.txt' "$(summary_of "$fx/permission-request-write.json")"
 expect 'an edit names its file' \
