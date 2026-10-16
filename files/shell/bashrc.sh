@@ -468,10 +468,9 @@ EOF
             -1 "$$" "$group" "$name" "$state" >> "$HOME/.roost-agent.log"
         newwin=$(tmux new-window -P -F '#{window_id}' -t '=main' -n "$name" "${cmd_parts[*]}")
         # No terminal (a timer or a cron job): there is nothing to attach, so the
-        # window stays in `main`, made its current window, for the next client that
-        # attaches.
+        # window just stays in `main`. The VS Code tmux-tabs extension gives it a
+        # tab of its own; a new attach view opens on `shell`, not on it.
         if [[ ! -t 0 || ! -t 1 ]]; then
-            tmux select-window -t "=main:$newwin"
             printf '%(%F %T)T pid=%s no-terminal: window left in main, not attached\n' \
                 -1 "$$" >> "$HOME/.roost-agent.log"
             return 0

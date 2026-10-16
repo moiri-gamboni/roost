@@ -81,8 +81,9 @@ rm -f "$T_LOG"; log=$(calls 1 "$T/my.dir")
 if grep -qx 'select-window|-t|=main-123:@7' <<< "$log"; then ok "the terminal's view follows the new window by id (a dotted name)"
 else bad "follow by id: $log"; fi
 rm -f "$T_LOG"; log=$(calls 0 "$T/my.dir" < /dev/null)
-if grep -qx 'select-window|-t|=main:@7' <<< "$log"; then ok "without a terminal, the new window is made main's current one by id"
-else bad "no-terminal select by id: $log"; fi
+if grep -q '^new-window|' <<< "$log" && ! grep -Eq '^(attach-session|new-session)\|' <<< "$log"; then
+    ok "without a terminal, the window opens in main and nothing attaches"
+else bad "no terminal: $log"; fi
 
 # Claude Code's Bash tool runs from a snapshot of the login shell that keeps only
 # the functions not matching ^_[^_] and only the exported variables, so a helper
