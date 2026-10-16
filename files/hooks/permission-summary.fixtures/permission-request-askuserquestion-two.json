@@ -1,0 +1,46 @@
+{
+  "cwd": "/tmp/pushprobe/cwd",
+  "effort": {
+    "level": "low"
+  },
+  "hook_event_name": "PermissionRequest",
+  "permission_mode": "default",
+  "prompt_id": "00000000-0000-0000-0000-000000000002",
+  "session_id": "00000000-0000-0000-0000-000000000001",
+  "tool_input": {
+    "questions": [
+      {
+        "header": "Fruit",
+        "multiSelect": false,
+        "options": [
+          {
+            "description": "Apple",
+            "label": "Apple"
+          },
+          {
+            "description": "Pear",
+            "label": "Pear"
+          }
+        ],
+        "question": "Pick a fruit"
+      },
+      {
+        "header": "Tool",
+        "multiSelect": false,
+        "options": [
+          {
+            "description": "Hammer",
+            "label": "Hammer"
+          },
+          {
+            "description": "Saw",
+            "label": "Saw"
+          }
+        ],
+        "question": "Pick a tool"
+      }
+    ]
+  },
+  "tool_name": "AskUserQuestion",
+  "transcript_path": "/tmp/probe/transcript.jsonl"
+}

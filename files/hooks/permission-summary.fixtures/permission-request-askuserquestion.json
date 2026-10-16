@@ -1,0 +1,31 @@
+{
+  "cwd": "/tmp/pushprobe/cwd",
+  "effort": {
+    "level": "low"
+  },
+  "hook_event_name": "PermissionRequest",
+  "permission_mode": "default",
+  "prompt_id": "00000000-0000-0000-0000-000000000002",
+  "session_id": "00000000-0000-0000-0000-000000000001",
+  "tool_input": {
+    "questions": [
+      {
+        "header": "Colour",
+        "multiSelect": false,
+        "options": [
+          {
+            "description": "Red probe",
+            "label": "Red"
+          },
+          {
+            "description": "Blue probe",
+            "label": "Blue"
+          }
+        ],
+        "question": "Which colour for the probe?"
+      }
+    ]
+  },
+  "tool_name": "AskUserQuestion",
+  "transcript_path": "/tmp/probe/transcript.jsonl"
+}

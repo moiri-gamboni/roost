@@ -1,0 +1,30 @@
+{
+  "cwd": "/tmp/pushprobe/cwd",
+  "effort": {
+    "level": "low"
+  },
+  "hook_event_name": "PermissionRequest",
+  "permission_mode": "default",
+  "permission_suggestions": [
+    {
+      "destination": "session",
+      "directories": [
+        "/tmp/pushprobe/cwd"
+      ],
+      "type": "addDirectories"
+    },
+    {
+      "destination": "session",
+      "mode": "acceptEdits",
+      "type": "setMode"
+    }
+  ],
+  "prompt_id": "00000000-0000-0000-0000-000000000002",
+  "session_id": "00000000-0000-0000-0000-000000000001",
+  "tool_input": {
+    "command": "touch /tmp/pushprobe/cwd/y.txt",
+    "description": "Create empty file y.txt"
+  },
+  "tool_name": "Bash",
+  "transcript_path": "/tmp/probe/transcript.jsonl"
+}

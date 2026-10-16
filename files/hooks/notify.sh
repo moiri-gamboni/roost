@@ -9,6 +9,18 @@ SID=$(hook_json '.session_id')
 
 rate_limit_ok || exit 0
 
+# What the prompt asks, left by permission-summary.sh as the prompt opened; the payload's own
+# message names no tool. A file older than two minutes belongs to a prompt that was answered
+# before this notification could fire.
+if [ -n "$SID" ]; then
+    SUMMARY_FILE="$HOOK_RUNTIME_DIR/perm-summary-$SID"
+    if [ -n "$(find "$HOOK_RUNTIME_DIR" -maxdepth 1 -name "${SUMMARY_FILE##*/}" -newermt '2 minutes ago')" ]; then
+        SUMMARY=$(<"$SUMMARY_FILE")
+        [ -n "$SUMMARY" ] && MESSAGE=$SUMMARY
+    fi
+    rm -f "$SUMMARY_FILE"
+fi
+
 # The session's title (/rename or the auto-title), which is how the session is
 # known in tmux and ListAgents; the directory name until the session has one.
 TITLE=""
