@@ -23,7 +23,9 @@
 # a tool. Hooks are disabled and MCP servers off in both starts, so the session
 # hooks (conflict watch, time tracking) never see them and the compared list holds
 # built-in tools only. An ntfy goes out when that list changed, when the fetch
-# failed, and when no list could be taken.
+# failed, when no list could be taken, and when the refreshed cache no longer has
+# tengu_plugin_hooks_modules true: that is the rollout switch every installed mod loads
+# under, and a session whose mods were switched off says so only in its debug log.
 #
 # The flags each refresh replaced are kept in $STATE_DIR/flags-<when>.json, the
 # newest 10, <when> being the time that refresh ran. To go back to one, as yourself
@@ -104,7 +106,12 @@ summary=$(jq -r --slurpfile old "$backup" '
     | [$was | keys[] as $k | select(($new | has($k)) and $new[$k] != $was[$k]) | $k] as $changed
     | "\($added) added, \($removed) removed, \($changed | length) changed\(if $changed == [] then "" else ": " + ($changed | join(" ")) end)"
 ' "$CONFIG") || summary="could not diff against $backup"
-logger -t "$_HOOK_TAG" "flags for Claude Code $version: $summary"
+mods=$(jq -r '.cachedGrowthBookFeatures.tengu_plugin_hooks_modules | tostring' "$CONFIG")
+logger -t "$_HOOK_TAG" "flags for Claude Code $version: $summary; tengu_plugin_hooks_modules=$mods"
+if [ "$mods" != true ]; then
+    ntfy_send -t "Claude Code $version: mods switched off" \
+        "The refreshed flags have tengu_plugin_hooks_modules=$mods instead of true. On Claude Code 2.1.301 that is the switch installed mods load under, so new sessions may load none. The session tool's reload-on-switch is one: without it a running session keeps the old login's connector ids after a login switch and gets a 404 from every connector call until it ends. The previous flags are in ~/roost/claude/state/claude-flags-refresh/ (restore: header of claude-flags-refresh.sh)."
+fi
 
 # The refresh itself succeeded, so a failed probe still marks the version done:
 # otherwise every later change in ~/.local/bin would fetch the flags again.
