@@ -330,15 +330,18 @@ __roost_ensure_tmux() {
     return 2  # new session created, need attach (shell window already exists)
 }
 
-# Ensure `main` has its `shell` window, the one a new attach view opens on. Once
-# closed, it comes back at the end of the window list.
-__roost_ensure_shell_window() {
-    local names
-    names=$(tmux list-windows -t '=main' -F '#{window_name}')
-    grep -Fqx shell <<< "$names" && return 0
-    tmux new-window -d -t '=main' -n shell
-    tmux set-option -w -t '=main:shell' automatic-rename off
-    tmux select-pane -t '=main:shell' -T shell
+# Print the window id of `main`'s `shell` window; a closed one is recreated at the
+# end of the window list. By id, because two views that raced to recreate it
+# leave two, and a name target matching two windows fails.
+__roost_shell_window() {
+    local ids
+    ids=$(tmux list-windows -t '=main' -f '#{==:#{window_name},shell}' -F '#{window_id}')
+    if [[ -z $ids ]]; then
+        ids=$(tmux new-window -d -P -F '#{window_id}' -t '=main' -n shell)
+        tmux set-option -w -t "$ids" automatic-rename off
+        tmux select-pane -t "$ids" -T shell
+    fi
+    printf '%s\n' "${ids%%$'\n'*}"
 }
 
 # Launch an interactive Claude session in a tmux window, working directly in the
@@ -421,7 +424,7 @@ EOF
 
     __roost_ensure_tmux
     local state=$?
-    __roost_ensure_shell_window
+    __roost_shell_window > /dev/null
     if (( no_focus )); then
         # Detached, never followed or attached, and marked so the VS Code
         # tmux-tabs extension opens its tab behind the one in front. The window
@@ -530,7 +533,7 @@ attach() {
         return 1
     fi
     __roost_ensure_tmux
-    __roost_ensure_shell_window
+    local shell; shell=$(__roost_shell_window)
     __roost_await_sane_size || return 1
     local group; group=$(__roost_group_name)
     local st
@@ -539,9 +542,9 @@ attach() {
         tmux set-option -t "$group" status "$st"
         tmux attach-session -d -t "=$group"
     else
-        # Selected by name: tmux opens a new grouped session on the lowest-index
+        # Selected explicitly: tmux opens a new grouped session on the lowest-index
         # window, not on main's current one, and `shell` is not always first.
         tmux new-session -t main -s "$group" \; set-option -t "$group" status "$st" \
-            \; select-window -t "=$group:shell"
+            \; select-window -t "=$group:$shell"
     fi
 }

@@ -80,6 +80,14 @@ if s=$(viewing 'main-[0-9]+'); then
     if [[ $n == 1 ]]; then ok "main has one shell window"; else bad "main has $n shell windows"; fi
 else bad "no view attached (rc: $(cat "$T/rc.log"))"; fi
 
+echo "a new view, with two shell windows (two views that raced to recreate it):"
+setup agent-1 shell agent-2 shell
+view
+if s=$(viewing 'main-[0-9]+'); then
+    w=$(window_of "$s")
+    if [[ $w == shell ]]; then ok "it opens on a shell"; else bad "it opens on $w"; fi
+else bad "no view attached (rc: $(cat "$T/rc.log"))"; fi
+
 echo "a named view rejoined:"
 setup agent-1 shell agent-2
 tmux new-session -d -t main -s main-pixel
