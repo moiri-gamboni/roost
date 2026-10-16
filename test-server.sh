@@ -28,10 +28,13 @@ SSH="ssh ${SSH_OPTS[*]} $HOST"
 
 PASS=0
 FAIL=0
+WARN=0
 SKIP=0
 
 pass() { echo "  PASS  $1"; ((PASS++)); }
 fail() { echo "  FAIL  $1${2:+ — $2}"; ((FAIL++)); }
+# Something that does not work but is not a deploy fault; does not change the exit status.
+warn() { echo "  WARN  $1${2:+ — $2}"; ((WARN++)); }
 skip() { echo "  SKIP  $1${2:+ — $2}"; ((SKIP++)); }
 
 run() { $SSH -- "$@" 2>/dev/null; }
@@ -679,15 +682,29 @@ else
 fi
 
 if run test -d "$HOME_DIR/.local/lib/clip-forward/shims" && run test -x "$HOME_DIR/.local/lib/clip-forward/shims/xclip"; then
-    pass "clip-forward shims installed"
+    pass "clip-forward shims installed (server half)"
 else
     fail "clip-forward shims missing"
 fi
 
 if run_login "command -v clip-forward" >/dev/null 2>&1; then
-    pass "clip-forward installed"
+    pass "clip-forward installed (server half)"
 else
     fail "clip-forward"
+fi
+
+# The server half can be complete while the laptop end does not exist: the daemon only answers on
+# a socket the laptop forwards here, and the sshd drop-in above is shared with other forwards, so
+# only an answer on that socket shows the feature works. /health is the daemon's own probe; the
+# socket path is expanded on the server, where the uid is known.
+# shellcheck disable=SC2016 # expanded by the server's shell, not here
+CLIP_SOCK='/run/user/$(id -u)/clip-forward.sock'
+if run "curl --unix-socket \"$CLIP_SOCK\" -sf --max-time 2 -o /dev/null http://localhost/health"; then
+    pass "clip-forward laptop daemon answers on the forwarded socket"
+elif run "test -S \"$CLIP_SOCK\""; then
+    warn "clip-forward laptop end" "the forwarded socket exists but the laptop daemon does not answer, so image paste over SSH does not work"
+else
+    warn "clip-forward laptop end" "no forwarded socket (/run/user/<uid>/clip-forward.sock): files/laptop/clip-forward.service has no installer and the SSH forwards leave the socket out, so image paste over SSH does not work (files/laptop/CLAUDE.md)"
 fi
 
 # ── Cron Jobs ─────────────────────────────────────────────────
@@ -726,10 +743,10 @@ else
 fi
 
 # ── Summary ───────────────────────────────────────────────────
-TOTAL=$((PASS + FAIL + SKIP))
+TOTAL=$((PASS + FAIL + WARN + SKIP))
 echo ""
 echo "========================================"
-echo "  Results: $PASS passed, $FAIL failed, $SKIP skipped ($TOTAL total)"
+echo "  Results: $PASS passed, $FAIL failed, $WARN warnings, $SKIP skipped ($TOTAL total)"
 echo "  Log:     $LOGFILE"
 echo "========================================"
 echo ""

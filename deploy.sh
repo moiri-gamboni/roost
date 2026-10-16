@@ -1075,7 +1075,15 @@ ok "et installed; config deploys via roost-apply push"
 
 section "Clipboard Forwarding"
 remote_script "setup/clip-forward.sh"
-ok "clip-forward shims installed"
+ok "clip-forward server half installed (shims, binary, sshd drop-in)"
+# The laptop daemon answers only on a socket the laptop forwards here, so a complete server half
+# says nothing about whether image paste works; ask the daemon's own /health through the socket.
+# shellcheck disable=SC2016 # expanded by the server's shell, not here
+if remote 'curl --unix-socket "/run/user/$(id -u)/clip-forward.sock" -sf --max-time 2 -o /dev/null http://localhost/health'; then
+    ok "clip-forward laptop daemon answers on the forwarded socket"
+else
+    warn "clip-forward: nothing answers on /run/user/<uid>/clip-forward.sock, so image paste over SSH does not work: the laptop end (files/laptop/clip-forward.service, which has no installer, and a RemoteForward for the socket) is not set up"
+fi
 
 # ============================================
 # Glances (System Monitoring)
