@@ -1,6 +1,6 @@
 #!/bin/bash
-# App health checks (travel VPN + PrivateBin). Deployed as
-# health-check-apps.sh; inherits check/check_service/$FAILURES/$_HOOK_TAG.
+# App health checks (travel VPN, PrivateBin, and the Roughdraft and Beeper hooks' liveness).
+# Deployed as health-check-apps.sh; inherits check/check_service/$FAILURES/$_HOOK_TAG.
 # Report-only, no mutations.
 
 _travel_state_dir=/etc/roost-travel
@@ -221,3 +221,38 @@ elif [ -e "$_rdg_marker" ]; then
     FAILURES="$FAILURES\n- roughdraft write-guard hook has disappeared since it last worked ($_rdg_hook)"
 fi
 unset _rdg_hook _rdg_marker
+
+# --- Beeper send-gate hook liveness ---
+# beeper-send-guard.sh is the only mechanical approval between a session holding the full Beeper
+# token and a message to a person, and it fails as silently as the Roughdraft hook: a missing or
+# non-executable script is a non-blocking hook error, and settings.json, which the app rewrites at
+# runtime, can lose the entry without anyone touching this repo. So fire the deployed hook at an
+# `aq send`, which it answers with "ask" without any network lookup, and check that an entry
+# still runs it for Bash. Each run leaves one "asked before a Beeper write" line under the
+# hook's own journal tag.
+_bsg_hook="$CLAUDE_CONFIG_DIR/hooks/beeper-send-guard.sh"
+if [ ! -x "$_bsg_hook" ]; then
+    logger -t "$_HOOK_TAG" "FAIL: beeper-send-guard hook is missing or not executable ($_bsg_hook)"
+    FAILURES="$FAILURES\n- beeper-send-guard hook is missing or not executable (the Beeper send gate is open)"
+else
+    _bsg_out=$(printf '{"tool_name":"Bash","tool_input":{"command":"aq send x"}}' | "$_bsg_hook")
+    if jq -e '.hookSpecificOutput.permissionDecision == "ask"' <<<"$_bsg_out" > /dev/null; then
+        logger -t "$_HOOK_TAG" "OK: beeper-send-guard hook asks before an aq send"
+    else
+        logger -t "$_HOOK_TAG" "FAIL: beeper-send-guard hook did not ask for an aq send; it printed: ${_bsg_out:-nothing}"
+        FAILURES="$FAILURES\n- beeper-send-guard hook did not ask for a synthetic aq send (Beeper messages would go out unapproved)"
+    fi
+
+    if jq -e '[ .hooks.PreToolUse[]?
+                | select([.hooks[]?.command // ""] | any(test("beeper-send-guard")))
+                | .matcher // ""
+                | . as $m
+                | select("Bash" | test($m)) ] | length > 0' \
+        "$CLAUDE_CONFIG_DIR/settings.json" > /dev/null; then
+        logger -t "$_HOOK_TAG" "OK: beeper-send-guard hook is wired for Bash"
+    else
+        logger -t "$_HOOK_TAG" "FAIL: no PreToolUse Bash entry invokes beeper-send-guard"
+        FAILURES="$FAILURES\n- beeper-send-guard hook is deployed but not wired in settings.json (Claude Code never calls it)"
+    fi
+fi
+unset _bsg_hook _bsg_out
