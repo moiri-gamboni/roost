@@ -20,6 +20,13 @@ ok "Package list updated"
 apt install -y tmux build-essential jq unzip btrfs-progs snapper glances util-linux bash-completion acl ripgrep
 ok "Base packages installed"
 
+# perf, for sampling a running process's stacks (Go binaries keep frame
+# pointers, so `perf record -g -p <pid>` names the hot loop). The meta package
+# follows kernel upgrades; the running kernel's own build is needed until the
+# next reboot picks the new one up.
+apt install -y linux-tools-generic "linux-tools-$(uname -r)"
+ok "perf installed"
+
 # Claude Code /voice over SSH: the ALSA pulse plugin plus arecord/pactl to
 # check the laptop microphone forwarded as a socket (files/audio/).
 apt install -y --no-install-recommends libasound2-plugins alsa-utils pulseaudio-utils
