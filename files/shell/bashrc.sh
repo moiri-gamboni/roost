@@ -330,6 +330,17 @@ __roost_ensure_tmux() {
     return 2  # new session created, need attach (shell window already exists)
 }
 
+# Ensure `main` has its `shell` window, the one a new attach view opens on. Once
+# closed, it comes back at the end of the window list.
+__roost_ensure_shell_window() {
+    local names
+    names=$(tmux list-windows -t '=main' -F '#{window_name}')
+    grep -Fqx shell <<< "$names" && return 0
+    tmux new-window -d -t '=main' -n shell
+    tmux set-option -w -t '=main:shell' automatic-rename off
+    tmux select-pane -t '=main:shell' -T shell
+}
+
 # Launch an interactive Claude session in a tmux window, working directly in the
 # directory. Sessions share the live folders; the conflict watch
 # (hooks/conflict-watch-hook.sh) stops one before it edits where another is
@@ -410,15 +421,7 @@ EOF
 
     __roost_ensure_tmux
     local state=$?
-    # Ensure a shell window exists (state=2 means __roost_ensure_tmux already created one)
-    # When inside tmux (state=0), main might not exist if we're in a different session
-    if [[ $state -ne 2 ]] && ! echo "$existing" | grep -Fqx shell; then
-        if [[ $state -ne 0 ]] || tmux has-session -t '=main' 2>/dev/null; then
-            tmux new-window -t '=main' -n shell -d
-            tmux set-option -w -t '=main:shell' automatic-rename off
-            tmux select-pane -t '=main:shell' -T shell
-        fi
-    fi
+    __roost_ensure_shell_window
     if (( no_focus )); then
         # Detached, never followed or attached, and marked so the VS Code
         # tmux-tabs extension opens its tab behind the one in front. The window
@@ -520,13 +523,15 @@ agents() {
 # independent current-window state. Use this in a new SSH tab when plain
 # `tmux attach` would link window switches across already-open tabs.
 # Group name comes from $ROOST_CLIENT (stable across reconnects) or PID
-# (swept on shell exit by __roost_sweep_dead_groups).
+# (swept on shell exit by __roost_sweep_dead_groups). A new view opens on the
+# `shell` window, a rejoined one on the window it was on.
 attach() {
     if [[ -n "${TMUX:-}" ]]; then
         echo "already inside tmux" >&2
         return 1
     fi
     __roost_ensure_tmux
+    __roost_ensure_shell_window
     __roost_await_sane_size || return 1
     local group; group=$(__roost_group_name)
     local st
@@ -535,6 +540,9 @@ attach() {
         tmux set-option -t "$group" status "$st"
         tmux attach-session -d -t "=$group"
     else
-        tmux new-session -t main -s "$group" \; set-option -t "$group" status "$st"
+        # Selected by name: tmux opens a new grouped session on the lowest-index
+        # window, not on main's current one, and `shell` is not always first.
+        tmux new-session -t main -s "$group" \; set-option -t "$group" status "$st" \
+            \; select-window -t "=$group:shell"
     fi
 }

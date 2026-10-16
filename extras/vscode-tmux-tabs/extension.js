@@ -221,7 +221,7 @@ function openAttach({ focus = true } = {}) {
 
 // Keep exactly one attach view, and make it *ours*. With `attach` as the default
 // terminal profile, every `+` / Ctrl+Shift+` and every persistent-session
-// revival spawns another grouped session sitting on main's *current* window —
+// revival spawns another grouped session sitting on the `shell` window —
 // visually identical tabs that never close themselves (we don't own them, so
 // closeAll misses them, and bashrc's __roost_sweep_dead_groups only reaps groups whose
 // shell already died).

@@ -66,7 +66,7 @@ the **whole** `main` session (the bashrc `attach` helper: full window bar,
   tmux. Leave it unset to keep "+" as a plain shell and attach only on demand.
 
 With that as the default profile, `singleAttach` (on by default) keeps the tab
-count sane: a grouped attach session always opens on `main`'s *current* window,
+count sane: a new attach view always opens on the `shell` window,
 so a second one is a pixel-identical clone of the first, and nothing closes it
 on its own. Instead of stacking clones, the extension closes the new tab and
 focuses the one already open — so `+` / `Ctrl+Shift+`` behaves as "switch to my
