@@ -60,6 +60,7 @@
     ],
     "defaultMode": "auto"
   },
+  "model": "opus",
   "hooks": {
     "SessionStart": [
       {
@@ -353,7 +354,8 @@
       "effortLevel": "high"
     },
     "claude-opus-5-5": {
-      "effortLevel": "xhigh"
+      "effortLevel": "xhigh",
+      "autoCompactWindow": 1000000
     }
   },
   "promptSuggestionEnabled": false,
@@ -361,11 +363,15 @@
   "askUserQuestionTimeout": "never",
   "dialogExpiry": "never",
   "tui": "fullscreen",
+  "voice": {
+    "enabled": true,
+    "mode": "hold"
+  },
   "autoMemoryEnabled": true,
   "autoDreamEnabled": true,
   "skipWorkflowUsageWarning": true,
   "verbose": false,
-  "autoCompactEnabled": false,
+  "autoCompactEnabled": true,
   "switchModelsOnFlag": true,
   "autoContinueAtUsageLimit": true,
   "autoScrollEnabled": false,
@@ -375,10 +381,5 @@
   "autoUploadSessions": false,
   "agentPushNotifEnabled": false,
   "skipAutoPermissionPrompt": true,
-  "model": "opus",
-  "voice": {
-    "enabled": true,
-    "mode": "hold"
-  },
   "voiceEnabled": true
 }
