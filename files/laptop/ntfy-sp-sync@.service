@@ -1,0 +1,9 @@
+[Unit]
+Description=Notify ntfy that the SuperProductivity sync is failing (%i)
+
+[Service]
+Type=oneshot
+# NTFY_URL + NTFY_TOKEN (the server's ~/services/.ntfy-token; anonymous posts
+# are denied) are written 0600 by install-sp-sync.sh.
+EnvironmentFile=%h/.config/sp-sync/ntfy.env
+ExecStart=/usr/bin/curl -fsS -X POST -H "Authorization: Bearer ${NTFY_TOKEN}" -H "Title: SuperProductivity sync failing" -H "Tags: warning" --data "%i failed: three pushes in a row, or a day the renderer refused. Data stays on the laptop and goes up on the next good run. journalctl --user -u %i" ${NTFY_URL}

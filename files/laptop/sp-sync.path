@@ -1,0 +1,12 @@
+[Unit]
+Description=Sync SuperProductivity whenever it writes a backup
+
+[Path]
+# SP writes a backup about every 5 minutes while it runs and none while it is
+# closed. The watch is on the resolved snap revision, so after a snap refresh
+# (the snap is held) run install-sp-sync.sh again to re-render this path.
+PathChanged=${SP_BACKUPS_DIR}
+Unit=sp-sync@path.service
+
+[Install]
+WantedBy=default.target

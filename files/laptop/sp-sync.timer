@@ -1,0 +1,10 @@
+[Unit]
+Description=Fallback SuperProductivity sync every 15 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=15min
+Unit=sp-sync@timer.service
+
+[Install]
+WantedBy=timers.target

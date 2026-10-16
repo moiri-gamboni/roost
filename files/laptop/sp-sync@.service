@@ -1,0 +1,20 @@
+[Unit]
+Description=Sync SuperProductivity to the roost time-tracking log (%i)
+Documentation=https://github.com/moiri-gamboni/roost
+# The script exits non-zero only on the third failed push in a row (then at
+# most every 6 hours) or when a day render is refused, so an offline stretch
+# does not ntfy on every trigger.
+OnFailure=ntfy-sp-sync@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/sp-sync %i
+Environment=ROOST_SERVER=${SERVER_NAME}
+Environment=ROOST_USER=${USERNAME}
+Environment=SP_EXTRACT_DIR=${SP_EXTRACT_DIR}
+Environment=SP_BACKUPS_DIR=${SP_BACKUPS_DIR}
+Environment=SP_IDB_DIR=${SP_IDB_DIR}
+# ~12 s of CPU per run while SP is tracking; keep it out of the way.
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=10min
