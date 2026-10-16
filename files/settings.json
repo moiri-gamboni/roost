@@ -73,7 +73,17 @@
         ]
       }
     ],
-    "PreCompact": [],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /home/moiri/roost/code/session/session --compact-gate || true",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [
