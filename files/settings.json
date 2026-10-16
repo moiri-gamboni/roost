@@ -381,5 +381,6 @@
   "autoUploadSessions": false,
   "agentPushNotifEnabled": false,
   "skipAutoPermissionPrompt": true,
-  "voiceEnabled": true
+  "voiceEnabled": true,
+  "inputNeededNotifEnabled": true
 }
