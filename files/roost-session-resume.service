@@ -7,7 +7,10 @@ Type=oneshot
 # and every later window would otherwise run without roost.sh's PATH and
 # CLAUDE_CONFIG_DIR. Exit 1 is `session resume`'s "nothing queued", the normal
 # outcome of any boot not preceded by `session reboot`, so it is not a failure.
-ExecStart=/bin/bash -lc 'exec "%h/bin/session" resume'
+# The resume runs in a scope of its own: at boot it is what starts the tmux
+# server, and systemd kills a oneshot's leftover processes when it exits, which
+# would take every reopened window with it. The scope keeps the environment.
+ExecStart=/bin/bash -lc 'exec systemd-run --user --scope --quiet --collect "%h/bin/session" resume'
 SuccessExitStatus=0 1
 
 [Install]
