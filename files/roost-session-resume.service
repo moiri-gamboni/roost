@@ -9,8 +9,9 @@ Type=oneshot
 # outcome of any boot not preceded by `session reboot`, so it is not a failure.
 # The resume runs in a scope of its own: at boot it is what starts the tmux
 # server, and systemd kills a oneshot's leftover processes when it exits, which
-# would take every reopened window with it. The scope keeps the environment.
-ExecStart=/bin/bash -lc 'exec systemd-run --user --scope --quiet --collect "%h/bin/session" resume'
+# would take every reopened window with it. The scope keeps the environment;
+# what the resume prints is logged under it: journalctl --user -u 'session-resume-*'.
+ExecStart=/bin/bash -lc 'exec systemd-run --user --scope --quiet --collect --unit=session-resume-$${EPOCHSECONDS} "%h/bin/session" resume'
 SuccessExitStatus=0 1
 
 [Install]
