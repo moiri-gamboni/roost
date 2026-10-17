@@ -266,6 +266,9 @@ track "agent-browser" bash -c "npm i -g --prefix \"\$HOME/.local\" agent-browser
 # TypeScript 7 dropped (setup/dev-tools.sh).
 track "language servers" npm i -g --prefix "$HOME/.local" pyright@latest typescript-language-server@latest typescript@6 bash-language-server@latest
 
+# --- Vercel CLI (setup/dev-tools.sh) ---
+track "vercel CLI" npm i -g --prefix "$HOME/.local" vercel@latest
+
 # --- ast-grep (behind ~/bin/sym) ---
 # Only the `ast-grep` binary from the release zip: its `sg` would shadow /usr/bin/sg (setup/dev-tools.sh).
 if command -v ast-grep >/dev/null && github_release_cooldown_ok "ast-grep/ast-grep" 7; then

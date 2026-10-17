@@ -87,6 +87,16 @@ else
     ok "language servers installed (pyright, typescript-language-server, bash-language-server)"
 fi
 
+# --- Vercel CLI (runtime logs, Blob stores and env pulls of Vercel projects) ---
+# Authenticated per call with a team-scoped access token (`--token`), never `vercel login`.
+
+if as_user "command -v vercel" &>/dev/null; then
+    skip "vercel CLI already installed"
+else
+    as_user "npm i -g --prefix \"\$HOME/.local\" vercel"
+    ok "vercel CLI installed"
+fi
+
 # --- draw.io desktop (CLI export of .drawio files to PNG/SVG/PDF) ---
 # From the official release .deb, installed with apt so its dependencies resolve.
 # It is an Electron app with no headless mode: export under Xvfb, e.g.
