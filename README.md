@@ -350,7 +350,7 @@ Subscribe to that topic in the ntfy app; a random name keeps it private.
 
 You can start on a smaller plan (e.g. CX33, 4 vCPU / 8GB) and resize later; everything survives. To resize, run the script from the laptop (it refuses to rescale the machine it runs on) with `--rescale`: once the type is available in the server's own location, it shuts the server down, changes its type and powers it back on.
 
-- `--dry-run` prints what would run and the monthly price change, and changes nothing.
+- `--dry-run` prints what would run and the monthly price change, and changes nothing; with `--poll` it first waits until the type is available.
 - `--upgrade-disk` takes the bigger disk too, after which the server can never be downgraded; without it the disk keeps its size and the server can return to its old type.
 - `--run CMD...` goes last on the line and runs before the shutdown; if it fails, nothing is shut down.
 - `NTFY_URL` is required, and must be a topic that stays reachable while the server is down, so not the server's own ntfy.

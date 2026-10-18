@@ -191,6 +191,16 @@ check "exit 0" test "$rc" = 0
 check "waited at least one round" grep -q 'not available in hel1. Checking again' <<<"$out"
 check "then rescaled" test "$(jq -r .server_type.name "$T/stub/server.json")" = cx53
 
+echo "polling dry run: waits, then prints the plan instead of rescaling"
+reset false
+type_json cx53 hel1:true fsn1:true > "$T/stub/type-cx53.later.json"
+out=$(WATCH_TYPE=cx53 STUB_AVAIL_TYPE=cx53 STUB_AVAIL_FROM=3 timeout 20 "$watch" --poll 1 --rescale roost --dry-run 2>&1) && rc=0 || rc=$?
+check "exit 0" test "$rc" = 0
+check "waited at least one round" grep -q 'not available in hel1. Checking again' <<<"$out"
+check "then printed the plan" grep -qF 'hcloud server change-type --keep-disk roost cx53' <<<"$out"
+check "no change made" test -z "$(mutating)"
+check "nobody notified" test ! -e "$T/stub/ntfy"
+
 echo "--dry-run typed after --run: refused, not run live"
 reset true
 out=$(WATCH_TYPE=cx53 "$watch" --rescale roost --run true --dry-run 2>&1) && rc=0 || rc=$?

@@ -8,7 +8,7 @@
 #   ./hetzner-watch.sh                           # one-shot check
 #   ./hetzner-watch.sh --poll 300                # poll until available
 #   ./hetzner-watch.sh --poll 300 --run CMD...   # poll, then run CMD
-#   ./hetzner-watch.sh --rescale SERVER --dry-run                       # check once, print the plan
+#   ./hetzner-watch.sh [--poll 300] --rescale SERVER --dry-run          # print the plan instead of running it
 #   ./hetzner-watch.sh --poll 300 --rescale SERVER [--upgrade-disk] [--run CMD...]
 #
 # --run takes the rest of the line, so it goes last.
@@ -21,8 +21,8 @@
 # rescale needs NTFY_URL set to a topic that stays reachable while SERVER is
 # down, and refuses to rescale the machine it runs on: the shutdown would
 # stop it halfway and leave the server off.
-# --dry-run checks once and prints what would run; it runs, notifies and
-# changes nothing.
+# --dry-run prints what would run once the type is available (with --poll,
+# after waiting for it); it runs, notifies and changes nothing.
 # Exit: 0 available (or done), 1 not available or failed, 2 the check itself
 # failed (hcloud's error is printed above).
 #
@@ -214,7 +214,7 @@ while true; do
     else
         msg="$WATCH_TYPE is not available${WATCH_LOCATION:+ in $WATCH_LOCATION}."
     fi
-    if [ "$POLL_INTERVAL" -eq 0 ] || [ "$DRY_RUN" = 1 ]; then
+    if [ "$POLL_INTERVAL" -eq 0 ]; then
         echo "$msg"
         [ "$DRY_RUN" = 1 ] && print_plan
         exit "$rc"
