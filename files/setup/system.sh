@@ -20,6 +20,11 @@ ok "Package list updated"
 apt install -y tmux build-essential jq unzip btrfs-progs snapper glances util-linux bash-completion acl ripgrep
 ok "Base packages installed"
 
+# PDF tools for research scripts: pdftotext, pandoc for HTML to markdown,
+# and Ghostscript to recompress archived PDFs.
+apt install -y poppler-utils pandoc ghostscript
+ok "PDF tools installed"
+
 # perf, for sampling a running process's stacks (Go binaries keep frame
 # pointers, so `perf record -g -p <pid>` names the hot loop). The meta package
 # follows kernel upgrades; the running kernel's own build is needed until the
