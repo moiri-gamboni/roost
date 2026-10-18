@@ -329,13 +329,13 @@ A daily job at 2:50am (done before the 3:00 snapshot) updates Claude Code, Codex
 
 | Item | Monthly |
 |------|---------|
-| Hetzner CX43 | ~9.50 EUR |
-| Hetzner backups | ~2.00 EUR |
+| Hetzner CX43 | ~16 EUR |
+| Hetzner backups | ~3.20 EUR (20% of the server) |
 | Cloudflare | Free |
 | Tailscale | Free (personal) |
 | ntfy | Free (self-hosted) |
 | Claude Code | Subscription |
-| **Total** | **~11.50 EUR/mo** (+ Claude Code) |
+| **Total** | **~19.20 EUR/mo** excl. VAT (+ Claude Code) |
 
 ## Server Availability
 
