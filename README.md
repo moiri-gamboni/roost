@@ -339,20 +339,29 @@ A daily job at 2:50am (done before the 3:00 snapshot) updates Claude Code, Codex
 
 ## Server Availability
 
-Hetzner's shared-vCPU (CX) plans are often out of stock. `extras/hetzner-watch.sh` polls the datacenter API (read-only, using your active `hcloud` context) and notifies you when capacity opens; with `--run` it deploys as soon as it does:
+Hetzner's shared-vCPU (CX) plans are often out of stock. `extras/hetzner-watch.sh` watches one server type's per-location availability through your active `hcloud` context and notifies you when capacity opens; with `--run` it deploys as soon as it does. It watches `WATCH_TYPE` in `WATCH_LOCATION`, else `SERVER_TYPE` in `SERVER_LOCATION` from `.env`, else `cx43` in any location:
 
 ```bash
 NTFY_URL=https://ntfy.sh/<random-topic> ./extras/hetzner-watch.sh --poll 300                    # notify only
 NTFY_URL=https://ntfy.sh/<random-topic> ./extras/hetzner-watch.sh --poll 300 --run ./deploy.sh   # notify and deploy
 ```
 
-Subscribe to that topic in the ntfy app; a random name keeps it private. You can start on a smaller plan (e.g. CX33, 4 vCPU / 8GB) and resize later; everything survives:
+Subscribe to that topic in the ntfy app; a random name keeps it private.
+
+You can start on a smaller plan (e.g. CX33, 4 vCPU / 8GB) and resize later; everything survives. To resize, run the script from the laptop (it refuses to rescale the machine it runs on) with `--rescale`: once the type is available in the server's own location, it shuts the server down, changes its type and powers it back on.
+
+- `--dry-run` prints what would run and the monthly price change, and changes nothing.
+- `--upgrade-disk` takes the bigger disk too, after which the server can never be downgraded; without it the disk keeps its size and the server can return to its old type.
+- `--run CMD...` goes last on the line and runs before the shutdown; if it fails, nothing is shut down.
+- `NTFY_URL` is required, and must be a topic that stays reachable while the server is down, so not the server's own ntfy.
 
 ```bash
-hcloud server shutdown <server-name>
-hcloud server change-type --server <server-name> --type cx43 --keep-disk
-hcloud server poweron <server-name>
+WATCH_TYPE=cx53 ./extras/hetzner-watch.sh --rescale <server-name> --dry-run
+WATCH_TYPE=cx53 NTFY_URL=https://ntfy.sh/<random-topic> ./extras/hetzner-watch.sh --poll 300 --rescale <server-name> \
+    --run ssh <ssh-host> "bash -lc 'session reboot -n'"
 ```
+
+The `--run` step here snapshots the open Claude Code sessions just before the shutdown, so they reopen at boot.
 
 ## Troubleshooting
 
