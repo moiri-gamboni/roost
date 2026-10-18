@@ -828,7 +828,8 @@ if [ "${SKIP_PLUGINS:-}" != "true" ]; then
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install claude-md-management@claude-plugins-official" || warn "Failed to install claude-md-management plugin"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install playground@claude-plugins-official" || warn "Failed to install playground plugin"
     remote "sudo -u $USERNAME $CLAUDE_CMD plugin install plugin-dev@claude-plugins-official" || warn "Failed to install plugin-dev plugin"
-    remote "sudo -u $USERNAME $CLAUDE_CMD mcp add --transport http --scope user exa https://mcp.exa.ai/mcp" || warn "Failed to add exa MCP server"
+    # Re-registered on every deploy so a key added to .env reaches an existing server.
+    remote "sudo -u $USERNAME $CLAUDE_CMD mcp remove exa --scope user || true; sudo -u $USERNAME $CLAUDE_CMD mcp add --transport http --scope user exa 'https://mcp.exa.ai/mcp${EXA_API_KEY:+?exaApiKey=$EXA_API_KEY}'" || warn "Failed to add exa MCP server"
     ok "Claude Code plugins installed"
 fi
 
