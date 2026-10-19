@@ -21,6 +21,8 @@
 # rescale needs NTFY_URL set to a topic that stays reachable while SERVER is
 # down, and refuses to rescale the machine it runs on: the shutdown would
 # stop it halfway and leave the server off.
+# With a location, a type not offered there is refused, and one Hetzner is
+# retiring there is noted with its date.
 # --dry-run prints what would run once the type is available (with --poll,
 # after waiting for it); it runs, notifies and changes nothing.
 # Exit: 0 available (or done), 1 not available or failed, 2 the check itself
@@ -121,6 +123,18 @@ if [ -n "$RESCALE" ]; then
     [ "$UPGRADE_DISK" = 1 ] || CHANGE_CMD+=(--keep-disk)
     CHANGE_CMD+=("$RESCALE" "$WATCH_TYPE")
     POWERON_CMD=(hcloud server poweron "$RESCALE")
+fi
+
+# A type absent from a location's list is never offered there, and one with a
+# deprecation is being retired there: polling for either would never fire.
+if [ -n "$WATCH_LOCATION" ]; then
+    loc_json=$(jq -c --arg l "$WATCH_LOCATION" '.locations[] | select(.name == $l)' <<<"$target_json")
+    if [ -z "$loc_json" ]; then
+        echo "Error: $WATCH_TYPE is not offered in $WATCH_LOCATION" >&2
+        exit 1
+    fi
+    retire=$(jq -r '.deprecation.unavailable_after // empty' <<<"$loc_json")
+    [ -n "$retire" ] && echo "Note: Hetzner retires $WATCH_TYPE in $WATCH_LOCATION after $retire; from then on it cannot become available there"
 fi
 
 AVAILABLE_IN=""

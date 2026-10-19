@@ -201,6 +201,20 @@ check "then printed the plan" grep -qF 'hcloud server change-type --keep-disk ro
 check "no change made" test -z "$(mutating)"
 check "nobody notified" test ! -e "$T/stub/ntfy"
 
+echo "target type not offered in the server's location: refused"
+reset true
+jq '.locations |= map(select(.name != "hel1"))' "$T/stub/type-cx53.json" > "$T/stub/t" && mv "$T/stub/t" "$T/stub/type-cx53.json"
+out=$(WATCH_TYPE=cx53 "$watch" --rescale roost --dry-run 2>&1) && rc=0 || rc=$?
+check "exit 1" test "$rc" = 1
+check "says it is not offered there" grep -q 'cx53 is not offered in hel1' <<<"$out"
+
+echo "target type retired in the location: noted with its date"
+reset false
+jq '(.locations[] | select(.name == "hel1") | .deprecation) = {announced: "2026-09-01T00:00:00Z", unavailable_after: "2026-12-01T00:00:00Z"}' \
+    "$T/stub/type-cx53.json" > "$T/stub/t" && mv "$T/stub/t" "$T/stub/type-cx53.json"
+out=$(WATCH_TYPE=cx53 "$watch" --rescale roost --dry-run 2>&1) && rc=0 || rc=$?
+check "names the retirement date" grep -q 'retires cx53 in hel1 after 2026-12-01T00:00:00Z' <<<"$out"
+
 echo "--dry-run typed after --run: refused, not run live"
 reset true
 out=$(WATCH_TYPE=cx53 "$watch" --rescale roost --run true --dry-run 2>&1) && rc=0 || rc=$?
