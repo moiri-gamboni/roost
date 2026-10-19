@@ -21,7 +21,8 @@
 # A higher -dusage is not an escalation path: on chunks averaging 92% full
 # (2026-08-31), -dusage=90 relocated 15 chunks and LOST 0.3GiB of unallocated
 # to the metadata chunk the relocation itself needed. When this relocates
-# nothing, the space is pinned by snapshots; health-check.sh prunes them.
+# nothing, the chunks are full of live files or of files snapshots pin; only a
+# person frees those (health-check.sh alerts, and never deletes snapshots).
 HOOK_DROP_TO_SUDO_USER=1
 source "$(dirname "$0")/../lib/_hook-env.sh"
 

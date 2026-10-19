@@ -130,13 +130,12 @@ fi
 # the steady-state pass) and the alert says what it reclaimed. A balance only
 # returns slack from part-empty chunks (data, and metadata when that pool is
 # mostly empty: btrfs-balance.sh --emergency); when it reclaims nothing the
-# chunks are full of live extents — in practice files that snapshots still
-# pin — and the remedy is pruning history or moving data off the filesystem:
-# the oldest timeline snapshots go, three per hour at most, until headroom is
-# back. Never the off-site backup's pinned
-# parent (its cleanup algorithm is empty) and never number/important ones —
-# those are the rollback points, and a fs that needs more than this is a
-# runaway writer, which the alert is for.
+# chunks are full of live extents, either live files or files snapshots still
+# pin, and the remedy is a person's: free or move data, or delete snapshots by
+# hand. Nothing here deletes snapshots: low headroom says nothing about whether
+# they hold the space (2026-10-18: hourly pruning of the oldest timeline
+# snapshots deleted all of them and freed nothing, the space being agent
+# scratch in the unsnapshotted /tmp).
 unalloc_gib() {
     sudo -n btrfs filesystem usage -b "$1" 2>/dev/null |
         awk '/Device unallocated:/ {printf "%d", $3 / 1024^3}'
@@ -164,27 +163,11 @@ if [ "${#UNALLOC_LOW[@]}" -gt 0 ]; then
     fi
     for mnt in "${!UNALLOC_LOW[@]}"; do
         AFTER=$(unalloc_gib "$mnt")
-        PRUNED=""
-        case $mnt in /) cfg=root ;; *) cfg=$(basename "$mnt") ;; esac
-        if [ "${AFTER:-0}" -lt 5 ] && cooldown_ok "btrfs-prune-$cfg" 3600; then
-            for n in $(sudo -n snapper -c "$cfg" --csvout --no-headers list --columns number,cleanup 2>/dev/null |
-                awk -F, '$2 == "timeline" {print $1}' | sort -n | awk 'NR <= 3'); do
-                sudo -n snapper -c "$cfg" delete --sync "$n" 2>&1 | logger -t "$_HOOK_TAG"
-                PRUNED="$PRUNED #$n"
-            done
-            # A deleted snapshot frees extents inside chunks; only a balance
-            # turns part-empty chunks back into unallocated space.
-            [ -n "$PRUNED" ] && flock -n "$HOME/.locks/btrfs-balance" "$(dirname "$0")/btrfs-balance.sh"
-            AFTER=$(unalloc_gib "$mnt")
-            logger -t "$_HOOK_TAG" "Pruned snapshots on $mnt:${PRUNED:- none} (unallocated ${UNALLOC_LOW[$mnt]}GiB -> ${AFTER:-?}GiB)"
-        fi
         if [ "${AFTER:-0}" -lt 5 ]; then
             # The figures change every run; they go to the journal so the
             # failure text, which keys the hourly re-notify, stays the same.
-            logger -t "$_HOOK_TAG" "Btrfs unallocated still low on $mnt: ${AFTER:-?}GiB, was ${UNALLOC_LOW[$mnt]}GiB ($BALANCE_NOTE; pruned snapshots:${PRUNED:- none this hour})"
-            FAILURES="$FAILURES\n- btrfs unallocated under 5GiB on $mnt after balance and snapshot pruning (read-only-flip risk; figures: journalctl -t $_HOOK_TAG; what remains is held by live files or the pinned/number snapshots: snapper list, or move data off)"
-        elif [ -n "$PRUNED" ]; then
-            ntfy_send -t "btrfs headroom restored" -p "default" "$mnt: unallocated ${UNALLOC_LOW[$mnt]}GiB -> ${AFTER}GiB after pruning snapshots$PRUNED ($BALANCE_NOTE)"
+            logger -t "$_HOOK_TAG" "Btrfs unallocated still low on $mnt: ${AFTER:-?}GiB, was ${UNALLOC_LOW[$mnt]}GiB ($BALANCE_NOTE)"
+            FAILURES="$FAILURES\n- btrfs unallocated under 5GiB on $mnt after balance (read-only-flip risk; figures: journalctl -t $_HOOK_TAG; held by live files, often agent scratch in /tmp, or by snapshots: snapper list; free or move data, then run scheduled/btrfs-balance.sh)"
         fi
     done
 fi
