@@ -127,15 +127,16 @@ fi
 # reaches the device edge the metadata pool can't grow, and the next metadata
 # spike force-flips the fs read-only (2026-08-19: root went RO at df=75%).
 # Below 5GiB the balance runs from here (at most once a day; the Sunday job is
-# the steady-state pass) and the alert says what it reclaimed. A balance only
+# the steady-state pass) and the journal records what it reclaimed (the alert
+# carries no figures, so its text stays stable). A balance only
 # returns slack from part-empty chunks (data, and metadata when that pool is
 # mostly empty: btrfs-balance.sh --emergency); when it reclaims nothing the
 # chunks are full of live extents, either live files or files snapshots still
 # pin, and the remedy is a person's: free or move data, or delete snapshots by
 # hand. Nothing here deletes snapshots: low headroom says nothing about whether
-# they hold the space (2026-10-18: hourly pruning of the oldest timeline
-# snapshots deleted all of them and freed nothing, the space being agent
-# scratch in the unsnapshotted /tmp).
+# they hold the space (2026-10-12 to 19: 65 hourly passes deleting the oldest
+# timeline snapshots removed every one and none freed any space, which was
+# held by live files, agent scratch in the unsnapshotted /tmp among them).
 unalloc_gib() {
     sudo -n btrfs filesystem usage -b "$1" 2>/dev/null |
         awk '/Device unallocated:/ {printf "%d", $3 / 1024^3}'
