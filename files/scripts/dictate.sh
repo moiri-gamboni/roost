@@ -10,8 +10,7 @@
 #                         reader knows it is speech-to-text, then a new line
 #                         (in Claude Code only). Enter is left to you.
 #                         A red bar at the bottom of that tmux session shows
-#                         while it records and while it transcribes. Whatever
-#                         plays on the laptop is paused while it records.
+#                         while it records and while it transcribes.
 #   dictate cancel        stop the recording in progress and throw it away,
 #                         nothing sent (Esc in that session while it records;
 #                         Esc passes through untouched otherwise).
@@ -23,10 +22,12 @@
 # no_verbatim (drops fillers, false starts, repeats) and the keyterms in
 # ~/.config/dictate/keyterms.txt (one per line, <= 5 words, keep it under 100:
 # past 100 every request bills at least 20 s). API key: ~/.config/dictate/elevenlabs-key.
+# While it records, from either mic, the laptop's media players are paused, and
+# resumed on stop or cancel, by the laptop's receiver (files/laptop/media-pause.sh)
+# through the socket its SSH connection forwards to $XDG_RUNTIME_DIR/media-pause.sock;
+# without that forward nothing is paused.
 # A failure keeps the audio (or, if the pane is gone, the text) in
-# ~/.local/state/dictate/ and says where, so nothing is lost. The laptop's media
-# players are paused and resumed by its receiver (files/laptop/media-pause.sh),
-# through the socket its SSH connection forwards to $XDG_RUNTIME_DIR/media-pause.sock.
+# ~/.local/state/dictate/ and says where, so nothing is lost.
 set -euo pipefail
 
 CONF="$HOME/.config/dictate"

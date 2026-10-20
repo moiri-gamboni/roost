@@ -62,6 +62,12 @@ if [[ ! -f $RUN/media-paused ]]; then
 fi
 paused=$(paste -sd ' ' "$RUN/media-paused")
 send resume
+sleep 1
+if [[ -f $RUN/media-paused ]]; then
+    echo "  [!] the resume request did not run. The receiver's log:" >&2
+    journalctl --user -u 'media-pause@*' -n 20 --no-pager >&2
+    exit 1
+fi
 if [[ -n $paused ]]; then
     ok "round trip works: paused and resumed $paused"
 else

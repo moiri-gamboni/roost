@@ -3,8 +3,9 @@
 # (files/scripts/dictate.sh), which pauses what plays here while it records.
 # Run by media-pause@.service for each connection to
 # $XDG_RUNTIME_DIR/media-pause.sock, it reads one line:
-#   pause   pause every MPRIS player that is playing (Spotify, a browser tab,
-#           most desktop players) and list them in $XDG_RUNTIME_DIR/media-paused
+#   pause   pause every MPRIS player (the D-Bus media-player interface:
+#           Spotify, a browser tab, most desktop players) that is playing and
+#           list them in $XDG_RUNTIME_DIR/media-paused
 #   resume  play the players the last pause listed, so one paused by hand
 #           before the recording stays paused
 # Installed as ~/.local/bin/media-pause by install-media-pause.sh.
