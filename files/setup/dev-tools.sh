@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install development tools: fnm + Node.js + pnpm, Go, uv, pytest, pipenv, Docker, gitleaks, draw.io.
+# Install development tools: fnm + Node.js + pnpm, Bun, Go, uv, pytest, pipenv, Docker, gitleaks, draw.io.
 source "$(dirname "$0")/../_setup-env.sh"
 
 # --- fnm + Node.js 22 ---
@@ -34,6 +34,16 @@ if as_user "command -v pnpm" &>/dev/null; then
 else
     as_user "corepack enable pnpm"
     ok "pnpm enabled via corepack"
+fi
+
+# --- Bun ---
+# The installer edits ~/.bashrc when $SHELL is bash; as sh it only prints the PATH line, which shell/bashrc.sh carries.
+
+if as_user "test -x ~/.bun/bin/bun" &>/dev/null; then
+    skip "bun already installed"
+else
+    as_user "curl -fsSL https://bun.sh/install | SHELL=/bin/sh bash"
+    ok "bun installed"
 fi
 
 # --- Go ---

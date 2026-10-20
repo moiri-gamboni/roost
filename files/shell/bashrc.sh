@@ -28,6 +28,7 @@ export CLAUDE_CONFIG_DIR="$_ROOST_DIR/claude"
 # ahead of the fnm multishell and defeat --use-on-cd.
 _roost_path_append "$HOME/bin"
 _roost_path_append "$HOME/.local/bin"
+_roost_path_append "$HOME/.bun/bin"
 
 # Go
 _roost_path_append /usr/local/go/bin
