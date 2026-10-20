@@ -128,7 +128,8 @@ fi
 # spike force-flips the fs read-only (2026-08-19: root went RO at df=75%).
 # Below 5GiB the balance runs from here (at most once a day; the Sunday job is
 # the steady-state pass) and the journal records what it reclaimed (the alert
-# carries no figures, so its text stays stable). A balance only
+# carries no figures, so its text stays stable, and says only what is left to a
+# person, since it is read on a phone; the triage is this comment). A balance only
 # returns slack from part-empty chunks (data, and metadata when that pool is
 # mostly empty: btrfs-balance.sh --emergency); when it reclaims nothing the
 # chunks are full of live extents, either live files or files snapshots still
@@ -168,7 +169,7 @@ if [ "${#UNALLOC_LOW[@]}" -gt 0 ]; then
             # The figures change every run; they go to the journal so the
             # failure text, which keys the hourly re-notify, stays the same.
             logger -t "$_HOOK_TAG" "Btrfs unallocated still low on $mnt: ${AFTER:-?}GiB, was ${UNALLOC_LOW[$mnt]}GiB ($BALANCE_NOTE)"
-            FAILURES="$FAILURES\n- btrfs unallocated under 5GiB on $mnt after balance (read-only-flip risk; figures: journalctl -t $_HOOK_TAG; held by live files (on /mnt/roost-data often agent scratch in /tmp) or by snapshots: snapper list; free or move data, then run scheduled/btrfs-balance.sh)"
+            FAILURES="$FAILURES\n- btrfs on $mnt under 5GiB unallocated (read-only risk); the automatic balance could not free enough: move or delete data"
         fi
     done
 fi
