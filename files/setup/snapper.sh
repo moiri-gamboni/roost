@@ -66,7 +66,7 @@ done
 # next boot: the next time systemd re-reads fstab it mounts @tmp over the live
 # /tmp (an apt upgrade's daemon-reload did, 2026-10-01 02:51), hiding whatever
 # processes had there. nofail: a missing @tmp leaves /tmp on the rootfs dir. Boot
-# empties /tmp either way (Ubuntu's tmpfiles `D /tmp`); what the mount hides
+# leaves /tmp's contents alone (files/tmpfiles-tmp.conf); what the mount hides
 # underneath is cleared by scheduled/disk-cleanup.sh.
 ROOT_DEV=$(findmnt -n -o SOURCE / | sed 's/\[.*//')
 ROOT_UUID=$(blkid -s UUID -o value "$ROOT_DEV")
