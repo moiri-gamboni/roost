@@ -99,6 +99,31 @@ for tool in xclip wl-paste; do
     check "a raw request for text/plain gets nothing" test -z "$out"
     out=$(printf 'image/../../text/plain\n' | ncat -U "$sock") || true
     check "a raw request whose type carries a path gets nothing" test -z "$out"
+
+    echo "$tool: no image data, a reference to one PNG file (a copied image file, as GTK apps offer one)"
+    mkdir -p "$T/files"; cp "$T/png" "$T/files/Screenshot From 12-30.png"
+    clipboard text/plain UTF8_STRING
+    printf 'file://%s\r\n' "$T/files/Screenshot%20From%2012-30.png" > "$T/clip/text_uri-list"
+    out=$(xclip -selection clipboard -t TARGETS -o) && rc=0 || rc=$?
+    check "TARGETS lists image/png" test "$rc:$out" = 0:image/png
+    rm -f "$T/saved"
+    check "Claude Code's save command writes the file" sh -c "$save_cmd" _ "$T/saved"
+    check "  (its exact bytes)" cmp -s "$T/png" "$T/saved"
+
+    echo "$tool: image data and a file reference: the image data wins"
+    base64 -d > "$T/clip/image_png" <<< 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYPgPAAEDAQAIicLsAAAAAElFTkSuQmCC'
+    xclip -selection clipboard -t image/png -o > "$T/got" && rc=0 || rc=$?
+    check "image/png is the clipboard's own image" cmp -s "$T/clip/image_png" "$T/got"
+
+    echo "$tool: a file reference that is not to exactly one local PNG: nothing"
+    printf 'not an image\n' > "$T/files/secret.png"
+    for uris in "file://$T/files/secret.png" "file://$T/files/Screenshot%20From%2012-30.png"$'\n'"file://$T/files/secret.png" "https://example.com/a.png"; do
+        clipboard text/plain; printf '%s\n' "$uris" > "$T/clip/text_uri-list"
+        out=$(xclip -selection clipboard -t TARGETS -o 2>/dev/null) && rc=0 || rc=$?
+        : > "$T/got"
+        xclip -selection clipboard -t image/png -o > "$T/got" 2>/dev/null && rc2=0 || rc2=$?
+        check "${uris//$T/\$T}: exits 1, prints nothing" test "$rc:$out:$rc2:$(wc -c < "$T/got")" = 1::1:0
+    done
 done
 
 echo "a PNG cut off part-way (the connection or the laptop's tool died mid-reply)"

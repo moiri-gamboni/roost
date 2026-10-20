@@ -12,11 +12,13 @@
 # The server reaches the socket through a RemoteForward in ~/.ssh/config
 # (README, Laptop tools: SSH forwards). The tool is chosen as in
 # install-clip-receive.sh: wl-paste on a Wayland desktop other than GNOME, xclip
-# otherwise. On GNOME xclip reads through XWayland, on reports that wl-paste
-# reads without keyboard focus only through the data-control protocol, which
-# GNOME does not implement. There the test copies and reads through X, so it
-# does not cover an image copied by a Wayland app (a screenshot): the check
-# printed at the end does. That text is refused is tested in tests/xclip.sh.
+# otherwise. On GNOME xclip reads through XWayland, which sees what Wayland
+# apps copy, also from the user unit (checked 2026-10-20), while wl-paste is
+# reported to read without keyboard focus only through the data-control
+# protocol, which GNOME does not implement. There the test copies and reads
+# through X, so it does not cover an image copied by a Wayland app (a
+# screenshot): the check printed at the end does. That text is refused is
+# tested in tests/xclip.sh.
 #
 # Overwrites the clipboard once (the test). No .env. Idempotent; rerun after a
 # change of desktop. Set DEBUG=1 for full command tracing.
@@ -61,7 +63,7 @@ systemctl --user enable clip-image.socket
 systemctl --user restart clip-image.socket
 ok "listening on $SOCK"
 
-step "Testing: a test image put on the clipboard must come back through the socket"
+step "Testing: a test image put on the clipboard must come back through the socket as a PNG"
 img=$(mktemp)
 trap 'rm -f "$img"' EXIT
 base64 -d > "$img" <<< 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'
@@ -82,8 +84,11 @@ problems = []
 types = ask(b"targets").split()
 if b"image/png" not in types:
     problems.append(f"targets answered {types!r}, without image/png")
-if ask(b"image/png") != open(sys.argv[2], "rb").read():
-    problems.append("image/png answered other bytes than the test image")
+# A whole PNG, not the same bytes: a clipboard manager may hand the image back
+# re-encoded (GPaste takes a copied image over and offers it anew through GTK).
+png = ask(b"image/png")
+if not (png.startswith(b"\x89PNG\r\n\x1a\n") and png.endswith(b"IEND\xaeB`\x82")):
+    problems.append(f"image/png answered {len(png)} bytes that are not a whole PNG, starting {png[:16]!r}")
 for p in problems:
     print(f"  [!] {p}", file=sys.stderr)
 sys.exit(1 if problems else 0)
