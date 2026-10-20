@@ -22,10 +22,9 @@
 # no_verbatim (drops fillers, false starts, repeats) and the keyterms in
 # ~/.config/dictate/keyterms.txt (one per line, <= 5 words, keep it under 100:
 # past 100 every request bills at least 20 s). API key: ~/.config/dictate/elevenlabs-key.
-# While it records, from either mic, the laptop's media players are paused, and
-# resumed on stop or cancel, by the laptop's receiver (files/laptop/media-pause.sh)
-# through the socket its SSH connection forwards to $XDG_RUNTIME_DIR/media-pause.sock;
-# without that forward nothing is paused.
+# While it records, from either mic, whatever plays on the laptop is turned down
+# to a fifth of its volume, through the laptop's forwarded PipeWire-pulse socket,
+# and put back on stop or cancel (the volumes wait in $XDG_RUNTIME_DIR/dictate/ducked).
 # A failure keeps the audio (or, if the pane is gone, the text) in
 # ~/.local/state/dictate/ and says where, so nothing is lost.
 set -euo pipefail
@@ -82,8 +81,28 @@ type_text() {
     done
     tmux send-keys -t "$pane" -l "${chunk% }"
 }
-# pause or resume the laptop's media players; without the forward there is nothing to do
-media() { [ -S "$RUN/media-pause.sock" ] || return 0; ncat --send-only -U "$RUN/media-pause.sock" <<<"$1" || true; }
+# Turn the laptop's playing streams down while recording, and back up after.
+# Best effort: without the laptop's socket there is nothing to do, and the
+# timeouts keep a stalled connection (laptop asleep) from holding up dictation.
+laptop_pactl() { [ -S "$RUN/pulse-fwd" ] && timeout 3 pactl -s "unix:$RUN/pulse-fwd" "$@"; }
+duck() {
+    local -a f low
+    local v
+    unduck   # a run that never got to put its volumes back
+    laptop_pactl -f json list sink-inputs \
+        | jq -r '.[] | select(.corked | not) | "\(.index) \([.volume[].value] | join(" "))"' > "$STATE/ducked" || return 0
+    while read -ra f; do
+        low=()
+        for v in "${f[@]:1}"; do low+=($(( v / 5 ))); done
+        laptop_pactl set-sink-input-volume "${f[0]}" "${low[@]}" || true
+    done < "$STATE/ducked"
+}
+unduck() {
+    local -a f
+    [ -f "$STATE/ducked" ] || return 0
+    while read -ra f; do laptop_pactl set-sink-input-volume "${f[@]}" || true; done < "$STATE/ducked"
+    rm -f "$STATE/ducked"
+}
 keep() { mkdir -p "$KEEP"; local to; to="$KEEP/$(date +%Y%m%d-%H%M%S)-$1"; mv "$2" "$to"; echo "$to"; }
 
 start() {
@@ -100,8 +119,8 @@ start() {
         rm -f "$STATE/current" "$wav" "$wav.err"
         fail "microphone unavailable ($err). Is $from up?"
     fi
-    media pause
     bar "$1" "REC · Alt+M to stop · Esc to cancel"
+    duck
 }
 
 stop() {
@@ -117,9 +136,9 @@ stop() {
     else
         say "🎤 recording had already stopped ($(head -c 200 "$wav.err")); transcribing what it got"
     fi
-    media resume
     rm -f "$wav.err"
     bar "$pane" "transcribing…"
+    unduck
 
     local -a terms=()
     if [ -f "$CONF/keyterms.txt" ]; then
@@ -163,7 +182,7 @@ cancel() {
         kill -INT "$pid" || true
         while [ -d "/proc/$pid" ]; do sleep 0.05; done
     fi
-    media resume
+    unduck
     rm -f "$wav" "$wav.err"
     unbar "$pane"
     show -d 1500 "🎤 recording cancelled"
@@ -182,5 +201,5 @@ case "${1:-}" in
         exec >>"$STATE/log" 2>&1
         trap 'say "🎤 dictate cancel failed at line $LINENO, see $STATE/log"' ERR
         cancel ;;
-    *) sed -n '2,30s/^# \{0,1\}//p' "$0"; exit 2 ;;
+    *) sed -n '2,29s/^# \{0,1\}//p' "$0"; exit 2 ;;
 esac

@@ -1,7 +1,0 @@
-[Unit]
-Description=Pause or resume the media players for one media-pause.socket connection
-
-[Service]
-ExecStart=%h/.local/bin/media-pause
-StandardInput=socket
-StandardOutput=journal
