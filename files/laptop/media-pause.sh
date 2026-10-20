@@ -12,6 +12,9 @@
 set -euo pipefail
 
 PAUSED="$XDG_RUNTIME_DIR/media-paused"
+# one request at a time: a resume run while a slow pause still works would find
+# nothing to play, and the music would stay paused
+exec 9>"$PAUSED.lock"; flock 9
 read -r verb || true
 case "$verb" in
     pause)
