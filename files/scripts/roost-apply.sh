@@ -125,7 +125,6 @@ files/scripts/conflict-watch.py|$ROOST_DIR/claude/scripts/conflict-watch.py|plai
 files/scripts/git-hook.sh|$ROOST_DIR/claude/scripts/git-hook.sh|plain+x|run:~/roost/claude/scripts/git-hook.sh install
 files/scripts/dictate.sh|$ROOST_DIR/claude/scripts/dictate.sh|plain+x|
 files/scripts/clip.sh|$ROOST_DIR/claude/scripts/clip.sh|plain+x|run:ln -sf ~/roost/claude/scripts/clip.sh ~/bin/clip
-files/scripts/xclip.sh|$ROOST_DIR/claude/scripts/xclip.sh|plain+x|run:ln -sf ~/roost/claude/scripts/xclip.sh ~/bin/xclip
 files/scripts/gmail-draft.py|$ROOST_DIR/claude/scripts/gmail-draft.py|plain+x|run:ln -sf ~/roost/claude/scripts/gmail-draft.py ~/bin/gmail-draft
 files/conflict-watch.conf|$ROOST_DIR/claude/conflict-watch.conf|plain|restart:conflict-watch
 files/roost-session-resume.service|$HOME_DIR/.config/systemd/user/roost-session-resume.service|plain|run:systemctl --user daemon-reload && systemctl --user enable roost-session-resume.service
