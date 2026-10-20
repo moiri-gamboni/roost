@@ -23,7 +23,7 @@
 # ~/.config/dictate/keyterms.txt (one per line, <= 5 words, keep it under 100:
 # past 100 every request bills at least 20 s). API key: ~/.config/dictate/elevenlabs-key.
 # While it records, from either mic, whatever plays on the laptop is turned down
-# to a fifth of its volume, through the laptop's forwarded PipeWire-pulse socket,
+# to 40% of its volume, through the laptop's forwarded PipeWire-pulse socket,
 # and put back on stop or cancel (the volumes wait in $XDG_RUNTIME_DIR/dictate/ducked).
 # A failure keeps the audio (or, if the pane is gone, the text) in
 # ~/.local/state/dictate/ and says where, so nothing is lost.
@@ -84,24 +84,39 @@ type_text() {
 # Turn the laptop's playing streams down while recording, and back up after.
 # Best effort: without the laptop's socket there is nothing to do, and the
 # timeouts keep a stalled connection (laptop asleep) from holding up dictation.
+# Each pactl call costs about four round trips to the laptop, so the callers
+# run these in the background and the streams are set in parallel; the lock
+# keeps a restore from overtaking the lowering it undoes (a quick second press).
 laptop_pactl() { [ -S "$RUN/pulse-fwd" ] && timeout 3 pactl -s "unix:$RUN/pulse-fwd" "$@"; }
-duck() {
-    local -a f low
+# set each stream listed in FILE (index, then its volumes) to its volumes * MUL / DIV
+set_volumes() {
+    local -a f vols pids=()
     local v
-    unduck   # a run that never got to put its volumes back
-    laptop_pactl -f json list sink-inputs \
-        | jq -r '.[] | select(.corked | not) | "\(.index) \([.volume[].value] | join(" "))"' > "$STATE/ducked" || return 0
     while read -ra f; do
-        low=()
-        for v in "${f[@]:1}"; do low+=($(( v / 5 ))); done
-        laptop_pactl set-sink-input-volume "${f[0]}" "${low[@]}" || true
-    done < "$STATE/ducked"
+        vols=()
+        for v in "${f[@]:1}"; do vols+=($(( v * $2 / $3 ))); done
+        laptop_pactl set-sink-input-volume "${f[0]}" "${vols[@]}" &
+        pids+=($!)
+    done < "$1"
+    if [ ${#pids[@]} -gt 0 ]; then wait "${pids[@]}" || true; fi
+}
+duck() {
+    {
+        flock 8
+        # a run that never got to put its volumes back
+        if [ -f "$STATE/ducked" ]; then set_volumes "$STATE/ducked" 1 1; fi
+        laptop_pactl -f json list sink-inputs \
+            | jq -r '.[] | select(.corked | not) | "\(.index) \([.volume[].value] | join(" "))"' > "$STATE/ducked" || return 0
+        set_volumes "$STATE/ducked" 2 5
+    } 8>"$STATE/duck.lock"
 }
 unduck() {
-    local -a f
-    [ -f "$STATE/ducked" ] || return 0
-    while read -ra f; do laptop_pactl set-sink-input-volume "${f[@]}" || true; done < "$STATE/ducked"
-    rm -f "$STATE/ducked"
+    {
+        flock 8
+        [ -f "$STATE/ducked" ] || return 0
+        set_volumes "$STATE/ducked" 1 1
+        rm -f "$STATE/ducked"
+    } 8>"$STATE/duck.lock"
 }
 keep() { mkdir -p "$KEEP"; local to; to="$KEEP/$(date +%Y%m%d-%H%M%S)-$1"; mv "$2" "$to"; echo "$to"; }
 
@@ -111,16 +126,18 @@ start() {
     local mic="$RUN/pulse-fwd-${2#main-}" from="the laptop mic forwarded over SSH"
     if [ -S "$mic" ]; then export PULSE_SERVER="unix:$mic"; from="the mic this client forwards to $mic"; fi
     arecord -q -f S16_LE -r 16000 -c 1 -d "$MAX_SECONDS" "$wav" 2>"$wav.err" &
-    printf '%s\n%s\n%s\n' "$!" "$1" "$wav" > "$STATE/current"
+    local rec=$!
+    printf '%s\n%s\n%s\n' "$rec" "$1" "$wav" > "$STATE/current"
+    duck &   # while the microphone check below waits
     sleep 0.3
-    if [ ! -d "/proc/$!" ]; then
+    if [ ! -d "/proc/$rec" ]; then
         local err
         err=$(head -c 200 "$wav.err")
         rm -f "$STATE/current" "$wav" "$wav.err"
+        unduck
         fail "microphone unavailable ($err). Is $from up?"
     fi
     bar "$1" "REC · Alt+M to stop · Esc to cancel"
-    duck
 }
 
 stop() {
@@ -130,6 +147,7 @@ stop() {
     # cleared first, so the next press starts a new recording while this one transcribes
     rm -f "$STATE/current"
     trap 'unbar "$pane"' EXIT
+    unduck &   # the volume takes as long to come back as the recording takes to end
     if [ -d "/proc/$pid" ]; then
         kill -INT "$pid" || true
         while [ -d "/proc/$pid" ]; do sleep 0.05; done
@@ -138,7 +156,6 @@ stop() {
     fi
     rm -f "$wav.err"
     bar "$pane" "transcribing…"
-    unduck
 
     local -a terms=()
     if [ -f "$CONF/keyterms.txt" ]; then
@@ -178,11 +195,11 @@ cancel() {
     [ -f "$STATE/current" ] || { show -d 1500 "🎤 no recording to cancel"; return 0; }
     { read -r pid; read -r pane; read -r wav; } < "$STATE/current"
     rm -f "$STATE/current"
+    unduck &
     if [ -d "/proc/$pid" ]; then
         kill -INT "$pid" || true
         while [ -d "/proc/$pid" ]; do sleep 0.05; done
     fi
-    unduck
     rm -f "$wav" "$wav.err"
     unbar "$pane"
     show -d 1500 "🎤 recording cancelled"
