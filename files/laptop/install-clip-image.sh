@@ -86,9 +86,10 @@ if b"image/png" not in types:
     problems.append(f"targets answered {types!r}, without image/png")
 # A whole PNG, not the same bytes: a clipboard manager may hand the image back
 # re-encoded (GPaste takes a copied image over and offers it anew through GTK).
-png = ask(b"image/png")
-if not (png.startswith(b"\x89PNG\r\n\x1a\n") and png.endswith(b"IEND\xaeB`\x82")):
-    problems.append(f"image/png answered {len(png)} bytes that are not a whole PNG, starting {png[:16]!r}")
+reply = ask(b"image/png")
+size, _, png = reply.partition(b"\n")
+if not (size.isdigit() and int(size) == len(png) and png.startswith(b"\x89PNG\r\n\x1a\n") and png.endswith(b"IEND\xaeB`\x82")):
+    problems.append(f"image/png answered {len(reply)} bytes that are not a size line and a whole PNG, starting {reply[:24]!r}")
 for p in problems:
     print(f"  [!] {p}", file=sys.stderr)
 sys.exit(1 if problems else 0)
