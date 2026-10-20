@@ -676,7 +676,7 @@ echo ""
 echo "--- SSH Socket Forwarding ---"
 
 # 50-clip-forward.conf sets StreamLocalBindUnlink for the laptop's forwarded sockets: the
-# clipboard receiver and the /voice audio socket.
+# clipboard receiver, the clipboard images and the /voice audio socket.
 if run test -f /etc/ssh/sshd_config.d/50-clip-forward.conf; then
     pass "sshd StreamLocalBindUnlink drop-in exists"
 else

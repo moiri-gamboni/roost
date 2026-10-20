@@ -1,0 +1,10 @@
+[Unit]
+Description=Clipboard images for the server's xclip stand-in, reached through an SSH RemoteForward
+
+[Socket]
+ListenStream=%t/clip-image.sock
+SocketMode=0600
+Accept=yes
+
+[Install]
+WantedBy=sockets.target

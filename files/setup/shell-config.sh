@@ -88,8 +88,9 @@ chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/roost-net"
 ln -sf "$ROOST_DIR/claude/scripts/agent-worktree.sh" "$HOME_DIR/bin/agent-worktree"
 ln -sf "$ROOST_DIR/claude/scripts/conflict-watch.py" "$HOME_DIR/bin/conflict-watch"
 ln -sf "$ROOST_DIR/claude/scripts/clip.sh" "$HOME_DIR/bin/clip"
+ln -sf "$ROOST_DIR/claude/scripts/xclip.sh" "$HOME_DIR/bin/xclip"
 ln -sf "$ROOST_DIR/claude/scripts/gmail-draft.py" "$HOME_DIR/bin/gmail-draft"
-chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/agent-worktree" "$HOME_DIR/bin/conflict-watch" "$HOME_DIR/bin/clip" "$HOME_DIR/bin/gmail-draft"
+chown -h "$USERNAME:$USERNAME" "$HOME_DIR/bin/agent-worktree" "$HOME_DIR/bin/conflict-watch" "$HOME_DIR/bin/clip" "$HOME_DIR/bin/xclip" "$HOME_DIR/bin/gmail-draft"
 
 # Restore the sessions a `session reboot` snapshotted, at boot. Lingering is
 # what lets the user manager (and so this unit) run with nobody logged in;
