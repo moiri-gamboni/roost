@@ -67,24 +67,23 @@ done
 # /tmp (an apt upgrade's daemon-reload did, 2026-10-01 02:51), hiding whatever
 # processes had there. nofail: a missing @tmp leaves /tmp on the rootfs dir. Boot
 # leaves /tmp's contents alone (files/tmpfiles-tmp.conf); what the mount hides
-# underneath is cleared by scheduled/disk-cleanup.sh.
-ROOT_DEV=$(findmnt -n -o SOURCE / | sed 's/\[.*//')
-ROOT_UUID=$(blkid -s UUID -o value "$ROOT_DEV")
-TOP=$(mktemp -d)
-mount -o subvolid=5 "$ROOT_DEV" "$TOP"
-if [ -d "$TOP/@tmp" ]; then
-    echo "  [-] @tmp subvolume already exists (already done)"
-else
-    btrfs subvolume create "$TOP/@tmp" >/dev/null
-    chmod 1777 "$TOP/@tmp"
-    echo "  [+] @tmp subvolume created"
-fi
-umount "$TOP" && rmdir "$TOP"
+# underneath is cleared by scheduled/disk-cleanup.sh. This provisions @tmp on the
+# root disk only for a box whose fstab mounts nothing on /tmp yet: roost's fstab
+# points it at @tmp on the data volume, set by hand (CLAUDE.md, Data volume).
 if grep -qE '^\S+\s+/tmp\s' /etc/fstab; then
     echo "  [-] /tmp already in fstab (already done)"
 else
+    ROOT_DEV=$(findmnt -n -o SOURCE / | sed 's/\[.*//')
+    ROOT_UUID=$(blkid -s UUID -o value "$ROOT_DEV")
+    TOP=$(mktemp -d)
+    mount -o subvolid=5 "$ROOT_DEV" "$TOP"
+    if [ ! -d "$TOP/@tmp" ]; then
+        btrfs subvolume create "$TOP/@tmp" >/dev/null
+        chmod 1777 "$TOP/@tmp"
+    fi
+    umount "$TOP" && rmdir "$TOP"
     echo "UUID=$ROOT_UUID /tmp btrfs defaults,discard=async,space_cache=v2,subvol=@tmp,nofail 0 0" >> /etc/fstab
-    echo "  [+] /tmp mounts @tmp from the next boot"
+    echo "  [+] @tmp subvolume and its fstab line in place: /tmp mounts it from the next boot"
 fi
 
 # Disable COW for database directories

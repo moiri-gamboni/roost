@@ -168,7 +168,7 @@ if [ "${#UNALLOC_LOW[@]}" -gt 0 ]; then
             # The figures change every run; they go to the journal so the
             # failure text, which keys the hourly re-notify, stays the same.
             logger -t "$_HOOK_TAG" "Btrfs unallocated still low on $mnt: ${AFTER:-?}GiB, was ${UNALLOC_LOW[$mnt]}GiB ($BALANCE_NOTE)"
-            FAILURES="$FAILURES\n- btrfs unallocated under 5GiB on $mnt after balance (read-only-flip risk; figures: journalctl -t $_HOOK_TAG; held by live files, often agent scratch in /tmp, or by snapshots: snapper list; free or move data, then run scheduled/btrfs-balance.sh)"
+            FAILURES="$FAILURES\n- btrfs unallocated under 5GiB on $mnt after balance (read-only-flip risk; figures: journalctl -t $_HOOK_TAG; held by live files (on /mnt/roost-data often agent scratch in /tmp) or by snapshots: snapper list; free or move data, then run scheduled/btrfs-balance.sh)"
         fi
     done
 fi
