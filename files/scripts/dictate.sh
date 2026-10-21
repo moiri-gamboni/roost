@@ -10,7 +10,10 @@
 #                         reader knows it is speech-to-text, then a new line
 #                         (in Claude Code only). Enter is left to you.
 #                         A red bar at the bottom of that tmux session shows
-#                         while it records and while it transcribes.
+#                         while it records and while it transcribes. When the
+#                         laptop's SSH forwards have gone stale, it first closes
+#                         the stale connection and waits (up to 15 s) for the
+#                         laptop to reconnect.
 #   dictate cancel        stop the recording in progress and throw it away,
 #                         nothing sent (Esc in that session while it records;
 #                         Esc passes through untouched otherwise).
@@ -118,6 +121,33 @@ unduck() {
         rm -f "$STATE/ducked"
     } 8>"$STATE/duck.lock"
 }
+# The laptop's forwards die when two of its SSH connections open at once (at
+# login: VS Code reconnecting, a sync starting): both request them, and when the
+# one that binds last is short-lived, the paths refuse connections while the
+# long-lived connection keeps listeners nothing can reach. Closing that
+# connection makes VS Code reconnect and bind them afresh; its server and the
+# tmux views on the box carry on. True once the laptop's audio answers again.
+relink_laptop() {
+    local -a pids
+    mapfile -t pids < <(sudo -n ss -xlpH src "$RUN/pulse-fwd" | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u)
+    [ ${#pids[@]} -gt 0 ] || return 1
+    logger -t roost/dictate -- "the laptop's forwards are stale: closing sshd ${pids[*]} so the laptop reconnects"
+    bar "$1" "reconnecting the laptop…"
+    kill "${pids[@]}" || return 1
+    for _ in $(seq 30); do
+        sleep 0.5
+        if timeout 2 pactl info >/dev/null; then return 0; fi
+    done
+    logger -t roost/dictate -- "the laptop did not reconnect within 15 s"
+    return 1
+}
+# record PANE WAV: start recording; true when it still runs 0.3 s later
+record() {
+    arecord -q -f S16_LE -r 16000 -c 1 -d "$MAX_SECONDS" "$2" 2>"$2.err" &
+    printf '%s\n%s\n%s\n' "$!" "$1" "$2" > "$STATE/current"
+    sleep 0.3
+    [ -d "/proc/$!" ]
+}
 keep() { mkdir -p "$KEEP"; local to; to="$KEEP/$(date +%Y%m%d-%H%M%S)-$1"; mv "$2" "$to"; echo "$to"; }
 
 start() {
@@ -125,12 +155,13 @@ start() {
     wav="$STATE/rec-$(date +%s%N).wav"
     local mic="$RUN/pulse-fwd-${2#main-}" from="the laptop mic forwarded over SSH"
     if [ -S "$mic" ]; then export PULSE_SERVER="unix:$mic"; from="the mic this client forwards to $mic"; fi
-    arecord -q -f S16_LE -r 16000 -c 1 -d "$MAX_SECONDS" "$wav" 2>"$wav.err" &
-    local rec=$!
-    printf '%s\n%s\n%s\n' "$rec" "$1" "$wav" > "$STATE/current"
-    duck &   # while the microphone check below waits
-    sleep 0.3
-    if [ ! -d "/proc/$rec" ]; then
+    duck &   # while the microphone check waits
+    if ! record "$1" "$wav" && [ -z "${PULSE_SERVER:-}" ] && grep -q 'Connection refused' "$wav.err" \
+       && relink_laptop "$1"; then
+        duck &   # the first found no laptop to reach
+        record "$1" "$wav" || true
+    fi
+    if [ ! -d "/proc/$(head -n 1 "$STATE/current")" ]; then
         local err
         err=$(head -c 200 "$wav.err")
         rm -f "$STATE/current" "$wav" "$wav.err"
@@ -218,5 +249,5 @@ case "${1:-}" in
         exec >>"$STATE/log" 2>&1
         trap 'say "🎤 dictate cancel failed at line $LINENO, see $STATE/log"' ERR
         cancel ;;
-    *) sed -n '2,29s/^# \{0,1\}//p' "$0"; exit 2 ;;
+    *) sed -n '2,32s/^# \{0,1\}//p' "$0"; exit 2 ;;
 esac
