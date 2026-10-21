@@ -32,7 +32,11 @@ for arg in "$@"; do
 done
 
 SSH_TARGET="$SERVER_USER@$SERVER_HOST"
-RSYNC_OPTS=(-avz -e ssh)
+# ClearAllForwardings: a sync needs none of the Host block's forwards, and its
+# initial run starts at login alongside VS Code's connection; requesting them
+# from a short-lived connection leaves the server's forward paths dead after it
+# closes (README, Laptop tools: SSH forwards).
+RSYNC_OPTS=(-avz -e "ssh -o ClearAllForwardings=yes")
 
 mkdir -p "$DROP_DIR"
 
